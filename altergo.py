@@ -33,7 +33,7 @@ Navigation (session picker):
   Enter        Resume session      q/Esc        Quit
 """
 
-__version__ = "0.2.0"
+__version__ = "0.4.0"
 
 import curses
 import json

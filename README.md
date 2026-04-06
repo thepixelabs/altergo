@@ -58,9 +58,29 @@ altergo --resume <id>          Resume a specific session
 altergo --list                 List recent sessions
 altergo --setup                First-time setup
 altergo --teardown             Undo setup
+altergo shell                  Open a shell inside alt HOME (run gh auth, git config, etc.)
+altergo -- <cmd> [args...]     Run any command with HOME set to alt directory
 altergo --version              Show version
 altergo --help                 Show help
 ```
+
+### Running other tools in alt HOME context
+
+Some tools (like `gh`, `git`, or SSH) read credentials from your home directory. To authenticate them for your alt account:
+
+```bash
+# Enter an interactive shell inside alt HOME
+altergo shell
+gh auth login          # authenticates gh for your alt account
+git config --global user.email me@work.com
+exit                   # back to your primary account
+
+# Or run a single command directly
+altergo -- gh auth login
+altergo -- gh auth status
+```
+
+Once authenticated inside `altergo shell`, those credentials persist in `~/.altergo/` and are available every time you run `altergo`.
 
 ### Keyboard shortcuts (interactive picker)
 

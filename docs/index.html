@@ -11,8 +11,8 @@
   <!-- Open Graph -->
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://altergo.pixelabs.net/" />
-  <meta property="og:title" content="Altergo — Your Other Claude" />
-  <meta property="og:description" content="Multi-account session manager for Claude Code. Switch identities, share sessions, keep credentials separate." />
+  <meta property="og:title" content="altergo — A terminal with a split personality." />
+  <meta property="og:description" content="Run two Claude Code accounts from one terminal. Session history shared, credentials separate — no sync service, no drama." />
   <meta property="og:image" content="https://altergo.pixelabs.net/og-image.png" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
@@ -20,8 +20,8 @@
   <meta property="og:site_name" content="Altergo" />
   <meta property="og:locale" content="en_US" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="Altergo — Your Other Claude" />
-  <meta name="twitter:description" content="Switch between Claude Code identities without losing a thought." />
+  <meta name="twitter:title" content="altergo — A terminal with a split personality." />
+  <meta name="twitter:description" content="Two Claude Code accounts, one terminal. History shared, credentials separate." />
   <meta name="twitter:image" content="https://altergo.pixelabs.net/og-image.png" />
   <meta name="twitter:creator" content="@thepixelabs" />
 
@@ -526,17 +526,17 @@
     ============================================================ */
     #hero {
       min-height: 100svh;
-      padding: 140px 0 72px;
+      padding: 100px 0 60px;
       display: flex;
       align-items: center;
     }
-    @media (max-width: 768px) { #hero { padding: 90px 0 52px; } }
+    @media (max-width: 768px) { #hero { padding: 80px 0 44px; } }
     @media (max-width: 400px) { #hero { padding: 80px 0 40px; } }
 
     .hero-inner {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 64px;
+      gap: 48px;
       align-items: center;
     }
     @media (max-width: 900px) {
@@ -577,7 +577,7 @@
 
     .hero-h1 {
       font-family: var(--font-display);
-      font-size: clamp(2.75rem, 7vw, 5rem);
+      font-size: clamp(2.3rem, 4.8vw, 3.6rem);
       font-weight: 700;
       line-height: 1.05;
       letter-spacing: -0.03em;
@@ -586,7 +586,7 @@
     }
     .hero-h1-alt {
       font-family: var(--font-display);
-      font-size: clamp(1.2rem, 3vw, 1.4rem);
+      font-size: clamp(1.3rem, 3vw, 1.55rem);
       font-weight: 500;
       color: var(--text-1);
       letter-spacing: -0.02em;
@@ -601,7 +601,7 @@
     }
 
     .hero-subtitle {
-      font-size: 1rem;
+      font-size: 1.05rem;
       color: var(--text-1);
       line-height: 1.7;
       max-width: 480px;
@@ -747,9 +747,6 @@
       justify-content: center;
       align-items: center;
     }
-    @media (max-width: 900px) {
-      .hero-visual { order: -1; }
-    }
 
     /* ============================================================
        ANIMATED TERMINAL
@@ -794,7 +791,7 @@
 
     .term-body {
       padding: 16px 18px 18px;
-      min-height: 340px;
+      min-height: 400px;
       background: #090b18;
       overflow: hidden;
       position: relative;
@@ -923,101 +920,130 @@
       background: linear-gradient(180deg, transparent 0%, rgba(99, 102, 241, 0.03) 50%, transparent 100%);
     }
 
+    /* Terminal card steps */
     .how-steps {
       display: grid;
-      grid-template-columns: repeat(3, 1fr);
+      grid-template-columns: 1fr auto 1fr auto 1fr;
       gap: 0;
-      margin-top: 36px;
-      position: relative;
-    }
-    .how-steps::after {
-      content: '';
-      position: absolute;
-      top: 28px;
-      left: calc(100% / 6);
-      right: calc(100% / 6);
-      height: 2px;
-      background: linear-gradient(90deg, var(--indigo) 0%, var(--cyan) 50%, var(--green) 100%);
-      opacity: 0.55;
-      pointer-events: none;
+      margin-top: 40px;
+      align-items: center;
     }
     @media (max-width: 768px) {
-      .how-steps { grid-template-columns: 1fr; gap: 32px; }
-      .how-steps::after { display: none; }
+      .how-steps { grid-template-columns: 1fr; gap: 20px; }
+    }
+
+    .how-step-sep {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 12px;
+      font-size: 1.5rem;
+      color: var(--cyan);
+      opacity: 0.7;
+      user-select: none;
+      align-self: center;
+      /* vertically center against the card body, not the title bar */
+      padding-top: 36px;
+    }
+    @media (max-width: 768px) {
+      .how-step-sep { display: none; }
     }
 
     .how-step {
       display: flex;
       flex-direction: column;
-      align-items: center;
-      padding: 0 16px;
+      border-radius: 10px;
+      background: var(--bg-2);
+      border: 1px solid var(--border-glow);
+      box-shadow:
+        0 0 0 1px var(--indigo-glow),
+        0 4px 24px rgba(0, 0, 0, 0.35),
+        0 0 32px rgba(99, 102, 241, 0.08);
+      overflow: hidden;
+      transition: box-shadow 0.25s ease, transform 0.25s ease;
     }
-    .step-content {
-      text-align: left;
-      width: 100%;
-    }
-    @media (max-width: 768px) {
-      .how-step { padding: 0; flex-direction: row; gap: 20px; align-items: flex-start; }
+    .how-step:hover {
+      box-shadow:
+        0 0 0 1px rgba(99, 102, 241, 0.5),
+        0 8px 32px rgba(0, 0, 0, 0.45),
+        0 0 48px rgba(99, 102, 241, 0.14);
+      transform: translateY(-2px);
     }
 
-    .step-number {
-      width: 56px;
-      height: 56px;
-      border-radius: 50%;
-      background: linear-gradient(135deg, var(--bg-2) 0%, var(--bg-3) 100%);
-      border: 2px solid var(--indigo);
-      box-shadow: 0 0 0 4px var(--indigo-glow), 0 4px 16px rgba(0,0,0,0.4);
+    /* Title bar */
+    .step-titlebar {
       display: flex;
       align-items: center;
-      justify-content: center;
-      font-family: var(--font-display);
-      font-size: 1.1rem;
-      font-weight: 700;
-      color: var(--indigo-bright);
-      margin-bottom: 24px;
-      position: relative;
-      z-index: 1;
+      gap: 8px;
+      padding: 10px 14px;
+      background: var(--bg-3);
+      border-bottom: 1px solid var(--border-subtle);
       flex-shrink: 0;
     }
-    .step-number::after {
-      content: '';
-      position: absolute;
-      inset: -4px;
+    .step-dots {
+      display: flex;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+    .step-dots span {
+      display: block;
+      width: 11px;
+      height: 11px;
       border-radius: 50%;
-      background: var(--indigo-glow);
-      z-index: -1;
     }
-
-    @media (max-width: 768px) {
-      .step-number { margin-bottom: 0; }
-    }
-
-    .step-content {}
-
-    .step-title {
-      font-family: var(--font-display);
-      font-size: 1.05rem;
-      font-weight: 700;
-      color: var(--text-0);
-      margin-bottom: 8px;
-    }
-    .step-desc {
-      font-size: 0.93rem;
-      color: var(--text-1);
-      line-height: 1.65;
-      margin-bottom: 14px;
-    }
-    .step-code {
+    .step-dots .dot-close  { background: #ff5f57; }
+    .step-dots .dot-min    { background: #febc2e; }
+    .step-dots .dot-max    { background: #28c840; }
+    .step-win-title {
       font-family: var(--font-mono);
-      font-size: 0.83rem;
-      color: var(--cyan);
-      background: var(--bg-2);
-      border: 1px solid var(--border-subtle);
-      border-radius: 7px;
-      padding: 8px 14px;
-      display: inline-block;
-      max-width: 100%;
+      font-size: 0.72rem;
+      color: var(--text-2);
+      letter-spacing: 0.02em;
+      margin-left: 4px;
+    }
+
+    /* Card body */
+    .step-body {
+      padding: 20px 18px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .step-command {
+      font-family: var(--font-mono);
+      font-size: 1.15rem;
+      font-weight: 600;
+      color: var(--text-0);
+      letter-spacing: -0.01em;
+      white-space: nowrap;
       overflow-x: auto;
+    }
+    .step-command .prompt {
+      color: var(--green);
+      margin-right: 8px;
+      user-select: none;
+    }
+    .step-command .cmd {
+      color: var(--cyan);
+    }
+    .step-caption {
+      font-family: var(--font-sans);
+      font-size: 0.82rem;
+      color: var(--text-2);
+      line-height: 1.55;
+    }
+
+    /* Light theme — soften the glow slightly */
+    [data-theme="light"] .how-step {
+      border-color: var(--border-glow);
+      box-shadow:
+        0 0 0 1px rgba(99, 102, 241, 0.15),
+        0 4px 20px rgba(0, 0, 0, 0.1);
+    }
+    [data-theme="light"] .how-step:hover {
+      box-shadow:
+        0 0 0 1px rgba(99, 102, 241, 0.35),
+        0 8px 28px rgba(0, 0, 0, 0.15);
     }
 
     /* ============================================================
@@ -1591,18 +1617,13 @@
       <div class="container">
         <div class="hero-inner">
           <div class="hero-content">
-            <div class="hero-eyebrow reveal">
-              <span class="dot" aria-hidden="true"></span>
-              Multi-account Claude Code
-            </div>
-
             <h1 class="hero-h1 reveal reveal-delay-1" id="hero-heading">
-              Your other <span class="text-gradient">Claude.</span>
+              A terminal with a <span class="text-gradient">split personality.</span>
             </h1>
-            <p class="hero-h1-alt reveal reveal-delay-1">Switch identities. Keep your flow.</p>
+            <p class="hero-h1-alt reveal reveal-delay-1">Two accounts. Zero identity crisis.</p>
 
             <p class="hero-subtitle reveal reveal-delay-2">
-              Switch between Claude Code accounts without losing your session history. Share conversations, keep credentials separate — handled entirely through smart symlinks.
+              Run two Claude Code accounts from a single terminal — session history shared, credentials apart. No sync service, no config files to babysit. Just symlinks and a TUI that always knows which you is you.
             </p>
 
             <div class="hero-actions reveal reveal-delay-3">
@@ -1643,7 +1664,6 @@
             </div>
           </div>
 
-          <!-- Animated terminal demo -->
           <div class="hero-visual reveal reveal-delay-2" aria-hidden="true" role="presentation">
             <div class="term-wrap" id="hero-term">
               <div class="term-titlebar">
@@ -1672,7 +1692,7 @@
         <div class="reveal">
           <span class="section-label" aria-hidden="true">Why altergo</span>
           <h2 class="section-title" id="why-heading">Multi-account, single brain.</h2>
-          <p class="section-subtitle">Claude Code keeps session history locked to one account. altergo breaks that constraint — without compromising your credentials.</p>
+          <p class="section-subtitle">Session history shouldn't pick a side. altergo keeps both accounts coherent — credentials separate, context intact.</p>
         </div>
 
         <div class="why-grid" role="list" aria-label="Key benefits">
@@ -1738,31 +1758,56 @@
           <span class="section-label" aria-hidden="true">How it works</span>
           <h2 class="section-title" id="how-heading">Three commands to freedom.</h2>
           <p class="section-subtitle">From install to switching accounts in under a minute. No daemon, no background process, no cloud sync.</p>
+          <p class="section-subtitle" style="font-family: var(--font-mono); font-size: 0.78rem; color: var(--text-2); margin-top: 10px; letter-spacing: 0.03em;" aria-hidden="true">~45 sec &nbsp;·&nbsp; no daemon &nbsp;·&nbsp; pure Python</p>
         </div>
 
         <div class="how-steps" aria-label="Setup steps" role="list">
-          <div class="how-step reveal reveal-delay-1" role="listitem">
-            <div class="step-number" aria-label="Step 1">1</div>
-            <div class="step-content">
-              <h3 class="step-title">Install</h3>
-              <p class="step-desc">One pip command and you are ready. No dependencies, no compilation, pure Python standard library.</p>
-              <code class="step-code">pip install altergo</code>
+          <div class="how-step reveal reveal-delay-1" role="listitem" aria-label="Step 1: Install">
+            <div class="step-titlebar" aria-hidden="true">
+              <div class="step-dots">
+                <span class="dot-close"></span>
+                <span class="dot-min"></span>
+                <span class="dot-max"></span>
+              </div>
+              <span class="step-win-title">install</span>
+            </div>
+            <div class="step-body">
+              <code class="step-command"><span class="prompt" aria-hidden="true">$</span><span class="cmd">pip install altergo</span></code>
+              <p class="step-caption">One pip command and you are ready. No dependencies, no compilation, pure Python standard library.</p>
             </div>
           </div>
-          <div class="how-step reveal reveal-delay-2" role="listitem">
-            <div class="step-number" aria-label="Step 2">2</div>
-            <div class="step-content">
-              <h3 class="step-title">Setup</h3>
-              <p class="step-desc">One-time configuration creates your alt account directory and wires up the symlinks automatically.</p>
-              <code class="step-code">altergo --setup</code>
+
+          <div class="how-step-sep" aria-hidden="true">&#8250;</div>
+
+          <div class="how-step reveal reveal-delay-2" role="listitem" aria-label="Step 2: Setup">
+            <div class="step-titlebar" aria-hidden="true">
+              <div class="step-dots">
+                <span class="dot-close"></span>
+                <span class="dot-min"></span>
+                <span class="dot-max"></span>
+              </div>
+              <span class="step-win-title">setup</span>
+            </div>
+            <div class="step-body">
+              <code class="step-command"><span class="prompt" aria-hidden="true">$</span><span class="cmd">altergo --setup</span></code>
+              <p class="step-caption">One-time configuration creates your alt account directory and wires up the symlinks automatically.</p>
             </div>
           </div>
-          <div class="how-step reveal reveal-delay-3" role="listitem">
-            <div class="step-number" aria-label="Step 3">3</div>
-            <div class="step-content">
-              <h3 class="step-title">Switch</h3>
-              <p class="step-desc">Run altergo any time to open the interactive session picker. Arrow keys or j/k to navigate, Enter to resume.</p>
-              <code class="step-code">altergo</code>
+
+          <div class="how-step-sep" aria-hidden="true">&#8250;</div>
+
+          <div class="how-step reveal reveal-delay-3" role="listitem" aria-label="Step 3: Switch">
+            <div class="step-titlebar" aria-hidden="true">
+              <div class="step-dots">
+                <span class="dot-close"></span>
+                <span class="dot-min"></span>
+                <span class="dot-max"></span>
+              </div>
+              <span class="step-win-title">switch</span>
+            </div>
+            <div class="step-body">
+              <code class="step-command"><span class="prompt" aria-hidden="true">$</span><span class="cmd">altergo</span></code>
+              <p class="step-caption">Run altergo any time to open the interactive session picker. Arrow keys or j/k to navigate, Enter to resume.</p>
             </div>
           </div>
         </div>
@@ -1779,8 +1824,8 @@
       <div class="container">
         <div class="reveal">
           <span class="section-label" aria-hidden="true">Features</span>
-          <h2 class="section-title" id="features-heading">Focused. Purposeful. Dependency-free.</h2>
-          <p class="section-subtitle">Focused, purposeful, and dependency-free. Built to do one thing exceptionally well.</p>
+          <h2 class="section-title" id="features-heading">One job. No entourage.</h2>
+          <p class="section-subtitle">A single Python file that does one thing and refuses to be dramatic about it.</p>
         </div>
 
         <div class="features-grid" role="list" aria-label="Feature list">
@@ -1881,7 +1926,7 @@
         <div class="install-inner">
           <div class="reveal">
             <span class="section-label" aria-hidden="true">Installation</span>
-            <h2 class="section-title" id="install-heading">Get started in seconds.</h2>
+            <h2 class="section-title" id="install-heading">Both of you, ready in seconds.</h2>
             <p class="section-subtitle">Choose your preferred install method. pip is the recommended path and always up to date.</p>
           </div>
 
@@ -1966,7 +2011,7 @@
       <div class="container">
         <div class="reveal">
           <span class="section-label" aria-hidden="true">Documentation</span>
-          <h2 class="section-title" id="docs-heading">Everything you need to know.</h2>
+          <h2 class="section-title" id="docs-heading">No hidden sides.</h2>
           <p class="section-subtitle">Quick reference for commands, credentials, and how the symlink model works under the hood.</p>
         </div>
 

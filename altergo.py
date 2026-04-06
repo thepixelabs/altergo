@@ -33,15 +33,14 @@ Navigation (session picker):
   Enter        Resume session      q/Esc        Quit
 """
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 import curses
+import json
 import os
 import pwd
-import re
+import shutil
 import sys
-import subprocess
-import json
 from datetime import datetime
 from pathlib import Path
 
@@ -224,14 +223,16 @@ def get_sessions():
             # Try to extract last user message as a preview
             preview = get_session_preview(f)
 
-            sessions.append({
-                "id": session_id,
-                "project": project_name,
-                "modified": mod_dt,
-                "size_mb": size_mb,
-                "path": f,
-                "preview": preview,
-            })
+            sessions.append(
+                {
+                    "id": session_id,
+                    "project": project_name,
+                    "modified": mod_dt,
+                    "size_mb": size_mb,
+                    "path": f,
+                    "preview": preview,
+                }
+            )
 
     sessions.sort(key=lambda s: s["modified"], reverse=True)
     return sessions
@@ -293,11 +294,11 @@ def _draw_picker(stdscr, sessions):
     curses.use_default_colors()
 
     # Init color pairs
-    curses.init_pair(1, curses.COLOR_BLACK, curses.COLOR_CYAN)   # selected
-    curses.init_pair(2, curses.COLOR_CYAN, -1)                    # header
-    curses.init_pair(3, curses.COLOR_YELLOW, -1)                  # project name
-    curses.init_pair(4, curses.COLOR_WHITE, -1)                   # session id
-    curses.init_pair(5, curses.COLOR_GREEN, -1)                   # time
+    curses.init_pair(1, curses.COLOR_BLACK, curses.COLOR_CYAN)  # selected
+    curses.init_pair(2, curses.COLOR_CYAN, -1)  # header
+    curses.init_pair(3, curses.COLOR_YELLOW, -1)  # project name
+    curses.init_pair(4, curses.COLOR_WHITE, -1)  # session id
+    curses.init_pair(5, curses.COLOR_GREEN, -1)  # time
 
     current = 0
     scroll_offset = 0
@@ -315,7 +316,7 @@ def _draw_picker(stdscr, sessions):
         # Column headers
         col_header = f"  {'Project':<20} {'Modified':<18} {'Size':>6}  {'Last message'}"
         stdscr.attron(curses.A_DIM)
-        stdscr.addnstr(2, 0, col_header[:max_x - 1], max_x - 1)
+        stdscr.addnstr(2, 0, col_header[: max_x - 1], max_x - 1)
         stdscr.attroff(curses.A_DIM)
 
         # Visible area
@@ -346,16 +347,16 @@ def _draw_picker(stdscr, sessions):
             # Truncate preview to fit
             preview_width = max(0, max_x - 50)
             if len(preview) > preview_width:
-                preview = preview[:preview_width - 1] + "…"
+                preview = preview[: preview_width - 1] + "…"
 
             line = f"  {project:<20} {modified:<18} {size:>6}  {preview}"
 
             if idx == current:
                 stdscr.attron(curses.color_pair(1) | curses.A_BOLD)
-                stdscr.addnstr(row, 0, f"▸ {line[2:]}"[:max_x - 1].ljust(max_x - 1), max_x - 1)
+                stdscr.addnstr(row, 0, f"▸ {line[2:]}"[: max_x - 1].ljust(max_x - 1), max_x - 1)
                 stdscr.attroff(curses.color_pair(1) | curses.A_BOLD)
             else:
-                stdscr.addnstr(row, 0, line[:max_x - 1], max_x - 1)
+                stdscr.addnstr(row, 0, line[: max_x - 1], max_x - 1)
 
         # Footer — show session ID of current selection
         footer_row = max_y - 2
@@ -363,12 +364,12 @@ def _draw_picker(stdscr, sessions):
             sid = sessions[current]["id"]
             footer = f" Session: {sid}"
             stdscr.attron(curses.A_DIM)
-            stdscr.addnstr(footer_row, 0, footer[:max_x - 1], max_x - 1)
+            stdscr.addnstr(footer_row, 0, footer[: max_x - 1], max_x - 1)
             stdscr.attroff(curses.A_DIM)
 
         count_info = f" {current + 1}/{len(sessions)} sessions"
         stdscr.attron(curses.A_DIM)
-        stdscr.addnstr(footer_row + 1, 0, count_info[:max_x - 1], max_x - 1)
+        stdscr.addnstr(footer_row + 1, 0, count_info[: max_x - 1], max_x - 1)
         stdscr.attroff(curses.A_DIM)
 
         stdscr.refresh()
@@ -399,10 +400,13 @@ def _draw_picker(stdscr, sessions):
 
 def launch_claude(args=None):
     """Launch claude with alt HOME, passing args through unchanged."""
+    claude_path = shutil.which("claude")
+    if not claude_path:
+        sys.exit("altergo: 'claude' not found in PATH")
     env = os.environ.copy()
     env["HOME"] = str(ALT_HOME)
-    cmd = ["claude"] + (args or [])
-    os.execvpe("claude", cmd, env)
+    cmd = [claude_path] + (args or [])
+    os.execvpe(claude_path, cmd, env)
 
 
 def launch_shell():
@@ -470,10 +474,7 @@ def main():
             project = format_project_name(s["project"])
             modified = s["modified"].strftime("%Y-%m-%d %H:%M")
             size = f"{s['size_mb']:.1f}MB"
-            print(
-                f"{_c(36, f'{project:<20}')} {_c(2, f'{modified:<18}')} {_c(33, f'{size:>6}')}"
-                f"  {s['id']}"
-            )
+            print(f"{_c(36, f'{project:<20}')} {_c(2, f'{modified:<18}')} {_c(33, f'{size:>6}')}  {s['id']}")
         sys.exit(0)
 
     # --resume with no ID → open interactive picker

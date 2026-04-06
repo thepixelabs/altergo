@@ -35,4 +35,4 @@ jobs:
       - run: python -m py_compile altergo.py
       - run: python altergo.py --version
       - run: pip install pytest
-      - run: pytest -v || true
+      - run: pytest -v

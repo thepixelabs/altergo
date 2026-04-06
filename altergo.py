@@ -40,6 +40,23 @@ import json
 from datetime import datetime
 from pathlib import Path
 
+# --- Terminal helpers ---
+
+
+def _c(code, text):
+    """Wrap text in ANSI color if stdout is a TTY."""
+    if not sys.stdout.isatty():
+        return text
+    return f"\033[{code}m{text}\033[0m"
+
+
+def _link(url, text):
+    """OSC 8 terminal hyperlink — clickable in supported terminals."""
+    if not sys.stdout.isatty():
+        return text
+    return f"\033]8;;{url}\033\\{text}\033]8;;\033\\"
+
+
 # --- Config ---
 
 # Resolve the real home even if HOME is overridden (e.g., running as altergo)
@@ -75,14 +92,17 @@ SYMLINK_FILES = [
 
 
 def do_setup():
-    print("=== Altergo — Setup ===\n")
+    header = f"altergo v{__version__} · " + _link("https://pixelabs.net", "pixelabs.net")
+    print(_c(2, header))
+    print(_c(1, _c(36, "=== Altergo — Setup ===")))
+    print()
 
     # 1. Create alt home
     if not ALT_HOME.exists():
         ALT_HOME.mkdir(parents=True)
-        print(f"Created alt home: {ALT_HOME}")
+        print(f"  {_c(32, '✓')} Created alt home: {ALT_HOME}")
     else:
-        print(f"  Alt home exists: {ALT_HOME}")
+        print(f"  {_c(32, '✓')} Alt home exists: {ALT_HOME}")
 
     # Ensure alt .claude dir exists
     ALT_CLAUDE.mkdir(parents=True, exist_ok=True)
@@ -93,23 +113,23 @@ def do_setup():
         dst = ALT_CLAUDE / name
 
         if not src.exists():
-            print(f"  Skip {name}/ (not found in main)")
+            print(f"  {_c(2, 'skip')} {name}/ (not found in main)")
             continue
 
         if dst.is_symlink():
             target = dst.resolve()
             if target == src.resolve():
-                print(f"  {name}/ already symlinked")
+                print(f"  {_c(32, '✓')} {name}/ already symlinked")
             else:
-                print(f"  Warning: {name}/ symlinked to {target} (expected {src})")
+                print(f"  {_c(33, '⚠')} {name}/ symlinked to {target} (expected {src})")
             continue
 
         if dst.exists():
-            print(f"  Warning: {name}/ exists as real dir — remove it first to symlink")
+            print(f"  {_c(33, '⚠')} {name}/ exists as real dir — remove it first to symlink")
             continue
 
         dst.symlink_to(src)
-        print(f"  Symlinked {name}/")
+        print(f"  {_c(32, '✓')} Symlinked {name}/")
 
     # 3. Symlink files
     for name in SYMLINK_FILES:
@@ -120,48 +140,54 @@ def do_setup():
             continue
 
         if dst.is_symlink():
-            print(f"  {name} already symlinked")
+            print(f"  {_c(32, '✓')} {name} already symlinked")
             continue
 
         if dst.exists():
             dst.unlink()
 
         dst.symlink_to(src)
-        print(f"  Symlinked {name}")
+        print(f"  {_c(32, '✓')} Symlinked {name}")
 
     # 4. Check credentials
     creds = ALT_CLAUDE / ".credentials.json"
     print()
     if creds.exists():
-        print("  Alt account credentials found")
+        print(f"  {_c(32, '✓')} Alt account credentials found")
     else:
-        print("  No alt account credentials found.")
-        print("  Run 'altergo new' to authenticate with your alt account.\n")
+        print(f"  {_c(33, '⚠')} No alt account credentials found.")
+        print("     Run 'altergo' to authenticate with your alt account.\n")
 
-    print("\nSetup complete!\n")
-    print("Usage:")
-    print("  altergo new                   Start a new session with alt credentials")
-    print("  altergo                       Interactive session picker")
-    print("  altergo --resume <session-id> Resume directly")
-    print("  altergo --list                List all sessions")
+    print()
+    print(_c(32, "Setup complete!"))
+    print()
+    print(_c(36, "Usage:"))
+    print(f"  {_c(1, 'altergo')}                       Start a new session with alt credentials")
+    print(f"  {_c(1, 'altergo --resume')}              Open interactive session picker")
+    print(f"  {_c(1, 'altergo --resume <session-id>')} Resume directly")
+    print(f"  {_c(1, 'altergo --list')}                List recent sessions")
 
 
 def do_teardown():
-    print("=== Altergo — Teardown ===\n")
+    header = f"altergo v{__version__} · " + _link("https://pixelabs.net", "pixelabs.net")
+    print(_c(2, header))
+    print(_c(1, _c(36, "=== Altergo — Teardown ===")))
+    print()
 
     for name in SYMLINK_DIRS:
         dst = ALT_CLAUDE / name
         if dst.is_symlink():
             dst.unlink()
-            print(f"  Removed symlink: {name}/")
+            print(f"  {_c(33, '✓')} Removed symlink: {name}/")
 
     for name in SYMLINK_FILES:
         dst = ALT_CLAUDE / name
         if dst.is_symlink():
             dst.unlink()
-            print(f"  Removed symlink: {name}")
+            print(f"  {_c(33, '✓')} Removed symlink: {name}")
 
-    print("\nTeardown complete. Alt home and credentials left intact.")
+    print()
+    print(_c(32, "Teardown complete.") + " Alt home and credentials left intact.")
 
 
 # --- Session Discovery ---
@@ -403,13 +429,17 @@ def main():
         if not sessions:
             print("No sessions found.")
             sys.exit(0)
-        print(f"{'Project':<20} {'Modified':<18} {'Size':>6}  Session ID")
-        print("-" * 80)
+        header_row = f"{'Project':<20} {'Modified':<18} {'Size':>6}  Session ID"
+        print(_c(2, header_row))
+        print(_c(2, "-" * 80))
         for s in sessions[:30]:
             project = format_project_name(s["project"])
             modified = s["modified"].strftime("%Y-%m-%d %H:%M")
             size = f"{s['size_mb']:.1f}MB"
-            print(f"{project:<20} {modified:<18} {size:>6}  {s['id']}")
+            print(
+                f"{_c(36, f'{project:<20}')} {_c(2, f'{modified:<18}')} {_c(33, f'{size:>6}')}"
+                f"  {s['id']}"
+            )
         sys.exit(0)
 
     # --resume with no ID → open interactive picker

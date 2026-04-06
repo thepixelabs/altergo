@@ -13,12 +13,17 @@ Usage:
   altergo --list                 List recent sessions
   altergo --setup                First-time setup (alt home, symlinks)
   altergo --teardown             Remove symlinks and undo setup
+  altergo shell                  Open an interactive shell inside alt HOME
+  altergo -- <cmd> [args...]     Run any command with HOME set to alt directory
   altergo --version              Show version
   altergo -h, --help             Show this help
 
 Examples:
   altergo                        Start a new session (same as: claude)
   altergo --resume               Open session picker
+  altergo shell                  Enter alt-HOME shell (run 'gh auth login' here)
+  altergo -- gh auth login       Authenticate gh CLI in alt HOME context
+  altergo -- git config --global user.email me@work.com
   altergo --dangerously-skip-permissions
                                  Pass any claude flag straight through
 
@@ -400,6 +405,35 @@ def launch_claude(args=None):
     os.execvpe("claude", cmd, env)
 
 
+def launch_shell():
+    """Open an interactive shell with HOME set to alt directory."""
+    env = os.environ.copy()
+    env["HOME"] = str(ALT_HOME)
+    # Prompt hint so users know they are in the alt context
+    shell = env.get("SHELL", "/bin/sh")
+    shell_name = Path(shell).name
+    # Prepend a marker to PS1 / PROMPT so the user sees they are in altergo context.
+    # We set it in env; the shell will use it if no .bashrc/.zshrc overrides it.
+    if shell_name in ("bash", "sh"):
+        env["PS1"] = env.get("PS1", r"\u@\h:\w\$ ").lstrip()
+        env["PS1"] = f"(altergo) {env['PS1']}"
+    elif shell_name == "zsh":
+        env["PROMPT"] = f"(altergo) {env.get('PROMPT', '%n@%m %~ %# ')}"
+    print(_c(36, f"Entering altergo shell (HOME={ALT_HOME})"))
+    print(_c(2, "Run 'exit' or Ctrl-D to return to your primary account.\n"))
+    os.execvpe(shell, [shell], env)
+
+
+def launch_command(cmd_args):
+    """Run an arbitrary command with HOME set to alt directory."""
+    if not cmd_args:
+        print(_c(31, "altergo -- requires a command. Example: altergo -- gh auth login"), file=sys.stderr)
+        sys.exit(1)
+    env = os.environ.copy()
+    env["HOME"] = str(ALT_HOME)
+    os.execvpe(cmd_args[0], cmd_args, env)
+
+
 # --- Main ---
 
 
@@ -451,6 +485,14 @@ def main():
         else:
             print("Cancelled.")
         sys.exit(0)
+
+    # altergo shell → interactive shell in alt HOME
+    if args and args[0] == "shell":
+        launch_shell()
+
+    # altergo -- <cmd> [args...] → run arbitrary command in alt HOME
+    if args and args[0] == "--":
+        launch_command(args[1:])
 
     # ── Everything else → pass straight through to claude with alt HOME ────────
     # altergo            → claude

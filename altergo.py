@@ -7,16 +7,22 @@ identities without losing a thought. Uses symlinks to share session data
 and a separate HOME for alt account credentials.
 
 Usage:
-  altergo                       Interactive session picker (↑/↓/j/k, Enter, q)
-  altergo new                   Start a new session with alt credentials
-  altergo --resume <id>         Resume a specific session directly
-  altergo --list                List all sessions
-  altergo --setup               First-time setup (alt home, symlinks)
-  altergo --teardown            Remove symlinks and undo setup
-  altergo --version             Show version
-  altergo -h, --help            Show this help
+  altergo [claude flags...]      Launch claude with alt credentials (pass-through)
+  altergo --resume               Pick a session interactively (↑/↓/j/k, Enter, q)
+  altergo --resume <id>          Resume a specific session directly
+  altergo --list                 List recent sessions
+  altergo --setup                First-time setup (alt home, symlinks)
+  altergo --teardown             Remove symlinks and undo setup
+  altergo --version              Show version
+  altergo -h, --help             Show this help
 
-Navigation (interactive picker):
+Examples:
+  altergo                        Start a new session (same as: claude)
+  altergo --resume               Open session picker
+  altergo --dangerously-skip-permissions
+                                 Pass any claude flag straight through
+
+Navigation (session picker):
   ↑/k          Move up             PgUp/PgDn    Page scroll
   ↓/j          Move down           g/G          Jump to top/bottom
   Enter        Resume session      q/Esc        Quit
@@ -357,24 +363,14 @@ def _draw_picker(stdscr, sessions):
             return None
 
 
-# --- Resume ---
+# --- Launch ---
 
 
-def resume_session(session_id, extra_args=None):
-    """Launch claude with alt HOME to resume a session."""
-    if not re.fullmatch(r'[a-fA-F0-9\-]{8,}', session_id):
-        print(f"Error: invalid session ID format: {session_id!r}")
-        sys.exit(1)
-
+def launch_claude(args=None):
+    """Launch claude with alt HOME, passing args through unchanged."""
     env = os.environ.copy()
     env["HOME"] = str(ALT_HOME)
-
-    cmd = ["claude", "--resume", session_id]
-    if extra_args:
-        cmd.extend(extra_args)
-
-    print(f"Launching claude with alt credentials...")
-    print(f"Session: {session_id}\n")
+    cmd = ["claude"] + (args or [])
     os.execvpe("claude", cmd, env)
 
 
@@ -384,42 +380,25 @@ def resume_session(session_id, extra_args=None):
 def main():
     args = sys.argv[1:]
 
-    if not args:
-        # Interactive mode
-        sessions = get_sessions()
-        selected = interactive_picker(sessions)
-        if selected:
-            resume_session(selected["id"])
-        else:
-            print("Cancelled.")
-            sys.exit(0)
+    # ── Altergo-owned commands (not passed to claude) ──────────────────────────
 
-    elif args[0] in ("-h", "--help"):
+    if args and args[0] in ("-h", "--help"):
         print(__doc__)
         sys.exit(0)
 
-    elif args[0] == "--version":
+    if args and args[0] == "--version":
         print(f"altergo {__version__}")
         sys.exit(0)
 
-    elif args[0] == "new":
-        env = os.environ.copy()
-        env["HOME"] = str(ALT_HOME)
-        os.execvpe("claude", ["claude"], env)
-
-    elif args[0] == "--setup":
+    if args and args[0] == "--setup":
         do_setup()
+        sys.exit(0)
 
-    elif args[0] == "--teardown":
+    if args and args[0] == "--teardown":
         do_teardown()
+        sys.exit(0)
 
-    elif args[0] == "--resume":
-        if len(args) < 2:
-            print("Error: provide a session ID")
-            sys.exit(1)
-        resume_session(args[1], args[2:])
-
-    elif args[0] == "--list":
+    if args and args[0] == "--list":
         sessions = get_sessions()
         if not sessions:
             print("No sessions found.")
@@ -431,10 +410,23 @@ def main():
             modified = s["modified"].strftime("%Y-%m-%d %H:%M")
             size = f"{s['size_mb']:.1f}MB"
             print(f"{project:<20} {modified:<18} {size:>6}  {s['id']}")
+        sys.exit(0)
 
-    else:
-        # Treat first arg as session ID for convenience
-        resume_session(args[0], args[1:])
+    # --resume with no ID → open interactive picker
+    if args and args[0] == "--resume" and len(args) == 1:
+        sessions = get_sessions()
+        selected = interactive_picker(sessions)
+        if selected:
+            launch_claude(["--resume", selected["id"]])
+        else:
+            print("Cancelled.")
+        sys.exit(0)
+
+    # ── Everything else → pass straight through to claude with alt HOME ────────
+    # altergo            → claude
+    # altergo --resume x → claude --resume x
+    # altergo --dangerously-skip-permissions → claude --dangerously-skip-permissions
+    launch_claude(args)
 
 
 if __name__ == "__main__":

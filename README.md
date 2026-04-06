@@ -52,14 +52,14 @@ Both accounts see the same sessions. Only credentials stay separate.
 ## Usage
 
 ```
-altergo                       Interactive session picker
-altergo new                   Start a new session with alt credentials
-altergo --resume <id>         Resume a specific session
-altergo --list                List all sessions
-altergo --setup               First-time setup (alt home + symlinks)
-altergo --teardown            Undo setup
-altergo --version             Show version
-altergo --help                Show help
+altergo                        Start a new session with alt credentials
+altergo --resume               Open interactive session picker
+altergo --resume <id>          Resume a specific session
+altergo --list                 List recent sessions
+altergo --setup                First-time setup
+altergo --teardown             Undo setup
+altergo --version              Show version
+altergo --help                 Show help
 ```
 
 ### Keyboard shortcuts (interactive picker)

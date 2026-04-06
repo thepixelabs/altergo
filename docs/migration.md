@@ -61,7 +61,7 @@ source ~/.zshrc
 ```bash
 altergo --version   # should print the installed version
 altergo --list      # should show your sessions
-altergo new         # should launch Claude Code with alt credentials
+altergo             # should launch Claude Code with alt credentials
 ```
 
 ### 5. Remove the old home directory (optional)
@@ -110,7 +110,7 @@ You cannot rewrite already-pushed commits without a force-push and coordination 
 
 The symlinks inside `~/.altergo/.claude/` may not have been created yet. Run `altergo --setup` and check the output for errors.
 
-**`altergo new` asks me to log in**
+**`altergo` asks me to log in**
 
 The credentials file was not copied or is not being read. Verify the file exists and is valid JSON:
 

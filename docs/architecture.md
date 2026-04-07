@@ -1,6 +1,6 @@
 # Architecture reference
 
-**Applies to:** altergo v0.4.0  
+**Applies to:** altergo v0.5.0  
 **Audience:** Engineers maintaining altergo, debugging symlink issues, or auditing what altergo touches on disk.
 
 For a prose explanation of why the architecture is designed this way, see [how-it-works.md](how-it-works.md).
@@ -11,14 +11,14 @@ For a prose explanation of why the architecture is designed this way, see [how-i
 
 ```
 altergo/
-    altergo.py              ← Entire implementation (single file, ~554 lines)
+    altergo.py              ← Entire implementation (single file, ~1068 lines)
     pyproject.toml          ← Package metadata, entry point, ruff config
     tests/
-        test_smoke.py       ← Import, version, --version, --help smoke tests
+        test_smoke.py       ← Import, version, --version, --help, account, migration, and symlink tests
     docs/
         how-it-works.md     ← Technical deep dive
         architecture.md     ← This file
-        migration.md        ← Migration from claude100-resume
+        migration.md        ← Migration guides
         index.html          ← Project website (deployed via GitHub Pages)
         ...
     .github/
@@ -26,9 +26,11 @@ altergo/
             ci.yml          ← Lint (ruff) + test matrix (Python 3.9–3.13, ubuntu + macos)
             release.yml     ← PyPI publish on tag push
             pages.yml       ← GitHub Pages deploy
+            security.yml    ← Dependency security scan
+            homebrew-bump.yml ← Homebrew formula bump on release
 ```
 
-altergo has zero runtime dependencies. Everything it uses — `curses`, `json`, `os`, `pwd`, `shutil`, `sys`, `pathlib`, `datetime` — is Python standard library.
+altergo has zero runtime dependencies. Everything it uses — `curses`, `json`, `os`, `pwd`, `re`, `shutil`, `sys`, `pathlib`, `datetime` — is Python standard library.
 
 ---
 
@@ -38,25 +40,24 @@ The entire program is one file. Here is a map of its logical sections:
 
 | Line range | Section | Purpose |
 |---|---|---|
-| 1–34 | Module docstring | Usage reference (also shown in `--help` fallback) |
-| 36 | `__version__` | Semver string, source of truth for version |
-| 38–45 | Imports | Standard library only |
-| 50–54 | `_c()` | ANSI color helper — no-ops when stdout is not a TTY |
-| 57–62 | `_link()` | OSC 8 terminal hyperlink — no-ops when stdout is not a TTY |
-| 64–109 | `show_help()` | Colored, hyperlinked help output |
-| 115–141 | Config constants | `MAIN_HOME`, `ALT_HOME`, `SYMLINK_DIRS`, `SYMLINK_FILES` |
-| 146–220 | `do_setup()` | Creates `~/.altergo/`, creates symlinks, checks for credentials |
-| 223–243 | `do_teardown()` | Removes symlinks only (leaves credentials and alt home intact) |
-| 248–285 | `get_sessions()` | Discovers all session JSONL files, returns sorted list |
-| 289–316 | `get_session_preview()` | Reads last 8KB of a session file to extract last user message |
-| 319–324 | `format_project_name()` | Decodes Claude's encoded directory names back to readable form |
-| 330–337 | `interactive_picker()` | Curses wrapper entry point |
-| 340–443 | `_draw_picker()` | Curses rendering loop and keyboard handler |
-| 449–468 | `_build_alt_env()` | Builds the modified environment dict (HOME + conditional PATH) |
-| 471–478 | `launch_claude()` | Resolves claude binary, calls `_build_alt_env`, execs claude |
-| 481–496 | `launch_shell()` | Opens interactive shell with alt HOME and PS1/PROMPT prefix |
-| 499–505 | `launch_command()` | Execs arbitrary command with alt HOME |
-| 511–573 | `main()` | Argument dispatch — routes to the appropriate function |
+| 1–3 | Module docstring | One-line description |
+| 4 | `__version__` | Semver string, source of truth for version |
+| 6–14 | Imports | Standard library only |
+| 19–23 | `_c()` | ANSI color helper — no-ops when stdout is not a TTY |
+| 26–30 | `_link()` | OSC 8 terminal hyperlink — no-ops when stdout is not a TTY |
+| 33–93 | `show_help()` | Colored, hyperlinked help output |
+| 98–127 | Config constants | `MAIN_HOME`, `MAIN_CLAUDE`, `ACCOUNTS_DIR`, `_RESERVED_NAMES`, `SETTINGS_FILE` |
+| 132–144 | Account helpers | `resolve_account()`, `list_accounts()`, `validate_account_name()` |
+| 161–187 | Migration | `detect_legacy()`, `migrate_legacy()` |
+| 192–310 | Symlink catalogs | `SYMLINK_DIRS`, `SYMLINK_FILES`, `CATALOG` |
+| 314–391 | Settings helpers | `load_settings()`, `save_settings()`, `is_enabled()`, `_ensure_nested_parent()`, `_apply_entry()` |
+| 397–505 | Setup / Teardown | `do_setup()`, `do_teardown()` |
+| 511–587 | Session discovery | `get_sessions()`, `get_session_preview()`, `format_project_name()` |
+| 590–706 | Interactive picker | `interactive_picker()`, `_draw_picker()` |
+| 709–852 | Settings TUI | `interactive_settings()`, `_draw_settings()` |
+| 855–947 | Launch | `_build_alt_env()`, `_find_claude()`, `launch_claude()`, `launch_shell()`, `launch_command()` |
+| 950–965 | Disambiguation | `_KNOWN_COMMANDS`, `_looks_like_account()` |
+| 968–1067 | `main()` | Argument dispatch — routes to the appropriate function |
 
 ---
 
@@ -85,144 +86,257 @@ The following describes the filesystem state after `altergo --setup` has been ru
     keybindings.json
 ```
 
-### Alt account home
+### Accounts directory
+
+All altergo accounts live under `~/.altergo/accounts/`. The `default` account is used when you run `altergo` with no account name. Named accounts (e.g. `work`, `client-a`) are created with `altergo --setup --name <name>`.
 
 ```
 ~/.altergo/
-    .claude/
-        .credentials.json       ← Real file. Isolated alt credentials. Created on first login.
-        projects/               ← Symlink → ~/.claude/projects/
-        tasks/                  ← Symlink → ~/.claude/tasks/
-        session-env/            ← Symlink → ~/.claude/session-env/
-        file-history/           ← Symlink → ~/.claude/file-history/
-        shell-snapshots/        ← Symlink → ~/.claude/shell-snapshots/
-        agents/                 ← Symlink → ~/.claude/agents/
-        plans/                  ← Symlink → ~/.claude/plans/
-        cache/                  ← Symlink → ~/.claude/cache/
-        settings.json           ← Symlink → ~/.claude/settings.json
-        CLAUDE.md               ← Symlink → ~/.claude/CLAUDE.md
-        keybindings.json        ← Symlink → ~/.claude/keybindings.json
+    .altergo.json                   ← Settings file (global, shared across all accounts)
+    .legacy-backup/                 ← Backup of pre-v0.5 layout (present after auto-migration only)
+    accounts/
+        default/                    ← Default account home (HOME for plain `altergo`)
+            .claude/
+                .credentials.json   ← Real file. Isolated credentials. Created on first login.
+                projects/           ← Symlink → ~/.claude/projects/
+                tasks/              ← Symlink → ~/.claude/tasks/
+                session-env/        ← Symlink → ~/.claude/session-env/
+                file-history/       ← Symlink → ~/.claude/file-history/
+                shell-snapshots/    ← Symlink → ~/.claude/shell-snapshots/
+                agents/             ← Symlink → ~/.claude/agents/
+                plans/              ← Symlink → ~/.claude/plans/
+                cache/              ← Symlink → ~/.claude/cache/
+                settings.json       ← Symlink → ~/.claude/settings.json
+                CLAUDE.md           ← Symlink → ~/.claude/CLAUDE.md
+                keybindings.json    ← Symlink → ~/.claude/keybindings.json
+            .aws/                   ← Symlink → ~/.aws/ (if AWS sharing is enabled)
+            .config/
+                gh/                 ← Symlink → ~/.config/gh/ (if GitHub CLI sharing is enabled)
+                gcloud/             ← Symlink → ~/.config/gcloud/ (if Google Cloud sharing enabled)
+                ...
+            .docker/                ← Symlink → ~/.docker/ (if Docker sharing is enabled)
+            ...
+
+        work/                       ← Named account home (HOME for `altergo work`)
+            .claude/
+                .credentials.json   ← Real file. Isolated credentials.
+                projects/           ← Symlink → ~/.claude/projects/ (same target)
+                ...                 ← Same symlink structure as default
+            .aws/                   ← Symlink → ~/.aws/ (same shared credentials as default)
+            ...
 
     # Written by Claude Code during normal usage (not managed by altergo):
-    .local/bin/claude           ← Created if 'claude update' is run inside altergo
-    .config/gh/                 ← Created if 'altergo shell' + 'gh auth login' is used
-    .gitconfig                  ← Created if 'git config --global' is run inside altergo
-    .ssh/                       ← Read/written if SSH operations happen inside altergo
-    Library/Application Support/claude/   ← macOS only, Electron app support data
-
-    # Unmanaged state written by Claude Code (accumulates over time):
-    .claude/paste-cache/        ← Ephemeral paste buffer (isolated per account)
-    .claude/plugins/            ← Plugin state (isolated per account, probably unintentional)
+    accounts/default/.local/bin/claude     ← Created if 'claude update' runs inside altergo
+    accounts/default/Library/Application Support/claude/  ← macOS only
 ```
+
+### Settings file placement
+
+`~/.altergo/.altergo.json` sits at the `~/.altergo/` level, above `accounts/`. It is global — one file shared across all accounts. This is intentional: credential-sharing preferences (AWS, Docker, etc.) apply to the relationship between the main home and the alt account, not to a specific account. See [how-it-works.md](how-it-works.md) for the rationale.
+
+---
+
+## Account name validation
+
+Account names must pass `validate_account_name()`:
+
+- Match `^[a-zA-Z0-9][a-zA-Z0-9_-]*$` (alphanumeric start, then alphanumeric, `-`, or `_`)
+- Maximum 64 characters
+- Must not be in `_RESERVED_NAMES`: `default`, `main`, `list`, `new`, `rm`, `shell`, `setup`, `teardown`, `help`, `version`, `legacy`, `backup`, `migrate`
+
+`validate_account_name()` is called only during `--setup --name <name>`. It is not called during account lookup in `main()` — if the directory does not exist, the user sees a "not found" error with a hint to run `--setup --name`.
+
+---
+
+## `ACCOUNTS_DIR` and account helpers
+
+| Function | Signature | Returns |
+|---|---|---|
+| `resolve_account` | `(name: str) -> tuple` | `(account_home, account_claude)` — both are `Path` objects |
+| `list_accounts` | `() -> list` | Sorted list of account name strings that exist on disk; skips entries starting with `.` |
+| `validate_account_name` | `(name: str) -> None` | Raises `SystemExit` if the name is invalid or reserved |
+
+`ACCOUNTS_DIR` is `MAIN_HOME / ".altergo" / "accounts"`. `resolve_account("work")` returns `(ACCOUNTS_DIR / "work", ACCOUNTS_DIR / "work" / ".claude")`.
+
+---
+
+## Account disambiguation in `main()`
+
+When the first argument is not a known flag or subcommand, `main()` checks whether it could be an account name using `_looks_like_account()`:
+
+```
+_KNOWN_COMMANDS = frozenset([
+    "shell", "--resume", "--list", "--setup", "--teardown",
+    "--settings", "--version", "-h", "--help", "--"
+])
+
+_looks_like_account(token):
+    → False if token starts with "-"
+    → False if token is in _KNOWN_COMMANDS
+    → True  if token matches ^[a-zA-Z0-9][a-zA-Z0-9_-]*$
+```
+
+If `_looks_like_account` returns `True`, `main()` checks whether `ACCOUNTS_DIR / token` exists on disk. If it does not exist, altergo exits with a clear error and a hint. If it does exist, the token is consumed as the account name and the remaining arguments are processed as the sub-command or claude flags.
+
+This means `altergo --dangerously-skip-permissions` passes `--dangerously-skip-permissions` straight through to claude (starts with `-`, so not an account name), while `altergo work` routes to the `work` account.
+
+---
+
+## Auto-migration: `detect_legacy()` and `migrate_legacy()`
+
+`detect_legacy()` returns `True` when both of these conditions hold:
+1. `~/.altergo/.claude/` exists (the old v0.4.x single-account layout)
+2. `~/.altergo/accounts/` does not yet exist
+
+`migrate_legacy()` runs at the top of `main()` on every invocation. When `detect_legacy()` returns `True`, it performs the migration in five steps:
+
+1. Rename `~/.altergo/` to `/tmp/altergo-migrate-<pid>/`
+2. Create `~/.altergo/accounts/`
+3. Rename `/tmp/altergo-migrate-<pid>/` to `~/.altergo/accounts/default/`
+4. Copy `accounts/default/` to `~/.altergo/.legacy-backup/` (preserving symlinks)
+5. Print exactly one line describing the migration
+
+The use of `/tmp/` as an intermediate staging area means the rename in step 1 is atomic on the local filesystem (same device). If the process is interrupted between steps 1 and 3, the data sits safely in `/tmp/` under a PID-qualified name. The migration is idempotent: once `accounts/` exists, `detect_legacy()` returns `False` and `migrate_legacy()` returns immediately without printing anything.
 
 ---
 
 ## Symlink reference table
 
-Every entry in `SYMLINK_DIRS` and `SYMLINK_FILES` is listed here with its rationale.
+Every entry in `SYMLINK_DIRS`, `SYMLINK_FILES`, and `CATALOG` is described here.
 
-### Shared directories (`SYMLINK_DIRS`)
+### Inside `account_home/.claude/` — shared session data (`SYMLINK_DIRS`)
 
 | Directory | Contains | Why shared |
 |---|---|---|
-| `projects/` | Session JSONL files, one subdirectory per working-directory path | Sessions are indexed by filesystem path, not by account. Both accounts work on the same codebases. Sharing this is the primary purpose of altergo. |
+| `projects/` | Session JSONL files, one subdirectory per working-directory path | Sessions are indexed by filesystem path, not by account. All accounts work on the same codebases. Sharing this is the primary purpose of altergo. |
 | `tasks/` | Task files from Claude's task system | Tasks are scoped to a project, not to an account. You want the same task context regardless of which account is active. |
-| `session-env/` | Shell environment snapshots captured at session start | These are per-session, not per-account. Sharing gives both accounts access to the same environment history. |
+| `session-env/` | Shell environment snapshots captured at session start | These are per-session, not per-account. Sharing gives all accounts access to the same environment history. |
 | `file-history/` | File access history | Context about which files were recently opened. Account-agnostic. |
 | `shell-snapshots/` | Shell state captures | Per-session snapshots. No reason to isolate by account. |
 | `agents/` | Agent definition files | Agent configurations are per-project. Sharing means you do not need to recreate agents in each account. |
 | `plans/` | Plan files | Plans are project work context, not account state. |
-| `cache/` | Response cache | Content-addressed cache. Sharing means neither account re-fetches what the other already fetched, reducing latency and API cost. |
+| `cache/` | Response cache | Content-addressed cache. Sharing means no account re-fetches what another already fetched, reducing latency and API cost. |
 
-### Shared files (`SYMLINK_FILES`)
+### Inside `account_home/.claude/` — shared config (`SYMLINK_FILES`)
 
 | File | Contains | Why shared |
 |---|---|---|
-| `settings.json` | Editor settings, feature flags, UI preferences | Settings express personal workflow preferences, not account state. You want the same editor behavior from both accounts. |
-| `CLAUDE.md` | Global system prompt and instructions for Claude | Instructions are how you configure Claude's behavior. Both accounts should follow the same instructions. |
+| `settings.json` | Editor settings, feature flags, UI preferences | Settings express personal workflow preferences, not account state. |
+| `CLAUDE.md` | Global system prompt and instructions for Claude | Instructions are how you configure Claude's behavior. All accounts should follow the same instructions. |
 | `keybindings.json` | Custom key mappings | Muscle memory is account-agnostic. |
+
+### At `account_home/` level — shared CLI tool credentials (`CATALOG`)
+
+These symlinks live directly in the account home (e.g., `~/.altergo/accounts/work/.aws`), not inside `.claude/`. This placement means they are available to any tool that reads `$HOME` — not just Claude Code.
+
+| Entry | Paths | Default | Notes |
+|---|---|---|---|
+| AWS CLI | `.aws` | On | |
+| Google Cloud | `.config/gcloud` | On | |
+| Azure CLI | `.azure`, `.config/azure` | On | Two paths, both symlinked |
+| Docker | `.docker` | On | |
+| Kubernetes | `.kube` | On | |
+| Terraform | `.terraform.d` | On | |
+| GitHub CLI | `.config/gh` | On | |
+| GitLab CLI | `.config/glab` | Off | |
+| npm | `.npmrc` | Off | |
+| SSH keys | `.ssh` | Off | Shares keys and known_hosts |
+| Git identity | `.gitconfig` | Off | Shares user.name/email |
+| GPG keys | `.gnupg` | Off | Shares keyring |
 
 ### Isolated (real file, not symlinked)
 
 | Path | Why isolated |
 |---|---|
-| `~/.altergo/.claude/.credentials.json` | This is the entire purpose of altergo. Each account must authenticate separately. Sharing credentials would make the accounts identical. |
+| `~/.altergo/accounts/<name>/.claude/.credentials.json` | This is the entire purpose of altergo. Each account must authenticate separately. |
 
 ### Unmanaged (written by Claude Code, not tracked by altergo)
 
 | Path | Notes |
 |---|---|
-| `~/.altergo/.claude/paste-cache/` | Ephemeral. Safe to leave isolated. |
-| `~/.altergo/.claude/plugins/` | Plugin state is isolated per-account. If you use plugins and want them shared, manually symlink this directory after running setup. |
+| `~/.altergo/accounts/<name>/.claude/paste-cache/` | Ephemeral. Safe to leave isolated. |
+| `~/.altergo/accounts/<name>/.claude/plugins/` | Plugin state is isolated per-account. If you use plugins and want them shared, manually symlink this directory after running setup. |
 
 ---
 
 ## Environment modifications at launch
 
-`_build_alt_env()` returns a modified copy of `os.environ`. It never mutates the live environment (no `os.environ["HOME"] = ...`). The modified dict is passed to `os.execvpe` and becomes the child process's environment. The calling Python process's environment is unchanged.
+`_build_alt_env(account)` returns a modified copy of `os.environ`. It never mutates the live environment. The modified dict is passed to `os.execvpe` and becomes the child process's environment.
 
 | Variable | Modification | Condition |
 |---|---|---|
-| `HOME` | Set to `~/.altergo` | Always |
-| `PATH` | `~/.altergo/.local/bin` prepended | Only if `~/.altergo/.local/bin` exists on disk AND is not already in PATH |
-| `PS1` | `(altergo) ` prefix prepended | Only in `launch_shell()`, only for bash/sh |
-| `PROMPT` | `(altergo) ` prefix prepended | Only in `launch_shell()`, only for zsh |
+| `HOME` | Set to `~/.altergo/accounts/<name>` | Always |
+| `PATH` | `~/.altergo/accounts/<name>/.local/bin` prepended | Only if that directory exists on disk AND is not already in PATH |
+| `PS1` | `(altergo:<name>) ` prefix prepended | Only in `launch_shell()`, only for bash/sh |
+| `PROMPT` | `(altergo:<name>) ` prefix prepended | Only in `launch_shell()`, only for zsh |
 
-All other environment variables are passed through unchanged. altergo does not strip, sanitize, or modify any other variable.
+All other environment variables pass through unchanged.
+
+### Claude binary resolution
+
+`_find_claude()` is called before `_build_alt_env()`. It first calls `shutil.which("claude")` against the unmodified `PATH`. If that fails, it tries four hardcoded fallback paths (native install default, npm global prefix, Homebrew on Apple Silicon, Homebrew on Intel). The absolute path returned is passed to `os.execvpe` so no PATH search occurs at exec time.
 
 ---
 
 ## Data flow: invocation to Claude Code running
 
 ```
-User runs: altergo [args]
+User runs: altergo [account] [args]
 │
 ├─ Python starts altergo.py
 │
 ├─ Module-level: resolve MAIN_HOME
 │   pwd.getpwuid(os.getuid()).pw_dir        ← reads /etc/passwd (or Directory Services)
 │   Falls back to os.environ["HOME"] only if passwd entry path does not exist
-│   MAIN_HOME = resolved real home
-│   ALT_HOME  = MAIN_HOME / ".altergo"
+│   MAIN_HOME    = resolved real home
+│   MAIN_CLAUDE  = MAIN_HOME / ".claude"
+│   ACCOUNTS_DIR = MAIN_HOME / ".altergo" / "accounts"
 │
-├─ main(): parse sys.argv[1:]
+├─ main()
+│   ├─ migrate_legacy()                     ← runs on every invocation; no-op if new layout
 │   │
-│   ├─ -h / --help      → show_help()           → sys.exit(0)
-│   ├─ --version        → print version         → sys.exit(0)
-│   ├─ --setup          → do_setup()            → sys.exit(0)
-│   ├─ --teardown       → do_teardown()         → sys.exit(0)
-│   ├─ --list           → get_sessions()        → print table → sys.exit(0)
+│   ├─ parse sys.argv[1:]
+│   │   ├─ -h / --help      → show_help()           → sys.exit(0)
+│   │   ├─ --version        → print version         → sys.exit(0)
+│   │   ├─ --setup [--name <n>]  → do_setup(n)      → sys.exit(0)
+│   │   ├─ --teardown [--name <n>] → do_teardown(n) → sys.exit(0)
+│   │   ├─ --settings       → interactive_settings() → sys.exit(0)
+│   │   ├─ --list           → get_sessions() → print table → sys.exit(0)
+│   │   │
+│   │   ├─ --resume (alone)
+│   │   │   └─ get_sessions() → interactive_picker() → user selects
+│   │   │       ├─ selected  → launch_claude("default", ["--resume", id])
+│   │   │       └─ cancelled → sys.exit(0)
+│   │   │
+│   │   ├─ _looks_like_account(args[0]) ?
+│   │   │   ├─ yes, dir exists → account = args[0]; args = args[1:]
+│   │   │   └─ yes, dir missing → print error + hint → sys.exit(1)
+│   │   │
+│   │   ├─ [account] shell → launch_shell(account)
+│   │   ├─ [account] -- <cmd> [args] → launch_command(account, args[1:])
+│   │   └─ anything else   → launch_claude(account, args)
 │   │
-│   ├─ --resume (alone)
-│   │   └─ get_sessions() → interactive_picker() → user selects
-│   │       ├─ selected  → launch_claude(["--resume", id])
-│   │       └─ cancelled → sys.exit(0)
-│   │
-│   ├─ shell            → launch_shell()
-│   ├─ -- <cmd> [args]  → launch_command(args[1:])
-│   └─ anything else    → launch_claude(args)
-│
-└─ launch_claude(args) / launch_shell() / launch_command(args)
+└─ launch_claude(account, args) / launch_shell(account) / launch_command(account, args)
     │
-    ├─ shutil.which("claude")   ← resolves from CURRENT (unmodified) PATH
+    ├─ _find_claude()         ← resolves from CURRENT (unmodified) PATH + fallbacks
     │
-    ├─ _build_alt_env()
+    ├─ _build_alt_env(account)
     │   ├─ env = os.environ.copy()
-    │   ├─ env["HOME"] = str(ALT_HOME)          ← always
-    │   └─ if ALT_HOME/.local/bin exists:
-    │       prepend to env["PATH"]              ← conditional
+    │   ├─ env["HOME"] = str(ACCOUNTS_DIR / account)    ← always
+    │   └─ if account_home/.local/bin exists:
+    │       prepend to env["PATH"]                      ← conditional
     │
     └─ os.execvpe(binary, [binary] + args, env)
         │
         └─ PROCESS IMAGE REPLACED
-           altergo no longer exists.
            Claude Code (or shell, or command) runs as the same PID.
            It reads:
-             $HOME/.claude/.credentials.json    ← ~/.altergo/.claude/.credentials.json (real, alt)
-             $HOME/.claude/projects/            ← ~/.altergo/.claude/projects/ → ~/.claude/projects/
-             $HOME/.claude/settings.json        ← ~/.altergo/.claude/settings.json → ~/.claude/settings.json
-             $HOME/.claude/CLAUDE.md            ← ~/.altergo/.claude/CLAUDE.md → ~/.claude/CLAUDE.md
-             ... (all other symlinked entries) ...
+             $HOME/.claude/.credentials.json    ← account-specific real file
+             $HOME/.claude/projects/            ← symlink → ~/.claude/projects/
+             $HOME/.claude/settings.json        ← symlink → ~/.claude/settings.json
+             $HOME/.claude/CLAUDE.md            ← symlink → ~/.claude/CLAUDE.md
+             $HOME/.aws/                        ← symlink → ~/.aws/ (if enabled)
+             ... (all other catalog symlinks) ...
 ```
 
 ---
@@ -243,7 +357,9 @@ where `<encoded-path>` is the absolute working directory path with `/` replaced 
 
 Each line in the JSONL file is a JSON object. altergo only reads lines where `"type": "human"` to extract the last user message for the session preview. It reads only the last 8KB of the file to avoid parsing multi-megabyte session histories in full.
 
-The session ID (the filename stem) is a UUID that Claude Code generates. altergo passes it verbatim to `claude --resume <id>` — it does not interpret or modify it.
+The session ID (the filename stem) is a UUID that Claude Code generates. altergo passes it verbatim to `claude --resume <id>`.
+
+Because `projects/` is symlinked to the same target for every account, sessions are globally visible across all altergo accounts regardless of which account created them.
 
 ---
 
@@ -256,14 +372,12 @@ The session ID (the filename stem) is a UUID that Claude Code generates. altergo
 - If the destination exists as a real directory (not a symlink), it warns and skips — it does not delete real data.
 - If the source (`~/.claude/<name>`) does not exist yet, it skips the entry — it does not create dangling symlinks.
 
-`do_teardown()` removes only symlinks. It does not touch real files or directories. `~/.altergo/.claude/.credentials.json` is never removed by teardown.
+`do_teardown()` removes only symlinks. It does not touch real files or directories. `.credentials.json` is never removed by teardown.
 
 ---
 
 ## Python version compatibility
 
 altergo targets Python 3.9+ (`requires-python = ">=3.9"` in pyproject.toml). The CI matrix runs against 3.9, 3.10, 3.11, 3.12, and 3.13 on both ubuntu-latest and macos-latest.
-
-The only Python version constraint visible in the code is the use of `pathlib.Path`, f-strings, and walrus operator — none of which require anything beyond 3.8. The 3.9 floor comes from the package metadata rather than any specific language feature used in the code.
 
 No type annotations are used in the source; the code predates the decision to add them and the implementation is short enough that they are not necessary for comprehension.

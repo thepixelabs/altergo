@@ -1897,6 +1897,21 @@
             <h3>Zero Dependencies</h3>
             <p>Ships as a single Python file. Relies entirely on the standard library — nothing to audit, nothing to break.</p>
           </div>
+          <div class="feature-item reveal reveal-delay-6" role="listitem" style="--shimmer-duration:10s; --shimmer-delay:4.0s">
+            <div class="feature-icon" aria-hidden="true">
+              <!-- checklist/sliders icon representing per-tool settings -->
+              <svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="var(--indigo-bright)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="3" y1="6" x2="19" y2="6"/>
+                <line x1="3" y1="11" x2="19" y2="11"/>
+                <line x1="3" y1="16" x2="19" y2="16"/>
+                <circle cx="7" cy="6" r="2" fill="rgba(99,102,241,0.25)" stroke="var(--indigo-bright)" stroke-width="1.3"/>
+                <circle cx="14" cy="11" r="2" fill="rgba(0,229,255,0.2)" stroke="var(--cyan)" stroke-width="1.3"/>
+                <circle cx="9" cy="16" r="2" fill="rgba(99,102,241,0.25)" stroke="var(--indigo-bright)" stroke-width="1.3"/>
+              </svg>
+            </div>
+            <h3>Per-tool Credential Settings</h3>
+            <p>Choose which CLI tools share credentials between accounts with <code>altergo --settings</code> — a curses TUI with arrow keys, space to toggle, and <kbd>s</kbd> to save. Changes apply immediately. Settings persist to <code>~/.altergo/.altergo.json</code>.</p>
+          </div>
           <div class="feature-item reveal reveal-delay-6" role="listitem" style="--shimmer-duration:12s; --shimmer-delay:7.3s">
             <div class="feature-icon" aria-hidden="true">
               <!-- document with preview text lines and a cursor -->
@@ -2032,8 +2047,9 @@
                 <tr><td>altergo --list</td><td>Print recent sessions as a plain table</td></tr>
                 <tr><td>altergo --setup</td><td>First-time setup: create alt home, wire symlinks</td></tr>
                 <tr><td>altergo --teardown</td><td>Remove symlinks (alt home + credentials untouched)</td></tr>
-                <tr><td>altergo shell</td><td>Open an interactive shell running inside alt HOME</td></tr>
-                <tr><td>altergo -- &lt;cmd&gt;</td><td>Run any command with HOME set to alt directory</td></tr>
+                <tr><td>altergo --settings</td><td>Configure which CLI tool credentials are shared (interactive TUI)</td></tr>
+                <tr><td>altergo shell</td><td>Power-user escape hatch — interactive shell inside alt HOME</td></tr>
+                <tr><td>altergo -- &lt;cmd&gt;</td><td>Power-user escape hatch — run one command with HOME set to alt directory</td></tr>
                 <tr><td>altergo --version</td><td>Show version number</td></tr>
                 <tr><td>altergo --help</td><td>Show help text</td></tr>
               </tbody>
@@ -2050,7 +2066,8 @@
             </h3>
             <p class="docs-note">altergo isolates credentials by setting <code>HOME=~/.altergo</code> for the Claude process. Your alt account's <code>.credentials.json</code> lives at <code>~/.altergo/.claude/.credentials.json</code>.</p>
             <p class="docs-note"><strong>macOS users:</strong> Claude Code may store tokens in the system Keychain rather than a flat file. This is expected — when you authenticate inside <code>altergo</code>, the token is stored under a separate Keychain entry keyed to your alt account email. The <code>~/.altergo/.claude/</code> directory may appear empty even though auth works correctly.</p>
-            <p class="docs-note"><strong>Other tools (gh, git, etc.):</strong> Use <code>altergo shell</code> to open a shell inside the alt HOME, then run <code>gh auth login</code> or configure <code>git</code>. Those credentials will persist in the alt HOME and be available every time you run <code>altergo</code>.</p>
+            <p class="docs-note"><strong>Per-tool credential sharing:</strong> Run <code>altergo --settings</code> to choose which CLI tools share credentials between accounts. Cloud providers (AWS, gcloud, Azure), Docker, Kubernetes, Terraform, and GitHub CLI are shared by default. Identity tools (SSH keys, git identity, GPG) are isolated by default. Settings persist to <code>~/.altergo/.altergo.json</code>.</p>
+            <p class="docs-note"><strong>One-off auth commands:</strong> <code>altergo shell</code> and <code>altergo -- &lt;cmd&gt;</code> are power-user escape hatches for running commands in the alt HOME context directly — useful for tools not covered by <code>--settings</code>, or for one-time setup tasks like <code>altergo -- gh auth login</code>.</p>
           </div>
 
           <!-- What gets symlinked -->
@@ -2079,6 +2096,7 @@
             <div class="docs-symlink-list" role="list">
               <span class="docs-symlink-tag separate" role="listitem">.credentials.json</span>
             </div>
+            <p class="docs-note" style="margin-top:12px;"><strong>CLI tool credentials</strong> — shared or isolated per tool, configurable via <code>altergo --settings</code>. Shared by default: <code>.aws</code>, <code>.config/gcloud</code>, <code>.azure</code>, <code>.docker</code>, <code>.kube</code>, <code>.terraform.d</code>, <code>.config/gh</code>. Isolated by default: <code>.config/glab</code>, <code>.npmrc</code>, <code>.ssh</code>, <code>.gitconfig</code>, <code>.gnupg</code>.</p>
           </div>
 
           <!-- Compatibility & disclaimer -->

@@ -2,6 +2,8 @@
 
 **Applies to:** Anyone who used `claude100-resume` or manually configured `~/claude100-home/` as an alt account home.
 
+If you are coming from a bare shell alias (not `claude100-resume`) — for example `alias claude2='HOME=~/claude2-home claude'` — the same steps apply: copy `.credentials.json` to `~/.altergo/.claude/`, run `altergo --setup`, and remove the alias.
+
 ---
 
 ## What changed
@@ -74,6 +76,23 @@ rm -rf ~/claude100-home
 
 Do not delete it until you are sure you have copied everything you need. The only file that cannot be recovered without logging in again is `.credentials.json`.
 
+### Checking for unmanaged directories
+
+If you had been using the old alt home for a while, Claude Code may have written directories that altergo does not manage. Check for them before removing the old directory:
+
+```bash
+ls ~/claude100-home/.claude/
+```
+
+Two directories in particular — `paste-cache/` and `plugins/` — are written by Claude Code but are not in altergo's symlink list. `paste-cache/` is ephemeral and safe to ignore. If `plugins/` exists and you use Claude Code plugins, you may want to manually symlink it after setup:
+
+```bash
+# Only do this if plugins/ exists in your primary ~/.claude/ and you want it shared
+ln -s ~/.claude/plugins ~/.altergo/.claude/plugins
+```
+
+See [architecture.md](architecture.md#unmanaged-not-tracked-by-altergo) for the full explanation of unmanaged state.
+
 ---
 
 ## Git author identity
@@ -123,3 +142,10 @@ If the file is missing, repeat step 1. If it is present but login still fails, t
 **Old `claude100` alias still runs**
 
 You still have the alias active in the current shell session. Either open a new terminal or run `source ~/.zshrc` after removing the alias from the file.
+
+---
+
+## Further reading
+
+- [how-it-works.md](how-it-works.md) — Full technical explanation of the selective HOME override and symlink architecture
+- [architecture.md](architecture.md) — Directory layout reference and symlink table

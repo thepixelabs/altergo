@@ -152,54 +152,57 @@ jobs:
           # Build the PR body in a temp file to avoid quoting/heredoc edge cases.
           BODY_FILE="$(mktemp)"
 
-          cat > "${BODY_FILE}" <<EOF
-## altergo formula bump
-
-This PR was opened automatically by the \`homebrew-bump.yml\` workflow in
-[thepixelabs/altergo](https://github.com/thepixelabs/altergo).
-
-### Changes
-
-- **url** → \`${TARBALL_URL}\`
-- **sha256** → \`${SHA256}\`
-
-### Checklist before merging
-
-- [ ] \`brew audit --new-formula Formula/altergo.rb\` passes locally
-- [ ] \`brew install --build-from-source Formula/altergo.rb\` succeeds
-- [ ] \`altergo --version\` reports \`${VERSION}\`
-EOF
+          # Build body with a { echo; } block instead of a heredoc — heredoc
+          # terminators must sit at column 0, which would break the YAML
+          # literal block scalar indentation of this `run:` step.
+          {
+            echo '## altergo formula bump'
+            echo ''
+            echo "This PR was opened automatically by the \`homebrew-bump.yml\` workflow in"
+            echo '[thepixelabs/altergo](https://github.com/thepixelabs/altergo).'
+            echo ''
+            echo '### Changes'
+            echo ''
+            echo "- **url** → \`${TARBALL_URL}\`"
+            echo "- **sha256** → \`${SHA256}\`"
+            echo ''
+            echo '### Checklist before merging'
+            echo ''
+            echo '- [ ] `brew audit --new-formula Formula/altergo.rb` passes locally'
+            echo '- [ ] `brew install --build-from-source Formula/altergo.rb` succeeds'
+            echo "- [ ] \`altergo --version\` reports \`${VERSION}\`"
+          } > "${BODY_FILE}"
 
           # For minor/major releases (patch == 0) surface the v0.5.0 layout-change
           # caveats reminder.  The formula must include a caveats block for any
           # release that changes the session-store layout (0.5.0 and later minor/
           # major bumps until the migration window closes in 0.6.0).
           if [ "${IS_MINOR_OR_MAJOR}" = "true" ]; then
-            cat >> "${BODY_FILE}" <<'CAVEATS_EOF'
-
----
-
-> **Minor/major release — action required before merging**
->
-> altergo 0.5.0 introduced a layout change: the session store moved from
-> `~/.altergo/` to `~/.altergo/accounts/<name>/`.  The formula MUST include
-> a `caveats` block directing existing users to the migration docs, for example:
->
-> ```ruby
-> def caveats
->   <<~EOS
->     altergo 0.5.0 changes the session-store layout.
->     On first run after upgrade, altergo will automatically migrate
->     ~/.altergo → ~/.altergo/accounts/default/ and print a one-line notice.
->     No manual steps are required.  See the full migration guide at:
->       https://altergo.pixelabs.net/docs/migration-0.5
->   EOS
-> end
-> ```
->
-> This workflow patches only `url` and `sha256` — please add (or update)
-> the `caveats` block manually in this PR before merging.
-CAVEATS_EOF
+            {
+              echo ''
+              echo '---'
+              echo ''
+              echo '> **Minor/major release — action required before merging**'
+              echo '>'
+              echo '> altergo 0.5.0 introduced a layout change: the session store moved from'
+              echo '> `~/.altergo/` to `~/.altergo/accounts/<name>/`.  The formula MUST include'
+              echo '> a `caveats` block directing existing users to the migration docs, for example:'
+              echo '>'
+              echo '> ```ruby'
+              echo '> def caveats'
+              echo '>   <<~EOS'
+              echo '>     altergo 0.5.0 changes the session-store layout.'
+              echo '>     On first run after upgrade, altergo will automatically migrate'
+              echo '>     ~/.altergo → ~/.altergo/accounts/default/ and print a one-line notice.'
+              echo '>     No manual steps are required.  See the full migration guide at:'
+              echo '>       https://altergo.pixelabs.net/docs/migration-0.5'
+              echo '>   EOS'
+              echo '> end'
+              echo '> ```'
+              echo '>'
+              echo '> This workflow patches only `url` and `sha256` — please add (or update)'
+              echo '> the `caveats` block manually in this PR before merging.'
+            } >> "${BODY_FILE}"
           fi
 
           gh pr create \

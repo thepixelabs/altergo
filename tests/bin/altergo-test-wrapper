@@ -1,0 +1,35 @@
+#!/usr/bin/env python3
+"""Test wrapper for altergo that lets integration tests redirect MAIN_HOME.
+
+Usage:
+    ALTERGO_TEST_HOME=/some/fake/home python tests/bin/altergo-test-wrapper [args...]
+
+When ALTERGO_TEST_HOME is set, the wrapper patches the altergo module globals
+(MAIN_HOME, MAIN_CLAUDE, ACCOUNTS_DIR, SETTINGS_FILE) to point at the fake
+home before calling main().  This lets subprocess-level tests exercise the
+full altergo CLI without touching the real ~/.altergo/.
+
+Without ALTERGO_TEST_HOME, behaviour is identical to running altergo.py directly.
+"""
+import os
+import sys
+from pathlib import Path
+
+# Make sure we import the local altergo.py, not any installed package.
+_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(_root))
+
+import altergo  # noqa: E402
+
+_override_home = os.environ.get("ALTERGO_TEST_HOME")
+if _override_home:
+    _home = Path(_override_home)
+    altergo.MAIN_HOME = _home
+    altergo.MAIN_CLAUDE = _home / ".claude"
+    altergo.ACCOUNTS_DIR = _home / ".altergo" / "accounts"
+    altergo.SETTINGS_FILE = _home / ".altergo" / ".altergo.json"
+    # Also fix the private _pw_home used by _find_claude() fallbacks so they
+    # don't accidentally resolve into the real home.
+    altergo._pw_home = _home
+
+altergo.main()

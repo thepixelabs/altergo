@@ -1,0 +1,45 @@
+#!/usr/bin/env sh
+# Fake claude sentinel binary for altergo integration tests.
+#
+# Prints structured key=value lines that tests can parse to assert that altergo
+# set up the environment correctly before exec-ing us.  All arguments are
+# accepted without error so that flag pass-through tests (--resume, --version,
+# --dangerously-skip-permissions, etc.) succeed without special casing.
+
+# Special case: --version flag — altergo itself has a version check path and
+# the real claude also responds to --version.  Return a recognisable test
+# string so any code that inspects the version string still gets something
+# well-formed.
+for arg in "$@"; do
+    if [ "$arg" = "--version" ]; then
+        echo "claude 1.0.0-test"
+        exit 0
+    fi
+done
+
+# --- Sentinel output ---
+# Each line is KEY=VALUE.  parse_sentinel_output() in test_integration.py
+# splits on the first '=' so values may contain '=' safely.
+
+echo "ALTERGO_TEST_HOME=$HOME"
+echo "ALTERGO_TEST_ACCOUNTS=$HOME/.altergo/accounts"
+echo "ALTERGO_TEST_CWD=$PWD"
+echo "ALTERGO_TEST_PATH=$PATH"
+
+# Check whether $HOME/.claude/projects exists (symlink OR real dir both pass
+# is_symlink() inside Python, but here we just need to know it is reachable).
+if [ -e "$HOME/.claude/projects" ]; then
+    echo "ALTERGO_TEST_PROJECTS_SYMLINK=ok"
+else
+    echo "ALTERGO_TEST_PROJECTS_SYMLINK=missing"
+fi
+
+# Check whether $HOME/.claude is a reachable directory (not a broken symlink,
+# not absent).  -d follows symlinks, so a good symlink-to-dir passes.
+if [ -d "$HOME/.claude" ]; then
+    echo "ALTERGO_TEST_CLAUDE_DIR=ok"
+else
+    echo "ALTERGO_TEST_CLAUDE_DIR=missing"
+fi
+
+exit 0

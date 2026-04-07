@@ -322,37 +322,43 @@
       line-height: 1;
       user-select: none;
     }
-    .brand-alt {
+    .brand-alt,
+    .brand-r {
+      color: var(--indigo-bright);
+      transition: color 200ms cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .brand-e,
+    .brand-go {
       color: var(--text-0);
-      transition: color 150ms cubic-bezier(0.4, 0, 0.2, 1);
+      transition: color 200ms cubic-bezier(0.4, 0, 0.2, 1);
     }
-    .brand-slash {
+    .brand-chop {
+      display: inline-block;
+      width: 2px;
+      height: 1.35em;
+      background: var(--cyan);
+      box-shadow: 0 0 10px var(--cyan), 0 0 4px var(--cyan);
+      transform: skewX(-22deg);
+      margin: 0 0.12em;
+      align-self: center;
+      transition: box-shadow 200ms cubic-bezier(0.4, 0, 0.2, 1),
+                  transform 200ms cubic-bezier(0.4, 0, 0.2, 1);
+      pointer-events: none;
+    }
+    .nav-brand:hover .brand-chop {
+      box-shadow: 0 0 16px var(--cyan), 0 0 6px var(--cyan);
+      transform: skewX(-22deg) scaleY(1.08);
+    }
+    .nav-brand:hover .brand-alt,
+    .nav-brand:hover .brand-r {
       color: var(--cyan);
-      text-shadow: 0 0 8px var(--cyan);
-      font-weight: 400;
-      font-family: var(--font-mono);
-      font-size: 1.0rem;
-      margin: 0 0.08em;
-      line-height: 1;
-      transition: text-shadow 150ms cubic-bezier(0.4, 0, 0.2, 1);
-    }
-    .brand-ego {
-      color: var(--indigo-bright);
-      transition: color 150ms cubic-bezier(0.4, 0, 0.2, 1);
-    }
-    .nav-brand:hover .brand-alt {
-      color: var(--indigo-bright);
-    }
-    .nav-brand:hover .brand-ego {
-      color: var(--cyan);
-    }
-    .nav-brand:hover .brand-slash {
-      text-shadow: 0 0 14px var(--cyan);
     }
     @media (prefers-reduced-motion: reduce) {
       .brand-alt,
-      .brand-slash,
-      .brand-ego {
+      .brand-r,
+      .brand-e,
+      .brand-go,
+      .brand-chop {
         transition: none;
       }
     }
@@ -1433,12 +1439,14 @@
     .footer-brand {
       font-family: var(--font-logo);
       font-size: 1.1rem;
-      font-weight: 800;
+      font-weight: 700;
       color: var(--text-0);
       text-decoration: none;
-      letter-spacing: -0.04em;
+      letter-spacing: -0.01em;
+      display: inline-flex;
+      align-items: center;
+      line-height: 1;
     }
-    .footer-brand span { color: var(--indigo-bright); }
 
     .footer-brand:focus-visible {
       outline: 2px solid var(--indigo);
@@ -1509,7 +1517,7 @@
     <div class="container">
       <div class="nav-inner">
         <a href="#hero" class="nav-brand" aria-label="altergo home">
-          <span class="brand-alt" aria-hidden="true">alt</span><span class="brand-slash" aria-hidden="true">/</span><span class="brand-ego" aria-hidden="true">ego</span>
+          <span class="brand-alt" aria-hidden="true">alt</span><span class="brand-chop" aria-hidden="true"></span><span class="brand-e" aria-hidden="true">e</span><span class="brand-r" aria-hidden="true">r</span><span class="brand-go" aria-hidden="true">go</span>
         </a>
 
         <div class="nav-right">
@@ -2114,9 +2122,9 @@
     <div class="container">
       <div class="footer-inner">
         <a href="#hero" class="footer-brand" aria-label="altergo — back to top">
-          <span>alter</span>go
+          <span class="brand-alt" aria-hidden="true">alt</span><span class="brand-chop" aria-hidden="true"></span><span class="brand-e" aria-hidden="true">e</span><span class="brand-r" aria-hidden="true">r</span><span class="brand-go" aria-hidden="true">go</span>
         </a>
-        <span style="font-size:0.78rem;color:var(--text-3);margin-left:auto;">altergo is an independent open-source project by <a href="https://pixelabs.net" target="_blank" rel="noopener noreferrer" style="color:var(--text-2);text-decoration:underline;text-underline-offset:3px;">pixelabs</a> · not affiliated with Anthropic PBC</span>
+        <span style="font-size:0.78rem;color:var(--text-3);margin-left:auto;">altergo is an independent open-source project by <a href="https://pixelabs.net" target="_blank" rel="noopener noreferrer" style="color:var(--cyan);text-shadow:0 0 8px var(--cyan);text-decoration:underline;text-underline-offset:3px;">Pixelabs</a> · not affiliated with Anthropic PBC</span>
       </div>
     </div>
   </footer>

@@ -244,11 +244,16 @@ The trigger is precise: the old `~/.altergo/.claude/` directory exists AND the n
 
 ### Why non-interactive
 
-The migration runs inside `main()` before any argument parsing. It produces exactly one line of output:
+The migration runs inside `main()` before any argument parsing. It prints a 4-line visible block to stdout:
 
 ```
-Migrated ~/.altergo → ~/.altergo/accounts/default (backup at ~/.altergo/.legacy-backup)
+altergo: layout migrated for v0.5.0 N-account support
+  ~/.altergo/  →  ~/.altergo/accounts/default/
+  Backup preserved at ~/.altergo/.legacy-backup/
+  See https://altergo.pixelabs.net/docs/migration-0.5 for details
 ```
+
+It also writes `~/.altergo/accounts/default/MIGRATED.txt` as a permanent audit trail recording the version, timestamp, old and new paths, and rollback instructions.
 
 It does not ask for confirmation. The reasons:
 
@@ -268,6 +273,8 @@ def migrate_legacy() -> None:
     tmp_path.rename(default_home)                 # Step 3: move into place
     backup_path = MAIN_HOME / ".altergo" / ".legacy-backup"
     shutil.copytree(str(default_home), str(backup_path), symlinks=True)  # Step 4: backup
+    (default_home / "MIGRATED.txt").write_text(...)  # Step 5: audit trail
+    print("altergo: layout migrated ...")         # Step 6: 4-line visible block
 ```
 
 `~/.altergo` is renamed to `/tmp/altergo-migrate-<pid>/` in one atomic operation. This ensures that if the process is interrupted after step 1, the data is not lost — it sits in `/tmp/` under a PID-qualified name rather than in a partially-overwritten state. The PID qualifier prevents collisions if multiple altergo processes somehow run simultaneously on the same machine.
@@ -281,6 +288,10 @@ The backup is preserved through the entire v0.5.x series. It will be removed in 
 ---
 
 ## SYMLINK_HOME_DIRS placement: why at `account_home` level
+
+Isolates Claude credentials. Shares AWS, GCP, Docker, and kubectl by default.
+
+AWS, GCP, Docker, and kubectl credentials are shared across accounts by default — configurable via `altergo --settings`.
 
 The catalog symlinks (`.aws/`, `.config/gh/`, `.docker/`, etc.) are created at `account_home/` level — for example, `~/.altergo/accounts/work/.aws` — not inside the `.claude/` subdirectory.
 

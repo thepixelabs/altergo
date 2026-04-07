@@ -194,7 +194,8 @@ This means `altergo --dangerously-skip-permissions` passes `--dangerously-skip-p
 2. Create `~/.altergo/accounts/`
 3. Rename `/tmp/altergo-migrate-<pid>/` to `~/.altergo/accounts/default/`
 4. Copy `accounts/default/` to `~/.altergo/.legacy-backup/` (preserving symlinks)
-5. Print exactly one line describing the migration
+5. Write `~/.altergo/accounts/default/MIGRATED.txt` as an audit trail
+6. Print a 4-line visible block to stdout describing the migration
 
 The use of `/tmp/` as an intermediate staging area means the rename in step 1 is atomic on the local filesystem (same device). If the process is interrupted between steps 1 and 3, the data sits safely in `/tmp/` under a PID-qualified name. The migration is idempotent: once `accounts/` exists, `detect_legacy()` returns `False` and `migrate_legacy()` returns immediately without printing anything.
 
@@ -226,6 +227,10 @@ Every entry in `SYMLINK_DIRS`, `SYMLINK_FILES`, and `CATALOG` is described here.
 | `keybindings.json` | Custom key mappings | Muscle memory is account-agnostic. |
 
 ### At `account_home/` level — shared CLI tool credentials (`CATALOG`)
+
+Isolates Claude credentials. Shares AWS, GCP, Docker, and kubectl by default.
+
+AWS, GCP, Docker, and kubectl credentials are shared across accounts by default — configurable via `altergo --settings`.
 
 These symlinks live directly in the account home (e.g., `~/.altergo/accounts/work/.aws`), not inside `.claude/`. This placement means they are available to any tool that reads `$HOME` — not just Claude Code.
 

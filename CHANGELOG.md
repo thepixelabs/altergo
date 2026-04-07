@@ -1,6 +1,38 @@
 # CHANGELOG
 
 
+## v0.7.0 (2026-04-07)
+
+### Bug Fixes
+
+- Safer migration backup order, additional edge-case tests
+  ([`25c2711`](https://github.com/thepixelabs/altergo/commit/25c27118925e06fb3d25014583815e67cc482d23))
+
+### Features
+
+- **resume**: Rich session picker with preview pane and animated nav
+  ([`ebb7b41`](https://github.com/thepixelabs/altergo/commit/ebb7b41657179e187d6e8a8f196e34b92164be09))
+
+Replace the minimal resume picker with a richer TUI:
+
+- New columns: Project (indigo), When (relative time, gray), Topic (first real user message,
+  responsive width) — Size dropped from default view. Topic gets all leftover terminal width with a
+  minimum of 40 chars. - Preview pane: p/Tab/Space opens a full-screen preview showing session
+  metadata plus the first 4 user/assistant turns, labeled and word-wrapped, with truncation
+  indicators. Enter from preview resumes that session. Enter from the list still fast-path resumes.
+  - Colors: 256-color palette uses brand-adjacent indices (cyan 51, indigo 105, gray 244, white
+  231). Falls back to 8/16-color, then to monochrome A_REVERSE/A_BOLD/A_DIM on dumb terminals. -
+  Session metadata line is no longer dimmed — uses default fg so it's actually readable. - Animated
+  nav line: BBS-style shine sweep moves across the help text (12fps via curses.timeout(80)),
+  separator dots twinkle on a staggered per-position cycle, and "pixelabs" is rendered in brand
+  indigo bold. Degrades to A_BOLD/A_REVERSE on no-color terminals. - Performance: cheap
+  first-N-lines scan per session (stops at the first real user prompt), tool_result-only user turns
+  filtered out, preview content lazily loaded and cached per session id. Tested against 787 real
+  sessions with no perceptible delay.
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
+
+
 ## v0.6.0 (2026-04-07)
 
 ### Bug Fixes

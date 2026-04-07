@@ -42,3 +42,16 @@ line-length = 120
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I"]
+
+[tool.semantic_release]
+version_toml = ["pyproject.toml:project.version"]
+version_variables = ["altergo.py:__version__"]
+branch = "main"
+build_command = "pip install build && python -m build"
+commit_parser = "conventional_commits"
+
+[tool.semantic_release.publish]
+upload_to_pypi = false  # PyPI publish handled via trusted publishing in CI
+
+[tool.semantic_release.remote.token]
+env = "GH_TOKEN"

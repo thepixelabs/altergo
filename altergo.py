@@ -1,37 +1,5 @@
 #!/usr/bin/env python3
-"""
-Altergo — A terminal with a split personality.
-
-Multi-account session manager for Claude Code. Switch between Claude Code
-identities without losing a thought. Uses symlinks to share session data
-and a separate HOME for alt account credentials.
-
-Usage:
-  altergo [claude flags...]      Launch claude with alt credentials (pass-through)
-  altergo --resume               Pick a session interactively (↑/↓/j/k, Enter, q)
-  altergo --resume <id>          Resume a specific session directly
-  altergo --list                 List recent sessions
-  altergo --setup                First-time setup (alt home, symlinks)
-  altergo --teardown             Remove symlinks and undo setup
-  altergo shell                  Open an interactive shell inside alt HOME
-  altergo -- <cmd> [args...]     Run any command with HOME set to alt directory
-  altergo --version              Show version
-  altergo -h, --help             Show this help
-
-Examples:
-  altergo                        Start a new session (same as: claude)
-  altergo --resume               Open session picker
-  altergo shell                  Enter alt-HOME shell (run 'gh auth login' here)
-  altergo -- gh auth login       Authenticate gh CLI in alt HOME context
-  altergo -- git config --global user.email me@work.com
-  altergo --dangerously-skip-permissions
-                                 Pass any claude flag straight through
-
-Navigation (session picker):
-  ↑/k          Move up             PgUp/PgDn    Page scroll
-  ↓/j          Move down           g/G          Jump to top/bottom
-  Enter        Resume session      q/Esc        Quit
-"""
+"""Altergo — multi-account session manager for Claude Code. Run 'altergo --help' for usage."""
 
 __version__ = "0.5.0"
 
@@ -39,6 +7,7 @@ import curses
 import json
 import os
 import pwd
+import re
 import shutil
 import sys
 from datetime import datetime
@@ -85,24 +54,30 @@ def show_help():
         f"  A session manager for {claude_url}.  A {pixelabs} project.",
         "",
         h("  Usage"),
-        f"  {kw('altergo')} [claude flags...]      Launch claude with alt credentials (pass-through)",
+        f"  {kw('altergo')} [flags...]             Launch claude with default account",
+        f"  {kw('altergo <name>')} [flags...]      Launch claude with named account",
         f"  {kw('altergo --resume')}               Pick a session interactively (↑/↓/j/k, Enter, q)",
         f"  {kw('altergo --resume <id>')}          Resume a specific session directly",
         f"  {kw('altergo --list')}                 List recent sessions",
-        f"  {kw('altergo --setup')}                First-time setup (alt home, symlinks)",
-        f"  {kw('altergo --teardown')}             Remove symlinks and undo setup",
+        f"  {kw('altergo --setup')}                First-time setup (default account, symlinks)",
+        f"  {kw('altergo --setup --name <name>')}  Set up a named account",
+        f"  {kw('altergo --teardown')}             Remove symlinks (default account)",
+        f"  {kw('altergo --teardown --name <n>')}  Remove symlinks for named account",
         f"  {kw('altergo --settings')}             Configure shared credentials (interactive)",
-        f"  {kw('altergo shell')}                  Open an interactive shell inside alt HOME",
-        f"  {kw('altergo -- <cmd> [args...]')}     Run any command with HOME set to alt directory",
+        f"  {kw('altergo shell')}                  Open a shell inside default account HOME",
+        f"  {kw('altergo <name> shell')}           Open a shell inside named account HOME",
+        f"  {kw('altergo -- <cmd> [args...]')}     Run command in default account context",
+        f"  {kw('altergo <name> -- <cmd> [...]')}  Run command in named account context",
         f"  {kw('altergo --version')}              Show version",
         f"  {kw('altergo -h, --help')}             Show this help",
         "",
         h("  Examples"),
-        f"  {kw('altergo')}                        Start a new session (same as: claude)",
+        f"  {kw('altergo')}                        Start a new session (default account)",
+        f"  {kw('altergo work')}                   Start a new session (work account)",
+        f"  {kw('altergo --setup --name work')}    Create the work account",
+        f"  {kw('altergo work shell')}             Enter work-account shell",
+        f"  {kw('altergo work -- gh auth login')}  Authenticate gh CLI in work context",
         f"  {kw('altergo --resume')}               Open session picker",
-        f"  {kw('altergo shell')}                  Enter alt-HOME shell (run 'gh auth login' here)",
-        f"  {kw('altergo -- gh auth login')}       Authenticate gh CLI in alt HOME context",
-        f"  {kw('altergo -- git config --global user.email me@work.com')}",
         f"  {kw('altergo --dangerously-skip-permissions')}",
         f"  {dim('                                 Pass any claude flag straight through')}",
         "",
@@ -126,9 +101,93 @@ if not _pw_home.exists():
     _pw_home = Path(os.environ["HOME"])
 
 MAIN_HOME = _pw_home
-ALT_HOME = MAIN_HOME / ".altergo"
 MAIN_CLAUDE = MAIN_HOME / ".claude"
-ALT_CLAUDE = ALT_HOME / ".claude"
+ACCOUNTS_DIR = MAIN_HOME / ".altergo" / "accounts"
+
+# Reserved account names — blocked at --setup --name time
+_RESERVED_NAMES = frozenset(
+    [
+        "default",
+        "main",
+        "list",
+        "new",
+        "rm",
+        "shell",
+        "setup",
+        "teardown",
+        "help",
+        "version",
+        "legacy",
+        "backup",
+        "migrate",
+    ]
+)
+
+# Settings file — global (shared across all accounts)
+SETTINGS_FILE = MAIN_HOME / ".altergo" / ".altergo.json"
+
+
+# --- Account helpers ---
+
+
+def resolve_account(name: str) -> tuple:
+    """Return (account_home, account_claude) for the given account name."""
+    account_home = ACCOUNTS_DIR / name
+    account_claude = account_home / ".claude"
+    return account_home, account_claude
+
+
+def list_accounts() -> list:
+    """Return sorted list of account names that exist on disk."""
+    if not ACCOUNTS_DIR.exists():
+        return []
+    return sorted(p.name for p in ACCOUNTS_DIR.iterdir() if p.is_dir() and not p.name.startswith("."))
+
+
+def validate_account_name(name: str) -> None:
+    """Raise SystemExit if name is invalid (bad chars, reserved word, leading dot)."""
+    if not re.match(r"^[a-zA-Z0-9][a-zA-Z0-9_-]*$", name) or len(name) > 64:
+        print(
+            f"altergo: invalid account name '{name}'. "
+            "Use letters, digits, - or _ only; must not start with a digit or special char.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    if name in _RESERVED_NAMES:
+        print(f"altergo: '{name}' is a reserved name. Choose a different account name.", file=sys.stderr)
+        sys.exit(1)
+
+
+# --- Migration ---
+
+
+def detect_legacy() -> bool:
+    """Return True if the old ~/.altergo/.claude/ layout exists and new layout does not."""
+    old_claude = MAIN_HOME / ".altergo" / ".claude"
+    return old_claude.exists() and not ACCOUNTS_DIR.exists()
+
+
+def migrate_legacy() -> None:
+    """Silently migrate old layout to new. Prints exactly one line if migration runs."""
+    if not detect_legacy():
+        return
+    old_root = MAIN_HOME / ".altergo"
+    tmp_path = Path(f"/tmp/altergo-migrate-{os.getpid()}")
+    # Step 1: rename ~/.altergo → /tmp/altergo-migrate-{pid}
+    old_root.rename(tmp_path)
+    # Step 2: mkdir -p ~/.altergo/accounts/
+    ACCOUNTS_DIR.mkdir(parents=True, exist_ok=True)
+    # Step 3: rename /tmp/... → ~/.altergo/accounts/default/
+    default_home = ACCOUNTS_DIR / "default"
+    tmp_path.rename(default_home)
+    # Step 4: copy as backup (symlinks=True preserves existing symlinks)
+    backup_path = MAIN_HOME / ".altergo" / ".legacy-backup"
+    shutil.copytree(str(default_home), str(backup_path), symlinks=True)
+    # Step 5: required one-line notice (hard requirement — not optional)
+    print("Migrated ~/.altergo → ~/.altergo/accounts/default (backup at ~/.altergo/.legacy-backup)")
+
+
+# --- Symlink catalogs ---
 
 # Directories to symlink (shared between main and alt)
 SYMLINK_DIRS = [
@@ -250,8 +309,7 @@ CATALOG = [
     },
 ]
 
-# Settings file — inside alt home, above any .config symlink
-SETTINGS_FILE = ALT_HOME / ".altergo.json"
+# (SETTINGS_FILE is defined in the Config section above, shared across all accounts)
 
 # --- Settings helpers ---
 
@@ -271,7 +329,7 @@ def load_settings():
 
 def save_settings(overrides):
     """Atomically write settings overlay to SETTINGS_FILE."""
-    ALT_HOME.mkdir(parents=True, exist_ok=True)
+    SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
     data = {"version": 1, "shared": overrides}
     tmp = SETTINGS_FILE.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(data, indent=2))
@@ -283,8 +341,8 @@ def is_enabled(entry, overrides):
     return overrides.get(entry["id"], entry["default_on"])
 
 
-def _ensure_nested_parent(rel):
-    """For paths like .config/gh, ensure ALT_HOME/.config is a real directory.
+def _ensure_nested_parent(rel, account_home):
+    """For paths like .config/gh, ensure account_home/.config is a real directory.
 
     If it's currently a wholesale symlink to MAIN_HOME/.config (from an older
     setup), migrates it transparently: unlinks the symlink and creates a real
@@ -294,28 +352,28 @@ def _ensure_nested_parent(rel):
     if len(p.parts) < 2:
         return
     parent_name = p.parts[0]
-    alt_parent = ALT_HOME / parent_name
+    acct_parent = account_home / parent_name
     main_parent = MAIN_HOME / parent_name
-    if alt_parent.is_symlink():
-        if alt_parent.resolve() == main_parent.resolve():
-            alt_parent.unlink()
-            alt_parent.mkdir(parents=True, exist_ok=True)
+    if acct_parent.is_symlink():
+        if acct_parent.resolve() == main_parent.resolve():
+            acct_parent.unlink()
+            acct_parent.mkdir(parents=True, exist_ok=True)
             print(f"  {_c(33, '↻')} Migrated ~/{parent_name}/ from wholesale symlink to managed dir")
-    elif not alt_parent.exists():
-        alt_parent.mkdir(parents=True, exist_ok=True)
+    elif not acct_parent.exists():
+        acct_parent.mkdir(parents=True, exist_ok=True)
 
 
-def _apply_entry(entry, overrides):
+def _apply_entry(entry, overrides, account_home):
     """Create or remove symlinks for one catalog entry based on current settings."""
     enabled = is_enabled(entry, overrides)
     for rel in entry["paths"]:
         src = MAIN_HOME / Path(rel)
-        dst = ALT_HOME / Path(rel)
+        dst = account_home / Path(rel)
         if enabled:
             if not src.exists():
                 print(f"  {_c(2, 'skip')} ~/{rel} (not present in main home)")
                 continue
-            _ensure_nested_parent(rel)
+            _ensure_nested_parent(rel, account_home)
             if dst.is_symlink():
                 if dst.resolve() == src.resolve():
                     print(f"  {_c(32, '✓')} ~/{rel} already shared")
@@ -336,26 +394,27 @@ def _apply_entry(entry, overrides):
 # --- Setup / Teardown ---
 
 
-def do_setup():
+def do_setup(account: str = "default"):
+    account_home, account_claude = resolve_account(account)
     header = f"altergo v{__version__} · " + _link("https://pixelabs.net", "pixelabs.net")
     print(_c(2, header))
-    print(_c(1, _c(36, "=== Altergo — Setup ===")))
+    print(_c(1, _c(36, f"=== Altergo — Setup ({account}) ===")))
     print()
 
-    # 1. Create alt home
-    if not ALT_HOME.exists():
-        ALT_HOME.mkdir(parents=True)
-        print(f"  {_c(32, '✓')} Created alt home: {ALT_HOME}")
+    # 1. Create account home
+    if not account_home.exists():
+        account_home.mkdir(parents=True)
+        print(f"  {_c(32, '✓')} Created account home: {account_home}")
     else:
-        print(f"  {_c(32, '✓')} Alt home exists: {ALT_HOME}")
+        print(f"  {_c(32, '✓')} Account home exists: {account_home}")
 
-    # Ensure alt .claude dir exists
-    ALT_CLAUDE.mkdir(parents=True, exist_ok=True)
+    # Ensure .claude dir exists
+    account_claude.mkdir(parents=True, exist_ok=True)
 
-    # 2. Symlink directories
+    # 2. Symlink directories inside .claude/
     for name in SYMLINK_DIRS:
         src = MAIN_CLAUDE / name
-        dst = ALT_CLAUDE / name
+        dst = account_claude / name
 
         if not src.exists():
             print(f"  {_c(2, 'skip')} {name}/ (not found in main)")
@@ -376,10 +435,10 @@ def do_setup():
         dst.symlink_to(src)
         print(f"  {_c(32, '✓')} Symlinked {name}/")
 
-    # 3. Symlink files
+    # 3. Symlink files inside .claude/
     for name in SYMLINK_FILES:
         src = MAIN_CLAUDE / name
-        dst = ALT_CLAUDE / name
+        dst = account_claude / name
 
         if not src.exists():
             continue
@@ -394,58 +453,56 @@ def do_setup():
         dst.symlink_to(src)
         print(f"  {_c(32, '✓')} Symlinked {name}")
 
-    # 4. Apply catalog entries (shared CLI tool credentials)
+    # 4. Apply catalog entries (shared CLI tool credentials) at account_home level
     overrides = load_settings()
     for entry in CATALOG:
-        _apply_entry(entry, overrides)
+        _apply_entry(entry, overrides, account_home)
 
     # 5. Check credentials
-    creds = ALT_CLAUDE / ".credentials.json"
+    creds = account_claude / ".credentials.json"
     print()
     if creds.exists():
-        print(f"  {_c(32, '✓')} Alt account credentials found")
+        print(f"  {_c(32, '✓')} Account credentials found")
     else:
-        print(f"  {_c(33, '⚠')} No alt account credentials found.")
-        print("     Run 'altergo' to authenticate with your alt account.\n")
+        print(f"  {_c(33, '⚠')} No account credentials found.")
+        cmd = f"altergo {account}" if account != "default" else "altergo"
+        print(f"     Run '{cmd}' to authenticate.\n")
 
+    launch_cmd = f"altergo {account}" if account != "default" else "altergo"
     print()
     print(_c(32, "Setup complete!"))
-    print()
-    print(_c(36, "Usage:"))
-    print(f"  {_c(1, 'altergo')}                       Start a new session with alt credentials")
-    print(f"  {_c(1, 'altergo --resume')}              Open interactive session picker")
-    print(f"  {_c(1, 'altergo --resume <session-id>')} Resume directly")
-    print(f"  {_c(1, 'altergo --list')}                List recent sessions")
+    print(f"  Run {_c(1, launch_cmd)} to start a session  ·  {_c(1, 'altergo --resume')} to pick one")
 
 
-def do_teardown():
+def do_teardown(account: str = "default"):
+    account_home, account_claude = resolve_account(account)
     header = f"altergo v{__version__} · " + _link("https://pixelabs.net", "pixelabs.net")
     print(_c(2, header))
-    print(_c(1, _c(36, "=== Altergo — Teardown ===")))
+    print(_c(1, _c(36, f"=== Altergo — Teardown ({account}) ===")))
     print()
 
     for name in SYMLINK_DIRS:
-        dst = ALT_CLAUDE / name
+        dst = account_claude / name
         if dst.is_symlink():
             dst.unlink()
             print(f"  {_c(33, '✓')} Removed symlink: {name}/")
 
     for name in SYMLINK_FILES:
-        dst = ALT_CLAUDE / name
+        dst = account_claude / name
         if dst.is_symlink():
             dst.unlink()
             print(f"  {_c(33, '✓')} Removed symlink: {name}")
 
     for entry in CATALOG:
         for rel in entry["paths"]:
-            dst = ALT_HOME / Path(rel)
+            dst = account_home / Path(rel)
             src = MAIN_HOME / Path(rel)
             if dst.is_symlink() and dst.resolve() == src.resolve():
                 dst.unlink()
                 print(f"  {_c(33, '✓')} Removed symlink: ~/{rel}")
 
     print()
-    print(_c(32, "Teardown complete.") + " Alt home and credentials left intact.")
+    print(_c(32, "Teardown complete.") + " Account home and credentials left intact.")
 
 
 # --- Session Discovery ---
@@ -662,8 +719,11 @@ def interactive_settings():
     print()
     print(_c(1, _c(36, "=== Applying settings ===")))
     print()
-    for entry in CATALOG:
-        _apply_entry(entry, overrides)
+    for acct_name in list_accounts() or ["default"]:
+        acct_home, _ = resolve_account(acct_name)
+        if acct_home.exists():
+            for entry in CATALOG:
+                _apply_entry(entry, overrides, acct_home)
     print()
     print(_c(32, "Settings saved and applied."))
 
@@ -795,10 +855,10 @@ def _draw_settings(stdscr, catalog, overrides):
 # --- Launch ---
 
 
-def _build_alt_env():
-    """Return a copy of the environment with HOME set to ALT_HOME.
+def _build_alt_env(account: str = "default") -> dict:
+    """Return a copy of the environment with HOME set to the account home.
 
-    If ~/.altergo/.local/bin exists, it is prepended to PATH so that Claude
+    If account_home/.local/bin exists, it is prepended to PATH so that Claude
     Code's startup PATH check (which resolves relative to $HOME) doesn't warn
     about a missing native-installation directory.  The guard on existence is
     intentional: we only inject the directory when something has actually been
@@ -806,47 +866,76 @@ def _build_alt_env():
     Without the guard we would prepend a ghost path on every launch and give
     an uncontrolled write target higher precedence than all system binaries.
     """
+    account_home, _ = resolve_account(account)
     env = os.environ.copy()
-    env["HOME"] = str(ALT_HOME)
-    alt_local_bin = ALT_HOME / ".local" / "bin"
-    if alt_local_bin.exists():
-        alt_local_bin_str = str(alt_local_bin)
+    env["HOME"] = str(account_home)
+    acct_local_bin = account_home / ".local" / "bin"
+    if acct_local_bin.exists():
+        acct_local_bin_str = str(acct_local_bin)
         path_dirs = env.get("PATH", "").split(":")
-        if alt_local_bin_str not in path_dirs:
-            env["PATH"] = alt_local_bin_str + ":" + env.get("PATH", "")
+        if acct_local_bin_str not in path_dirs:
+            env["PATH"] = acct_local_bin_str + ":" + env.get("PATH", "")
     return env
 
 
-def launch_claude(args=None):
-    """Launch claude with alt HOME, passing args through unchanged."""
-    claude_path = shutil.which("claude")
+def _find_claude() -> str | None:
+    """Find the claude binary, checking PATH and common install locations.
+
+    PATH may be incomplete if the user invokes altergo before their shell rc
+    has finished loading (e.g., typing very quickly in a new terminal window).
+    The fallbacks cover the most common Claude Code install locations.
+    """
+    path = shutil.which("claude")
+    if path:
+        return path
+    fallbacks = [
+        _pw_home / ".local" / "bin" / "claude",  # claude install default
+        _pw_home / ".npm-global" / "bin" / "claude",  # npm --global-prefix
+        Path("/opt/homebrew/bin/claude"),  # Homebrew on Apple Silicon
+        Path("/usr/local/bin/claude"),  # Homebrew on Intel / manual
+    ]
+    for p in fallbacks:
+        if p.exists() and os.access(p, os.X_OK):
+            return str(p)
+    return None
+
+
+def launch_claude(account: str = "default", args=None):
+    """Launch claude with account HOME, passing args through unchanged."""
+    claude_path = _find_claude()
     if not claude_path:
-        sys.exit("altergo: 'claude' not found in PATH")
-    env = _build_alt_env()
+        sys.exit(
+            "altergo: 'claude' not found in PATH or common install locations.\n"
+            "  If you just opened this terminal, your shell may still be initializing.\n"
+            "  Wait a moment and try again, or open a new tab."
+        )
+    env = _build_alt_env(account)
     cmd = [claude_path] + (args or [])
     os.execvpe(claude_path, cmd, env)
 
 
-def launch_shell():
-    """Open an interactive shell with HOME set to alt directory."""
-    env = _build_alt_env()
+def launch_shell(account: str = "default"):
+    """Open an interactive shell with HOME set to account directory."""
+    account_home, _ = resolve_account(account)
+    env = _build_alt_env(account)
     # Prompt hint so users know they are in the alt context
     shell = env.get("SHELL", "/bin/sh")
     shell_name = Path(shell).name
     # Prepend a marker to PS1 / PROMPT so the user sees they are in altergo context.
     # We set it in env; the shell will use it if no .bashrc/.zshrc overrides it.
+    label = f"altergo:{account}"
     if shell_name in ("bash", "sh"):
         env["PS1"] = env.get("PS1", r"\u@\h:\w\$ ").lstrip()
-        env["PS1"] = f"(altergo) {env['PS1']}"
+        env["PS1"] = f"({label}) {env['PS1']}"
     elif shell_name == "zsh":
-        env["PROMPT"] = f"(altergo) {env.get('PROMPT', '%n@%m %~ %# ')}"
-    print(_c(36, f"Entering altergo shell (HOME={ALT_HOME})"))
+        env["PROMPT"] = f"({label}) {env.get('PROMPT', '%n@%m %~ %# ')}"
+    print(_c(36, f"Entering altergo shell [{account}] (HOME={account_home})"))
     print(_c(2, "Run 'exit' or Ctrl-D to return to your primary account.\n"))
     os.execvpe(shell, [shell], env)
 
 
-def launch_command(cmd_args):
-    """Run an arbitrary command with HOME set to alt directory."""
+def launch_command(account: str = "default", cmd_args=None):
+    """Run an arbitrary command with HOME set to account directory."""
     if not cmd_args:
         print(_c(31, "altergo -- requires a command. Example: altergo -- gh auth login"), file=sys.stderr)
         sys.exit(1)
@@ -854,14 +943,35 @@ def launch_command(cmd_args):
     if not cmd_path:
         print(_c(31, f"altergo: '{cmd_args[0]}' not found in PATH"), file=sys.stderr)
         sys.exit(1)
-    env = _build_alt_env()
+    env = _build_alt_env(account)
     os.execvpe(cmd_path, [cmd_path] + cmd_args[1:], env)
+
+
+# --- Account name disambiguation helper ---
+
+
+_KNOWN_COMMANDS = frozenset(
+    ["shell", "--resume", "--list", "--setup", "--teardown", "--settings", "--version", "-h", "--help", "--"]
+)
+
+
+def _looks_like_account(token: str) -> bool:
+    """Return True if token could be an account name (not a flag, not a known command)."""
+    if token.startswith("-"):
+        return False
+    if token in _KNOWN_COMMANDS:
+        return False
+    # Must look like a valid account name (alphanumeric start, no spaces)
+    return bool(re.match(r"^[a-zA-Z0-9][a-zA-Z0-9_-]*$", token))
 
 
 # --- Main ---
 
 
 def main():
+    # Auto-migrate legacy layout before any other processing
+    migrate_legacy()
+
     args = sys.argv[1:]
 
     # ── Altergo-owned commands (not passed to claude) ──────────────────────────
@@ -875,11 +985,20 @@ def main():
         sys.exit(0)
 
     if args and args[0] == "--setup":
-        do_setup()
+        # Support: --setup --name <name>
+        name = "default"
+        if len(args) >= 3 and args[1] == "--name":
+            name = args[2]
+            validate_account_name(name)
+        do_setup(name)
         sys.exit(0)
 
     if args and args[0] == "--teardown":
-        do_teardown()
+        # Support: --teardown --name <name>
+        name = "default"
+        if len(args) >= 3 and args[1] == "--name":
+            name = args[2]
+        do_teardown(name)
         sys.exit(0)
 
     if args and args[0] == "--settings":
@@ -906,24 +1025,42 @@ def main():
         sessions = get_sessions()
         selected = interactive_picker(sessions)
         if selected:
-            launch_claude(["--resume", selected["id"]])
+            launch_claude("default", ["--resume", selected["id"]])
         else:
             print("Cancelled.")
         sys.exit(0)
 
-    # altergo shell → interactive shell in alt HOME
+    # ── Account name as first positional arg ──────────────────────────────────
+    # altergo <name> [sub-command | claude flags...]
+    account = "default"
+    if args and _looks_like_account(args[0]):
+        candidate = args[0]
+        acct_home = ACCOUNTS_DIR / candidate
+        if not acct_home.is_dir():
+            print(
+                f"altergo: account '{candidate}' not found. Run 'altergo --setup --name {candidate}' to create it.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        account = candidate
+        args = args[1:]
+
+    # ── Sub-commands (after optional account prefix) ──────────────────────────
+
+    # altergo [<name>] shell
     if args and args[0] == "shell":
-        launch_shell()
+        launch_shell(account)
 
-    # altergo -- <cmd> [args...] → run arbitrary command in alt HOME
+    # altergo [<name>] -- <cmd> [args...]
     if args and args[0] == "--":
-        launch_command(args[1:])
+        launch_command(account, args[1:])
 
-    # ── Everything else → pass straight through to claude with alt HOME ────────
-    # altergo            → claude
-    # altergo --resume x → claude --resume x
-    # altergo --dangerously-skip-permissions → claude --dangerously-skip-permissions
-    launch_claude(args)
+    # ── Everything else → pass straight through to claude ────────────────────
+    # altergo                    → claude (default account)
+    # altergo work               → claude (work account, args=[])
+    # altergo --resume x         → claude --resume x
+    # altergo --dangerously-...  → claude --dangerously-...
+    launch_claude(account, args)
 
 
 if __name__ == "__main__":

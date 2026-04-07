@@ -888,12 +888,14 @@ def _picker_attrs():
         cyan = 51 if curses.COLORS >= 256 else curses.COLOR_CYAN
         indigo = 105 if curses.COLORS >= 256 else curses.COLOR_BLUE
         gray = 244 if curses.COLORS >= 256 else curses.COLOR_WHITE
+        white = 231 if curses.COLORS >= 256 else curses.COLOR_WHITE
         try:
             curses.init_pair(1, curses.COLOR_BLACK, cyan)  # selected row
-            curses.init_pair(2, cyan, -1)  # header / accent
-            curses.init_pair(3, indigo, -1)  # project col
-            curses.init_pair(4, gray, -1)  # time col / dim
+            curses.init_pair(2, cyan, -1)  # header / accent / shine mid
+            curses.init_pair(3, indigo, -1)  # project col / brand
+            curses.init_pair(4, gray, -1)  # time col
             curses.init_pair(5, cyan, -1)  # preview pane border
+            curses.init_pair(6, white, -1)  # shine peak
         except curses.error:
             has_color = False
 
@@ -906,6 +908,10 @@ def _picker_attrs():
         attrs["topic"] = curses.A_NORMAL
         attrs["dim"] = curses.A_DIM
         attrs["accent"] = curses.color_pair(2)
+        attrs["nav_base"] = curses.A_NORMAL
+        attrs["brand"] = curses.color_pair(3) | curses.A_BOLD
+        attrs["shine_peak"] = curses.color_pair(6) | curses.A_BOLD
+        attrs["shine_mid"] = curses.color_pair(2) | curses.A_BOLD
     else:
         attrs["selected"] = curses.A_REVERSE | curses.A_BOLD
         attrs["header"] = curses.A_BOLD | curses.A_UNDERLINE
@@ -915,6 +921,10 @@ def _picker_attrs():
         attrs["topic"] = curses.A_NORMAL
         attrs["dim"] = curses.A_DIM
         attrs["accent"] = curses.A_BOLD
+        attrs["nav_base"] = curses.A_NORMAL
+        attrs["brand"] = curses.A_BOLD
+        attrs["shine_peak"] = curses.A_BOLD | curses.A_REVERSE
+        attrs["shine_mid"] = curses.A_BOLD
     return attrs
 
 
@@ -951,13 +961,73 @@ def _safe_addnstr(stdscr, y, x, text, n, attr=0):
         pass
 
 
+def _safe_addch(stdscr, y, x, ch, attr=0):
+    """Single-char writer that swallows curses.error."""
+    try:
+        stdscr.addstr(y, x, ch, attr)
+    except curses.error:
+        pass
+
+
+def _draw_animated_nav(stdscr, row, text, max_width, phase, attrs):
+    """Render the footer nav line with a BBS-style shine sweep + twinkling
+    separators. The word 'pixelabs' is rendered in brand indigo (bold).
+
+    phase increments every ~80ms; shine sweeps across width then pauses,
+    separator dots twinkle on a staggered per-position cycle.
+    """
+    if max_width <= 0:
+        return
+    width = min(len(text), max_width)
+    if width <= 0:
+        return
+
+    # Shine sweep position (extends past width to create a pause between sweeps)
+    cycle_len = width + 24
+    shine_pos = phase % cycle_len
+
+    # Locate "pixelabs" substring for brand coloring
+    lower = text.lower()
+    pix_start = lower.find("pixelabs")
+    pix_end = pix_start + len("pixelabs") if pix_start >= 0 else -1
+
+    for i in range(width):
+        ch = text[i]
+        # 1. Base attribute: brand color for "pixelabs", otherwise normal
+        if pix_start <= i < pix_end:
+            attr = attrs["brand"]
+        else:
+            attr = attrs["nav_base"]
+
+        # 2. Shine sweep overlay (wave of bright chars sliding right)
+        dist = i - shine_pos
+        if -1 <= dist <= 1:
+            attr = attrs["shine_peak"]
+        elif -3 <= dist <= 3:
+            attr = attrs["shine_mid"]
+        elif -5 <= dist <= 5:
+            attr = attrs["shine_mid"] | curses.A_DIM
+
+        # 3. Twinkle effect on separator dots (independent per-position phase)
+        if ch == "·":
+            twinkle = (phase * 2 + i * 7) % 48
+            if twinkle < 2:
+                attr = attrs["shine_peak"]
+            elif twinkle < 5:
+                attr = attrs["shine_mid"]
+
+        _safe_addch(stdscr, row, i, ch, attr)
+
+
 def _draw_picker(stdscr, sessions):
     curses.curs_set(0)
     attrs = _picker_attrs()
+    stdscr.timeout(80)  # ~12fps animation tick — getch() returns -1 on timeout
 
     current = 0
     scroll_offset = 0
     preview_cache = {}  # session_id -> loaded preview dict
+    phase = 0
 
     while True:
         stdscr.erase()
@@ -1010,19 +1080,24 @@ def _draw_picker(stdscr, sessions):
                 x += cols["time"] + 2
                 _safe_addnstr(stdscr, row, x, topic, max_x - x - 1, attrs["topic"])
 
-        # Footer
+        # Footer: session id + cwd (normal brightness, not dim)
         footer_row = max_y - 2
         if 0 <= current < len(sessions):
             s = sessions[current]
             sid = s["id"]
             cwd = s.get("cwd") or decode_project_path(s["project"])
             foot = f" {sid}  ·  {cwd}"
-            _safe_addnstr(stdscr, footer_row, 0, _truncate(foot, max_x - 1), max_x - 1, attrs["dim"])
-        nav = " ↑↓/jk move · g/G top/bot · PgUp/PgDn page · p/Tab preview · Enter resume · q quit"
-        _safe_addnstr(stdscr, footer_row + 1, 0, _truncate(nav, max_x - 1), max_x - 1, attrs["dim"])
+            _safe_addnstr(stdscr, footer_row, 0, _truncate(foot, max_x - 1), max_x - 1, attrs["topic"])
+        nav = " ↑↓/jk move  ·  g/G top/bot  ·  PgUp/PgDn page  ·  p/Tab preview  ·  Enter resume  ·  q quit  ·  pixelabs"
+        _draw_animated_nav(stdscr, footer_row + 1, nav, max_x - 1, phase, attrs)
 
         stdscr.refresh()
         key = stdscr.getch()
+
+        # Animation tick: getch timed out (no key pressed) — advance phase and redraw
+        if key == -1:
+            phase += 1
+            continue
 
         if key in (curses.KEY_UP, ord("k")):
             current = max(0, current - 1)

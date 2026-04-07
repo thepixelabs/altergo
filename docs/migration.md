@@ -1,30 +1,119 @@
-# Migration guide: claude100-resume to altergo
-
-**Applies to:** Anyone who used `claude100-resume` or manually configured `~/claude100-home/` as an alt account home.
-
-If you are coming from a bare shell alias (not `claude100-resume`) — for example `alias claude2='HOME=~/claude2-home claude'` — the same steps apply: copy `.credentials.json` to `~/.altergo/.claude/`, run `altergo --setup`, and remove the alias.
+# Migration guide
 
 ---
 
-## What changed
+## Upgrading from altergo v0.4.x to v0.5.0
+
+**Applies to:** Anyone upgrading an existing altergo v0.4.x installation.
+
+v0.5.0 introduced N-account support. The directory layout changed:
+
+| | v0.4.x | v0.5.0 |
+|-|--------|--------|
+| Alt account home | `~/.altergo/` | `~/.altergo/accounts/default/` |
+| Alt `.claude/` dir | `~/.altergo/.claude/` | `~/.altergo/accounts/default/.claude/` |
+| Settings file | `~/.altergo/.altergo.json` (inside alt home) | `~/.altergo/.altergo.json` (above `accounts/`, global) |
+
+### Auto-migration: no action required for most users
+
+On the first run after upgrading, altergo detects the old layout and migrates it automatically. You do not need to do anything. The migration runs before any command is processed and prints exactly one line:
+
+```
+Migrated ~/.altergo → ~/.altergo/accounts/default (backup at ~/.altergo/.legacy-backup)
+```
+
+After that line, altergo continues normally. All your existing sessions, credentials, and symlinks are preserved under the new path.
+
+### What the migration does
+
+1. Renames `~/.altergo/` to a temporary path (`/tmp/altergo-migrate-<pid>/`)
+2. Creates the new `~/.altergo/accounts/` directory
+3. Moves the temporary directory to `~/.altergo/accounts/default/`
+4. Copies the migrated content to `~/.altergo/.legacy-backup/` as a backup
+5. Prints one line to stdout
+
+The use of `/tmp/` as a staging area means the rename is atomic. If the process is interrupted between steps 1 and 3, your data sits safely in `/tmp/` under a PID-qualified name — nothing is lost.
+
+### Note about settings
+
+The settings file (`~/.altergo/.altergo.json`) was located inside `~/.altergo/` in v0.4.x. After migration, `~/.altergo/` becomes `~/.altergo/accounts/default/`, so the old settings file is now at `~/.altergo/accounts/default/.altergo.json`. The new settings file location is `~/.altergo/.altergo.json` (above `accounts/`).
+
+This means your credential-sharing preferences reset to defaults after migration. The new location is intentional — settings are now global across all accounts rather than per-account.
+
+To reconfigure, run:
+
+```bash
+altergo --settings
+```
+
+### Verifying migration worked
+
+```bash
+# Should show your account directory at the new path
+ls ~/.altergo/accounts/default/.claude/
+
+# Should show your sessions (session files are shared, so nothing changed here)
+altergo --list
+
+# Should launch with your existing credentials
+altergo
+```
+
+If `altergo` asks you to log in, check that the credentials file survived the migration:
+
+```bash
+cat ~/.altergo/accounts/default/.claude/.credentials.json
+```
+
+If the file is present and valid, the credentials are intact — the login prompt may be a transient auth expiry rather than a migration issue.
+
+### Rollback procedure
+
+The backup at `~/.altergo/.legacy-backup/` is a complete copy of the pre-migration state. To restore:
+
+```bash
+# 1. Remove the migrated account directory
+rm -rf ~/.altergo/accounts/
+
+# 2. Copy the backup back to the original location
+cp -R ~/.altergo/.legacy-backup ~/.altergo-restore
+mv ~/.altergo-restore ~/.altergo
+
+# 3. Downgrade altergo to v0.4.x
+pip install "altergo==0.4.*"
+```
+
+The backup is preserved through the entire v0.5.x series. It will be removed in v0.6.0.
+
+---
+
+## Migration guide: claude100-resume to altergo
+
+**Applies to:** Anyone who used `claude100-resume` or manually configured `~/claude100-home/` as an alt account home.
+
+If you are coming from a bare shell alias (not `claude100-resume`) — for example `alias claude2='HOME=~/claude2-home claude'` — the same steps apply: copy `.credentials.json` to `~/.altergo/accounts/default/.claude/`, run `altergo --setup`, and remove the alias.
+
+---
+
+### What changed
 
 | | Before | After |
 |-|--------|-------|
 | Tool name | `claude100-resume` | `altergo` |
-| Alt home directory | `~/claude100-home/` | `~/.altergo/` |
+| Alt home directory | `~/claude100-home/` | `~/.altergo/accounts/default/` |
 | Shell alias | `alias claude100='HOME=$HOME/claude100-home claude'` in `~/.zshrc` | No alias needed — `altergo` handles it |
 
-The new setup does not auto-detect `~/claude100-home/`. If you skip migration, `altergo --setup` creates a fresh `~/.altergo/` with no credentials, and you will be prompted to log in again with your alt account.
+The new setup does not auto-detect `~/claude100-home/`. If you skip migration, `altergo --setup` creates a fresh `~/.altergo/accounts/default/` with no credentials, and you will be prompted to log in again with your alt account.
 
 ---
 
-## Migration steps
+### Migration steps
 
-### 1. Copy your alt credentials to the new location
+#### 1. Copy your alt credentials to the new location
 
 ```bash
-mkdir -p ~/.altergo/.claude
-cp ~/claude100-home/.claude/.credentials.json ~/.altergo/.claude/.credentials.json
+mkdir -p ~/.altergo/accounts/default/.claude
+cp ~/claude100-home/.claude/.credentials.json ~/.altergo/accounts/default/.claude/.credentials.json
 ```
 
 If you also had a `settings.json` or other config files unique to the alt account (not symlinks), copy those too:
@@ -36,15 +125,15 @@ ls -la ~/claude100-home/.claude/
 
 Only copy files that are regular files, not symlinks. The symlinks will be recreated by `altergo --setup`.
 
-### 2. Run the new setup
+#### 2. Run the new setup
 
 ```bash
 altergo --setup
 ```
 
-This creates the symlink structure inside `~/.altergo/.claude/` so both accounts share session history.
+This creates the symlink structure inside `~/.altergo/accounts/default/.claude/` so all accounts share session history.
 
-### 3. Remove the old alias from `~/.zshrc`
+#### 3. Remove the old alias from `~/.zshrc`
 
 Open `~/.zshrc` and delete the line:
 
@@ -58,7 +147,7 @@ Then reload your shell:
 source ~/.zshrc
 ```
 
-### 4. Verify the migration works
+#### 4. Verify the migration works
 
 ```bash
 altergo --version   # should print the installed version
@@ -66,7 +155,7 @@ altergo --list      # should show your sessions
 altergo             # should launch Claude Code with alt credentials
 ```
 
-### 5. Remove the old home directory (optional)
+#### 5. Remove the old home directory (optional)
 
 Once you have confirmed `altergo` works correctly, you can delete the old directory:
 
@@ -88,14 +177,14 @@ Two directories in particular — `paste-cache/` and `plugins/` — are written 
 
 ```bash
 # Only do this if plugins/ exists in your primary ~/.claude/ and you want it shared
-ln -s ~/.claude/plugins ~/.altergo/.claude/plugins
+ln -s ~/.claude/plugins ~/.altergo/accounts/default/.claude/plugins
 ```
 
 See [architecture.md](architecture.md#unmanaged-not-tracked-by-altergo) for the full explanation of unmanaged state.
 
 ---
 
-## Git author identity
+### Git author identity
 
 When `claude100-resume` launched Claude Code it set `HOME=~/claude100-home`. This also changed what git uses for author name and email (git reads `~/.gitconfig` from `HOME`). If `~/claude100-home/.gitconfig` did not exist or was not configured, git may have fallen back to the system hostname as the author name for commits made during those sessions.
 
@@ -123,18 +212,18 @@ You cannot rewrite already-pushed commits without a force-push and coordination 
 
 ---
 
-## Troubleshooting
+### Troubleshooting
 
 **`altergo --list` shows no sessions after migration**
 
-The symlinks inside `~/.altergo/.claude/` may not have been created yet. Run `altergo --setup` and check the output for errors.
+The symlinks inside `~/.altergo/accounts/default/.claude/` may not have been created yet. Run `altergo --setup` and check the output for errors.
 
 **`altergo` asks me to log in**
 
 The credentials file was not copied or is not being read. Verify the file exists and is valid JSON:
 
 ```bash
-cat ~/.altergo/.claude/.credentials.json
+cat ~/.altergo/accounts/default/.claude/.credentials.json
 ```
 
 If the file is missing, repeat step 1. If it is present but login still fails, the credentials may have expired — log in interactively and the file will be refreshed.
@@ -145,7 +234,7 @@ You still have the alias active in the current shell session. Either open a new 
 
 ---
 
-## Further reading
+### Further reading
 
 - [how-it-works.md](how-it-works.md) — Full technical explanation of the selective HOME override and symlink architecture
 - [architecture.md](architecture.md) — Directory layout reference and symlink table

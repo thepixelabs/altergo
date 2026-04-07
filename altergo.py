@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Altergo — Your other Claude.
+Altergo — A terminal with a split personality.
 
 Multi-account session manager for Claude Code. Switch between Claude Code
 identities without losing a thought. Uses symlinks to share session data
@@ -33,7 +33,7 @@ Navigation (session picker):
   Enter        Resume session      q/Esc        Quit
 """
 
-__version__ = "0.4.0"
+__version__ = "0.4.1"
 
 import curses
 import json
@@ -59,6 +59,54 @@ def _link(url, text):
     if not sys.stdout.isatty():
         return text
     return f"\033]8;;{url}\033\\{text}\033]8;;\033\\"
+
+
+def show_help():
+    """Print --help output with color and OSC 8 hyperlinks when on a TTY."""
+    b  = lambda t: _c("1",    t)   # bold
+    h  = lambda t: _c("1;36", t)   # bold cyan  — section headers
+    kw = lambda t: _c("36",   t)   # cyan        — commands / keys
+    dim = lambda t: _c("2",   t)   # dim         — secondary text
+
+    pixelabs   = _link("https://pixelabs.net",   "pixelabs.net")
+    claude_url = _link("https://claude.ai/code", "Claude Code")
+
+    lines = [
+        "",
+        f"  {b('altergo')} {dim(f'v{__version__}')}  —  A terminal with a split personality.",
+        f"  A session manager for {claude_url}.  A {pixelabs} project.",
+        "",
+        h("  Usage"),
+        f"  {kw('altergo')} [claude flags...]      Launch claude with alt credentials (pass-through)",
+        f"  {kw('altergo --resume')}               Pick a session interactively (↑/↓/j/k, Enter, q)",
+        f"  {kw('altergo --resume <id>')}          Resume a specific session directly",
+        f"  {kw('altergo --list')}                 List recent sessions",
+        f"  {kw('altergo --setup')}                First-time setup (alt home, symlinks)",
+        f"  {kw('altergo --teardown')}             Remove symlinks and undo setup",
+        f"  {kw('altergo shell')}                  Open an interactive shell inside alt HOME",
+        f"  {kw('altergo -- <cmd> [args...]')}     Run any command with HOME set to alt directory",
+        f"  {kw('altergo --version')}              Show version",
+        f"  {kw('altergo -h, --help')}             Show this help",
+        "",
+        h("  Examples"),
+        f"  {kw('altergo')}                        Start a new session (same as: claude)",
+        f"  {kw('altergo --resume')}               Open session picker",
+        f"  {kw('altergo shell')}                  Enter alt-HOME shell (run 'gh auth login' here)",
+        f"  {kw('altergo -- gh auth login')}       Authenticate gh CLI in alt HOME context",
+        f"  {kw('altergo -- git config --global user.email me@work.com')}",
+        f"  {kw('altergo --dangerously-skip-permissions')}",
+        f"  {dim('                                 Pass any claude flag straight through')}",
+        "",
+        h("  Navigation (session picker)"),
+        f"  {kw('↑/k')}          Move up             {kw('PgUp/PgDn')}    Page scroll",
+        f"  {kw('↓/j')}          Move down           {kw('g/G')}          Jump to top/bottom",
+        f"  {kw('Enter')}        Resume session      {kw('q/Esc')}        Quit",
+        "",
+        dim("  altergo is an independent open-source project by pixelabs · not affiliated with Anthropic PBC"),
+        dim("  Claude and Claude Code are trademarks of Anthropic PBC"),
+        "",
+    ]
+    print("\n".join(lines))
 
 
 # --- Config ---
@@ -90,6 +138,27 @@ SYMLINK_FILES = [
     "settings.json",
     "CLAUDE.md",
     "keybindings.json",
+]
+
+# Top-level HOME dirs to symlink into alt home.
+# These are shared wholesale — any CLI tool storing auth here will reuse your
+# main account credentials automatically inside altergo sessions.
+# Only ~/.claude/.credentials.json stays segregated (alt Claude identity).
+#
+# Common locations:
+#   .config   — gh, gcloud, azure, heroku, and most XDG-compliant tools
+#   .aws      — AWS CLI / boto3
+#   .azure    — Azure CLI (some versions write here instead of .config/azure)
+#   .kube     — kubectl / kubeconfig
+#   .docker   — Docker credentials
+#   .terraform.d — Terraform Cloud tokens
+SYMLINK_HOME_DIRS = [
+    ".config",
+    ".aws",
+    ".azure",
+    ".kube",
+    ".docker",
+    ".terraform.d",
 ]
 
 # --- Setup / Teardown ---
@@ -153,7 +222,31 @@ def do_setup():
         dst.symlink_to(src)
         print(f"  {_c(32, '✓')} Symlinked {name}")
 
-    # 4. Check credentials
+    # 4. Symlink top-level home dirs (e.g. ~/.config → shared with main)
+    for name in SYMLINK_HOME_DIRS:
+        src = MAIN_HOME / name
+        dst = ALT_HOME / name
+
+        if not src.exists():
+            print(f"  {_c(2, 'skip')} ~/{name}/ (not found in main)")
+            continue
+
+        if dst.is_symlink():
+            target = dst.resolve()
+            if target == src.resolve():
+                print(f"  {_c(32, '✓')} ~/{name}/ already symlinked (shared)")
+            else:
+                print(f"  {_c(33, '⚠')} ~/{name}/ symlinked to {target} (expected {src})")
+            continue
+
+        if dst.exists():
+            print(f"  {_c(33, '⚠')} ~/{name}/ exists as real dir — remove it first to symlink")
+            continue
+
+        dst.symlink_to(src)
+        print(f"  {_c(32, '✓')} Symlinked ~/{name}/ (shared with main — gh, aws, azure, etc.)")
+
+    # 5. Check credentials
     creds = ALT_CLAUDE / ".credentials.json"
     print()
     if creds.exists():
@@ -189,6 +282,12 @@ def do_teardown():
         if dst.is_symlink():
             dst.unlink()
             print(f"  {_c(33, '✓')} Removed symlink: {name}")
+
+    for name in SYMLINK_HOME_DIRS:
+        dst = ALT_HOME / name
+        if dst.is_symlink():
+            dst.unlink()
+            print(f"  {_c(33, '✓')} Removed symlink: ~/{name}/")
 
     print()
     print(_c(32, "Teardown complete.") + " Alt home and credentials left intact.")
@@ -398,21 +497,41 @@ def _draw_picker(stdscr, sessions):
 # --- Launch ---
 
 
+def _build_alt_env():
+    """Return a copy of the environment with HOME set to ALT_HOME.
+
+    If ~/.altergo/.local/bin exists, it is prepended to PATH so that Claude
+    Code's startup PATH check (which resolves relative to $HOME) doesn't warn
+    about a missing native-installation directory.  The guard on existence is
+    intentional: we only inject the directory when something has actually been
+    installed there (e.g. via `claude update` inside an altergo session).
+    Without the guard we would prepend a ghost path on every launch and give
+    an uncontrolled write target higher precedence than all system binaries.
+    """
+    env = os.environ.copy()
+    env["HOME"] = str(ALT_HOME)
+    alt_local_bin = ALT_HOME / ".local" / "bin"
+    if alt_local_bin.exists():
+        alt_local_bin_str = str(alt_local_bin)
+        path_dirs = env.get("PATH", "").split(":")
+        if alt_local_bin_str not in path_dirs:
+            env["PATH"] = alt_local_bin_str + ":" + env.get("PATH", "")
+    return env
+
+
 def launch_claude(args=None):
     """Launch claude with alt HOME, passing args through unchanged."""
     claude_path = shutil.which("claude")
     if not claude_path:
         sys.exit("altergo: 'claude' not found in PATH")
-    env = os.environ.copy()
-    env["HOME"] = str(ALT_HOME)
+    env = _build_alt_env()
     cmd = [claude_path] + (args or [])
     os.execvpe(claude_path, cmd, env)
 
 
 def launch_shell():
     """Open an interactive shell with HOME set to alt directory."""
-    env = os.environ.copy()
-    env["HOME"] = str(ALT_HOME)
+    env = _build_alt_env()
     # Prompt hint so users know they are in the alt context
     shell = env.get("SHELL", "/bin/sh")
     shell_name = Path(shell).name
@@ -433,8 +552,7 @@ def launch_command(cmd_args):
     if not cmd_args:
         print(_c(31, "altergo -- requires a command. Example: altergo -- gh auth login"), file=sys.stderr)
         sys.exit(1)
-    env = os.environ.copy()
-    env["HOME"] = str(ALT_HOME)
+    env = _build_alt_env()
     os.execvpe(cmd_args[0], cmd_args, env)
 
 
@@ -447,7 +565,7 @@ def main():
     # ── Altergo-owned commands (not passed to claude) ──────────────────────────
 
     if args and args[0] in ("-h", "--help"):
-        print(__doc__)
+        show_help()
         sys.exit(0)
 
     if args and args[0] == "--version":

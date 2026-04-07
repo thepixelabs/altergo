@@ -9,19 +9,32 @@ on:
     # Run weekly on Monday at 08:00 UTC
     - cron: "0 8 * * 1"
 
-permissions:
-  contents: read
-  pull-requests: read
+# Deny all permissions by default; jobs grant only what they need.
+permissions: {}
 
 jobs:
+  # ---------------------------------------------------------------------------
+  # pip-audit — scan Python dependencies for known vulnerabilities (osv.dev).
+  # altergo has no runtime deps; this audits the build/CI toolchain to catch
+  # supply-chain issues in the tools that run in this repo's pipelines.
+  # ---------------------------------------------------------------------------
   pip-audit:
     name: pip-audit
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Cache pip downloads
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-audit-${{ hashFiles('.github/workflows/security.yml') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-audit-
       - name: Install pip-audit
         run: pip install pip-audit
       # altergo has no runtime dependencies. Auditing the build/dev toolchain
@@ -30,10 +43,36 @@ jobs:
       - name: Audit dev/build dependencies
         run: pip-audit --require-hashes=false --skip-editable --vulnerability-service osv
 
+  # ---------------------------------------------------------------------------
+  # OSV Scanner — cross-ecosystem vulnerability scan via osv.dev.
+  # Scans the repo directory (picks up pyproject.toml and any requirements
+  # files present). osv-scanner.toml holds reviewed suppressions.
+  # ---------------------------------------------------------------------------
+  osv-scan:
+    name: OSV Scanner
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google/osv-scanner-action/osv-scanner-action@c51854704019a247608d928f370c98740469d4b5 # v2.3.5
+        with:
+          scan-args: |-
+            --config=osv-scanner.toml
+            --format=table
+            .
+
+  # ---------------------------------------------------------------------------
+  # Dependency Review — block PRs that introduce high-severity vulnerabilities
+  # or dependencies with disallowed licenses.
+  # ---------------------------------------------------------------------------
   dependency-review:
     name: Dependency Review
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@v4
       - uses: actions/dependency-review-action@v4.9.0
@@ -44,22 +83,16 @@ jobs:
           # bundled into the product, so copyleft obligations don't apply.
           allow-dependencies-licenses: 'pkg:githubactions/trufflesecurity/trufflehog'
 
-  osv-scan:
-    name: OSV Scanner
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: google/osv-scanner-action/osv-scanner-action@c51854704019a247608d928f370c98740469d4b5 # v2.3.5
-        with:
-          scan-args: |-
-            --lockfile=pyproject.toml:pyproject.toml
-            --config=osv-scanner.toml
-            --format=table
-
+  # ---------------------------------------------------------------------------
+  # TruffleHog — scan PR diff for secrets/credentials.
+  # Runs on every PR so secrets are caught before they land on main.
+  # ---------------------------------------------------------------------------
   secret-scanning:
     name: Secret Scanning (TruffleHog)
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
         with:
@@ -81,10 +114,16 @@ jobs:
           echo "::error::TruffleHog detected secrets in this change. See scan output above."
           exit 1
 
+  # ---------------------------------------------------------------------------
+  # TruffleHog full history — runs on the weekly schedule to catch secrets
+  # that may have been present before this workflow was introduced.
+  # ---------------------------------------------------------------------------
   secret-scanning-full:
     name: Secret Scanning (Full History)
     runs-on: ubuntu-latest
     if: github.event_name == 'schedule'
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
         with:

@@ -5,6 +5,8 @@
 # must include a reason documenting the justification.
 #
 # Review suppressed items periodically or when the dependency tree changes.
+#
+# Format reference: https://google.github.io/osv-scanner/configuration/
 
 # No suppressions at this time. Add entries in the form:
 #

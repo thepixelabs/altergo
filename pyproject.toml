@@ -47,11 +47,51 @@ select = ["E", "F", "W", "I"]
 version_toml = ["pyproject.toml:project.version"]
 version_variables = ["altergo.py:__version__"]
 branch = "main"
+# Build is handled as a separate step in release.yml after version bumping,
+# so the release job can gate PyPI publish on a confirmed tag.
 build_command = "pip install build && python -m build"
-commit_parser = "conventional_commits"
+# Use the Angular/conventional-commits parser — same convention as dispatch.
+commit_parser = "angular"
+# Tag format matches dispatch: v1.2.3
+tag_format = "v{version}"
+# Write CHANGELOG.md and commit it alongside the version bump, matching the
+# assets pattern in dispatch's @semantic-release/git plugin.
+changelog_file = "CHANGELOG.md"
+
+[tool.semantic_release.commit_parser_options]
+# Release rules mirror dispatch's release.config.cjs:
+#   feat       → minor
+#   fix        → patch
+#   perf       → patch
+#   refactor   → patch
+#   revert     → patch
+# Everything else (docs, style, test, build, ci, chore) → no release
+minor_tags = ["feat"]
+patch_tags = ["fix", "perf", "refactor", "revert"]
+
+[tool.semantic_release.changelog]
+# Changelog sections mirror dispatch's conventionalcommits preset config.
+# Hidden types still appear in the Git commit but are excluded from the
+# rendered CHANGELOG, keeping it focused on user-visible changes.
+exclude_commit_patterns = [
+    "^style",
+    "^test",
+    "^build",
+    "^ci",
+    "^chore",
+]
+
+[tool.semantic_release.changelog.default_templates]
+changelog_file = "CHANGELOG.md"
 
 [tool.semantic_release.publish]
-upload_to_pypi = false  # PyPI publish handled via trusted publishing in CI
+# PyPI publish is handled via OIDC trusted publishing in release.yml.
+# python-semantic-release must not attempt to upload — it has no API token.
+upload_to_pypi = false
+upload_to_release = true
+
+[tool.semantic_release.remote]
+type = "github"
 
 [tool.semantic_release.remote.token]
 env = "GH_TOKEN"

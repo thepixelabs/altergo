@@ -63,12 +63,20 @@ def _link(url, text):
 
 def show_help():
     """Print --help output with color and OSC 8 hyperlinks when on a TTY."""
-    b  = lambda t: _c("1",    t)   # bold
-    h  = lambda t: _c("1;36", t)   # bold cyan  — section headers
-    kw = lambda t: _c("36",   t)   # cyan        — commands / keys
-    dim = lambda t: _c("2",   t)   # dim         — secondary text
 
-    pixelabs   = _link("https://pixelabs.net",   "pixelabs.net")
+    def b(t):
+        return _c("1", t)  # bold
+
+    def h(t):
+        return _c("1;36", t)  # bold cyan — section headers
+
+    def kw(t):
+        return _c("36", t)  # cyan — commands / keys
+
+    def dim(t):
+        return _c("2", t)  # dim — secondary text
+
+    pixelabs = _link("https://pixelabs.net", "pixelabs.net")
     claude_url = _link("https://claude.ai/code", "Claude Code")
 
     lines = [
@@ -665,9 +673,9 @@ def _draw_settings(stdscr, catalog, overrides):
     curses.curs_set(0)
     curses.use_default_colors()
     curses.init_pair(1, curses.COLOR_BLACK, curses.COLOR_CYAN)  # selected row
-    curses.init_pair(2, curses.COLOR_CYAN, -1)                  # title bar
-    curses.init_pair(6, curses.COLOR_GREEN, -1)                 # enabled item
-    curses.init_pair(7, curses.COLOR_YELLOW, -1)                # warning text
+    curses.init_pair(2, curses.COLOR_CYAN, -1)  # title bar
+    curses.init_pair(6, curses.COLOR_GREEN, -1)  # enabled item
+    curses.init_pair(7, curses.COLOR_YELLOW, -1)  # warning text
 
     local = dict(overrides)  # mutable working copy
 

@@ -1,0 +1,188 @@
+name: Homebrew Tap Bump
+
+# Fires on every version tag push (e.g. v0.5.0).
+# Opens a PR against thepixelabs/homebrew-tap bumping the altergo formula's
+# url and sha256 to match the newly published PyPI source tarball.
+#
+# Prerequisites
+# -------------
+# GH_TOKEN must have:
+#   - write access to thepixelabs/homebrew-tap  (repo scope, or a fine-grained
+#     token scoped to that repo with "Contents: Read and Write" and
+#     "Pull requests: Read and Write")
+#   - The secret is already present in this repo (used by release.yml).
+#
+# v0.5.0 caveats reminder
+# -----------------------
+# For the v0.5.0 release the tap formula MUST include a `caveats` block
+# directing users to the migration docs.  Because this workflow cannot edit
+# the formula directly (it works by opening a PR), the PR body template below
+# includes an explicit checklist item reminding the tap maintainer to add the
+# caveats block before merging.  See the PR body template in the
+# "Open PR against tap" step.
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: read  # this repo only — tap write is handled via GH_TOKEN
+
+jobs:
+  bump-tap:
+    runs-on: ubuntu-latest
+    # Only run when the tag actually produced a PyPI release.  If the tag was
+    # pushed manually before PyPI has the package, the download step will fail
+    # fast rather than opening a broken PR.
+
+    steps:
+      - name: Extract version
+        id: meta
+        run: |
+          # Strip the leading 'v' from the tag ref  (refs/tags/v0.5.0 → 0.5.0)
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+          TARBALL_URL="https://files.pythonhosted.org/packages/source/a/altergo/altergo-${VERSION}.tar.gz"
+          echo "tarball_url=${TARBALL_URL}" >> "$GITHUB_OUTPUT"
+
+      - name: Download tarball and compute SHA256
+        id: sha
+        run: |
+          TARBALL_URL="${{ steps.meta.outputs.tarball_url }}"
+          echo "Fetching: ${TARBALL_URL}"
+
+          # Fail loudly if PyPI doesn't have the tarball yet
+          HTTP_STATUS=$(curl --silent --output altergo.tar.gz \
+            --write-out "%{http_code}" \
+            --location "${TARBALL_URL}")
+
+          if [ "${HTTP_STATUS}" != "200" ]; then
+            echo "ERROR: Got HTTP ${HTTP_STATUS} from PyPI — tarball not yet available."
+            echo "Did the PyPI publish step in release.yml complete before this tag was pushed?"
+            exit 1
+          fi
+
+          SHA256=$(sha256sum altergo.tar.gz | awk '{print $1}')
+          echo "sha256=${SHA256}" >> "$GITHUB_OUTPUT"
+          echo "SHA256: ${SHA256}"
+
+      - name: Checkout tap repo
+        uses: actions/checkout@v4
+        with:
+          repository: thepixelabs/homebrew-tap
+          token: ${{ secrets.GH_TOKEN }}
+          path: tap
+
+      - name: Patch formula
+        id: patch
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          TARBALL_URL: ${{ steps.meta.outputs.tarball_url }}
+          SHA256: ${{ steps.sha.outputs.sha256 }}
+        run: |
+          FORMULA="tap/Formula/altergo.rb"
+
+          if [ ! -f "${FORMULA}" ]; then
+            echo "ERROR: ${FORMULA} not found in tap repo."
+            echo "Create the formula first, then re-run this workflow."
+            exit 1
+          fi
+
+          # Update url line
+          sed -i "s|url \"https://files.pythonhosted.org/packages/source/a/altergo/altergo-.*\.tar\.gz\"|url \"${TARBALL_URL}\"|" "${FORMULA}"
+
+          # Update sha256 line
+          sed -i "s|sha256 \"[a-f0-9]*\"|sha256 \"${SHA256}\"|" "${FORMULA}"
+
+          # Verify the substitutions landed
+          grep -q "${TARBALL_URL}" "${FORMULA}" || { echo "ERROR: url substitution failed"; exit 1; }
+          grep -q "${SHA256}"      "${FORMULA}" || { echo "ERROR: sha256 substitution failed"; exit 1; }
+
+          echo "Formula patched successfully:"
+          grep -E "^\s+(url|sha256)\b" "${FORMULA}"
+
+      - name: Open PR against tap
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          SHA256: ${{ steps.sha.outputs.sha256 }}
+          TARBALL_URL: ${{ steps.meta.outputs.tarball_url }}
+        run: |
+          cd tap
+
+          BRANCH="bump/altergo-${VERSION}"
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git checkout -b "${BRANCH}"
+          git add Formula/altergo.rb
+          git commit -m "altergo ${VERSION}"
+          git push origin "${BRANCH}"
+
+          # Detect whether this is a minor/major release so the caveats reminder
+          # is surfaced prominently in the PR body.
+          MINOR_OR_MAJOR=""
+          PATCH_SEGMENT=$(echo "${VERSION}" | awk -F. '{print $3}')
+          if [ "${PATCH_SEGMENT}" = "0" ]; then
+            MINOR_OR_MAJOR="true"
+          fi
+
+          # Build the PR body.  The heredoc uses single-quoted EOF so that shell
+          # variables inside are NOT expanded — we want the literal text in the PR.
+          PR_BODY="$(cat <<'BODY_EOF'
+## altergo formula bump
+
+This PR was opened automatically by the `homebrew-bump.yml` workflow in
+[thepixelabs/altergo](https://github.com/thepixelabs/altergo).
+
+### Changes
+BODY_EOF
+
+          # Expand version/sha into the body after the static section
+          cat <<BODY_VARS
+- **url** → \`${TARBALL_URL}\`
+- **sha256** → \`${SHA256}\`
+
+### Checklist before merging
+
+- [ ] \`brew audit --new-formula Formula/altergo.rb\` passes locally
+- [ ] \`brew install --build-from-source Formula/altergo.rb\` succeeds
+- [ ] \`altergo --version\` reports \`${VERSION}\`
+BODY_VARS
+          )"
+
+          # v0.5.0-specific caveats reminder
+          if [ "${MINOR_OR_MAJOR}" = "true" ]; then
+            PR_BODY="${PR_BODY}
+
+---
+
+> **v0.5.0 release — action required before merging**
+>
+> This is a minor-version bump.  The formula MUST include a \`caveats\` block
+> pointing users to the migration docs, for example:
+>
+> \`\`\`ruby
+> def caveats
+>   <<~EOS
+>     altergo 0.5.0 introduces breaking changes to the session store format.
+>     Before using this version run:
+>       altergo --migrate
+>     See https://altergo.pixelabs.net/docs/migration-0.5 for details.
+>   EOS
+> end
+> \`\`\`
+>
+> This workflow cannot edit the formula automatically for caveats — please
+> add the block manually in this PR before merging."
+          fi
+
+          gh pr create \
+            --repo thepixelabs/homebrew-tap \
+            --head "${BRANCH}" \
+            --base main \
+            --title "altergo ${VERSION}" \
+            --body "${PR_BODY}"

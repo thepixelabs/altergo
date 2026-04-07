@@ -1,0 +1,3 @@
+# TruffleHog path exclusions — one regex per line.
+# Only add paths with confirmed, documented false positives.
+# Format: Go-style regex matched against the full file path.

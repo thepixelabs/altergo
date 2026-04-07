@@ -1,0 +1,13 @@
+# osv-scanner.toml — project-level vulnerability suppressions
+#
+# Only suppress vulnerabilities that have been reviewed and confirmed to be
+# unreachable or not exploitable in this project's context. Each suppression
+# must include a reason documenting the justification.
+#
+# Review suppressed items periodically or when the dependency tree changes.
+
+# No suppressions at this time. Add entries in the form:
+#
+# [[IgnoredVulns]]
+# id = "GHSA-xxxx-xxxx-xxxx"
+# reason = "Justification: why this finding is not exploitable or unreachable in this project."

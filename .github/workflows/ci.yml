@@ -4,14 +4,22 @@ on:
   push:
     branches: [main]
   pull_request:
+    types: [opened, edited, synchronize, reopened]
     branches: [main]
 
-permissions:
-  contents: read
+# Deny all permissions by default; each job grants only what it needs.
+permissions: {}
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   lint:
+    name: Lint & Format
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -22,7 +30,10 @@ jobs:
       - run: ruff format --check altergo.py
 
   test:
+    name: Test (Python ${{ matrix.python-version }}, ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]

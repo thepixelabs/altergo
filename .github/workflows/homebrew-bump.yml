@@ -73,16 +73,36 @@ jobs:
           TARBALL_URL="${{ steps.meta.outputs.tarball_url }}"
           echo "Fetching: ${TARBALL_URL}"
 
-          # Fail loudly if PyPI does not yet have the tarball.  This guards
-          # against a race where the tag was pushed before the PyPI publish
-          # step in release.yml completed.
-          HTTP_STATUS=$(curl --silent --output altergo.tar.gz \
-            --write-out "%{http_code}" \
-            --location "${TARBALL_URL}")
+          # Retry loop: PyPI indexing can lag behind the publish API call by
+          # 30-120 seconds. homebrew-bump fires on tag push, which may race
+          # the release.yml PyPI publish step. Retry with backoff for up to
+          # ~10 minutes before giving up.
+          MAX_ATTEMPTS=20
+          SLEEP_SECONDS=30
+          ATTEMPT=0
+          HTTP_STATUS=0
+
+          while [ "${ATTEMPT}" -lt "${MAX_ATTEMPTS}" ]; do
+            ATTEMPT=$((ATTEMPT + 1))
+            HTTP_STATUS=$(curl --silent --output altergo.tar.gz \
+              --write-out "%{http_code}" \
+              --location "${TARBALL_URL}")
+
+            if [ "${HTTP_STATUS}" = "200" ]; then
+              echo "Attempt ${ATTEMPT}: tarball available (HTTP 200)."
+              break
+            fi
+
+            echo "Attempt ${ATTEMPT}/${MAX_ATTEMPTS}: HTTP ${HTTP_STATUS} from PyPI - waiting ${SLEEP_SECONDS}s before retry."
+            rm -f altergo.tar.gz
+            sleep "${SLEEP_SECONDS}"
+          done
 
           if [ "${HTTP_STATUS}" != "200" ]; then
-            echo "ERROR: Got HTTP ${HTTP_STATUS} from PyPI — tarball not yet available."
-            echo "Did the PyPI publish step in release.yml complete before this tag was pushed?"
+            echo "ERROR: PyPI tarball not available after ${MAX_ATTEMPTS} attempts."
+            echo "Final HTTP status: ${HTTP_STATUS}"
+            echo "URL: ${TARBALL_URL}"
+            echo "Check that the release.yml PyPI publish step completed successfully."
             exit 1
           fi
 

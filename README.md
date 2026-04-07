@@ -12,7 +12,7 @@
 
 <p align="center">
   <a href="https://pypi.org/project/altergo/"><img alt="PyPI version" src="https://img.shields.io/pypi/v/altergo"></a>
-  <img alt="Python 3.9+" src="https://img.shields.io/badge/python-3.9+-blue.svg">
+  <img alt="Python 3.10+" src="https://img.shields.io/badge/python-3.10+-blue.svg">
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-green.svg"></a>
   <a href="https://github.com/thepixelabs/altergo/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/thepixelabs/altergo/actions/workflows/ci.yml/badge.svg"></a>
   <a href="https://github.com/thepixelabs/altergo/actions/workflows/release.yml"><img alt="CD" src="https://github.com/thepixelabs/altergo/actions/workflows/release.yml/badge.svg"></a>
@@ -25,7 +25,7 @@
 
 ---
 
-## Why altergo
+## <img src="docs/icons/why.svg" width="22" align="center"> Why altergo
 
 You have more than one Claude Code subscription. Switching between them normally means juggling separate terminals, losing your session history, or manually swapping credential files. That is friction you should not have to think about.
 
@@ -33,9 +33,38 @@ altergo runs each Claude account in its own isolated HOME, so credentials never 
 
 No daemon. No sync service. No config files to wrangle. One Python file.
 
+### Before and after
+
+<table>
+<tr>
+<th width="50%">Before altergo</th>
+<th width="50%">With altergo</th>
+</tr>
+<tr>
+<td>
+
+- Separate terminals per account, or swap credential files by hand
+- Log out, log in, lose your place
+- Each account has its own session history — hard to find "where was I?"
+- Tool configs (AWS, gcloud, kubectl) randomly break as you jump around
+- Mixing a work question into a personal session, then panicking
+
+</td>
+<td>
+
+- One terminal. `altergo work` → you are in the work account.
+- Credentials swap instantly, no login dance
+- Session history shared across **all** accounts — `altergo --resume` picks from everywhere
+- AWS, gcloud, Docker, kubectl stay shared by default — nothing breaks
+- Each account is isolated at `HOME`, so wires never cross
+
+</td>
+</tr>
+</table>
+
 ---
 
-## Install
+## <img src="docs/icons/install.svg" width="22" align="center"> Install
 
 **pip** (recommended — always up to date from PyPI)
 
@@ -64,11 +93,11 @@ chmod +x ~/.local/bin/altergo
 brew install thepixelabs/tap/altergo
 ```
 
-**Requirements:** Python 3.9+, [Claude Code](https://claude.ai/code) CLI installed, macOS or Linux.
+**Requirements:** Python 3.10+, [Claude Code](https://claude.ai/code) CLI installed, macOS or Linux.
 
 ---
 
-## Quick start
+## <img src="docs/icons/quickstart.svg" width="22" align="center"> Quick start
 
 ```bash
 # Create named accounts — repeat for as many as you need
@@ -86,21 +115,23 @@ That is the full workflow. The first time you run `altergo work`, Claude authent
 
 ---
 
-## Features
+## <img src="docs/icons/features.svg" width="22" align="center"> Features
 
-- **Named accounts, unlimited** — work, personal, client-A, or any name you choose. Each gets its own Claude credentials.
-- **One command to switch** — `altergo work` launches Claude with the right credentials. No flags, no config editing.
-- **Credential isolation** — only Claude's OAuth token is isolated per account. AWS, GCP, Docker, kubectl, and GitHub CLI are shared by default.
-- **Configurable sharing** — run `altergo --settings` to choose which CLI tool credentials are shared or isolated. Space to toggle, `s` to save.
-- **Interactive TUI session picker** — full-screen curses interface with arrow keys, `j`/`k` vim bindings, page up/down, and a preview of each session's final message.
-- **Session preview** — see project name, last modified time, size, and the last message before you resume.
-- **Zero dependencies** — ships as a single Python file. Standard library only.
-- **Cross-platform** — macOS and Linux wherever Python 3.9+ is available.
-- **Silent auto-migration** — existing v0.4.x installs upgrade automatically on first run. No manual steps.
+| Feature | What it means |
+|---|---|
+| **Named accounts, unlimited** | `work`, `personal`, `client-a`, or any name. Each gets its own Claude credentials. |
+| **One command to switch** | `altergo work` launches Claude with the right credentials. No flags, no config editing. |
+| **Credential isolation** | Only Claude's OAuth token is isolated per account. AWS, GCP, Docker, kubectl, and GitHub CLI stay shared by default. |
+| **Configurable sharing** | `altergo --settings` opens a curses TUI — space to toggle which CLI tools share credentials, `s` to save. |
+| **Interactive session picker** | Full-screen TUI with arrow keys, `j`/`k` vim bindings, page up/down, and a preview of each session's final message. |
+| **Session preview** | See project name, last modified time, size, and last message before you resume. |
+| **Zero dependencies** | Ships as a single Python file. Standard library only. |
+| **Cross-platform** | macOS and Linux wherever Python 3.10+ is available. |
+| **Silent auto-migration** | Existing v0.4.x installs upgrade automatically on first run. No manual steps. |
 
 ---
 
-## Command reference
+## <img src="docs/icons/commands.svg" width="22" align="center"> Command reference
 
 | Command | What it does |
 |---|---|
@@ -131,7 +162,7 @@ That is the full workflow. The first time you run `altergo work`, Claude authent
 
 ---
 
-## How it works
+## <img src="docs/icons/howitworks.svg" width="22" align="center"> How it works
 
 altergo sets `HOME=~/.altergo/accounts/<name>` for the Claude process. Each account's token lives at `~/.altergo/accounts/<name>/.claude/.credentials.json`. Everything else is shared via symlinks back to your primary `~/.claude/`.
 
@@ -186,7 +217,7 @@ Claude Code may store tokens in the system Keychain rather than a flat file. Whe
 
 ---
 
-## Migrating from v0.4.x
+## <img src="docs/icons/migrate.svg" width="22" align="center"> Migrating from v0.4.x
 
 If you have an existing `~/.altergo/` directory from v0.4.x, altergo migrates it automatically on first run. Your old setup becomes the default account at `~/.altergo/accounts/default/`. A backup is preserved at `~/.altergo/.legacy-backup/`. No manual steps required.
 
@@ -198,13 +229,9 @@ If you used the earlier `claude100-resume` tool with `~/claude100-home/`, your c
 
 ---
 
-## Contributing
+## <img src="docs/icons/legal.svg" width="22" align="center"> Contributing & License
 
-See [CONTRIBUTING.md](CONTRIBUTING.md).
-
-## License
-
-[MIT](LICENSE)
+See [CONTRIBUTING.md](CONTRIBUTING.md) · [MIT License](LICENSE)
 
 ---
 

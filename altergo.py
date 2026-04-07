@@ -33,7 +33,7 @@ Navigation (session picker):
   Enter        Resume session      q/Esc        Quit
 """
 
-__version__ = "0.4.1"
+__version__ = "0.5.0"
 
 import curses
 import json
@@ -83,6 +83,7 @@ def show_help():
         f"  {kw('altergo --list')}                 List recent sessions",
         f"  {kw('altergo --setup')}                First-time setup (alt home, symlinks)",
         f"  {kw('altergo --teardown')}             Remove symlinks and undo setup",
+        f"  {kw('altergo --settings')}             Configure shared credentials (interactive)",
         f"  {kw('altergo shell')}                  Open an interactive shell inside alt HOME",
         f"  {kw('altergo -- <cmd> [args...]')}     Run any command with HOME set to alt directory",
         f"  {kw('altergo --version')}              Show version",
@@ -140,26 +141,189 @@ SYMLINK_FILES = [
     "keybindings.json",
 ]
 
-# Top-level HOME dirs to symlink into alt home.
-# These are shared wholesale — any CLI tool storing auth here will reuse your
-# main account credentials automatically inside altergo sessions.
-# Only ~/.claude/.credentials.json stays segregated (alt Claude identity).
-#
-# Common locations:
-#   .config   — gh, gcloud, azure, heroku, and most XDG-compliant tools
-#   .aws      — AWS CLI / boto3
-#   .azure    — Azure CLI (some versions write here instead of .config/azure)
-#   .kube     — kubectl / kubeconfig
-#   .docker   — Docker credentials
-#   .terraform.d — Terraform Cloud tokens
-SYMLINK_HOME_DIRS = [
-    ".config",
-    ".aws",
-    ".azure",
-    ".kube",
-    ".docker",
-    ".terraform.d",
+# Catalog of CLI tools whose credentials can be shared between main and alt.
+# Each entry maps to one or more paths relative to $HOME that are symlinked.
+# default_on=True  → shared by default (user must explicitly opt out)
+# default_on=False → isolated by default (user must explicitly opt in)
+# warning          → shown in the settings TUI when this entry is highlighted
+CATALOG = [
+    # Cloud Providers
+    {
+        "id": "aws",
+        "name": "AWS CLI",
+        "category": "Cloud Providers",
+        "paths": [".aws"],
+        "default_on": True,
+    },
+    {
+        "id": "gcloud",
+        "name": "Google Cloud",
+        "category": "Cloud Providers",
+        "paths": [".config/gcloud"],
+        "default_on": True,
+    },
+    {
+        "id": "azure",
+        "name": "Azure CLI",
+        "category": "Cloud Providers",
+        "paths": [".azure", ".config/azure"],
+        "default_on": True,
+    },
+    # Containers & Orchestration
+    {
+        "id": "docker",
+        "name": "Docker",
+        "category": "Containers",
+        "paths": [".docker"],
+        "default_on": True,
+    },
+    {
+        "id": "kube",
+        "name": "Kubernetes",
+        "category": "Containers",
+        "paths": [".kube"],
+        "default_on": True,
+    },
+    # Infrastructure
+    {
+        "id": "terraform",
+        "name": "Terraform",
+        "category": "Infrastructure",
+        "paths": [".terraform.d"],
+        "default_on": True,
+    },
+    # VCS & Dev Tools
+    {
+        "id": "gh",
+        "name": "GitHub CLI",
+        "category": "VCS & Dev Tools",
+        "paths": [".config/gh"],
+        "default_on": True,
+    },
+    {
+        "id": "glab",
+        "name": "GitLab CLI",
+        "category": "VCS & Dev Tools",
+        "paths": [".config/glab"],
+        "default_on": False,
+    },
+    # Package Managers
+    {
+        "id": "npm",
+        "name": "npm",
+        "category": "Package Managers",
+        "paths": [".npmrc"],
+        "default_on": False,
+    },
+    # Identity — off by default, high security/identity impact
+    {
+        "id": "ssh",
+        "name": "SSH keys",
+        "category": "Identity",
+        "paths": [".ssh"],
+        "default_on": False,
+        "warning": "Shares SSH keys & known_hosts. Keep off if you use per-identity SSH keys.",
+    },
+    {
+        "id": "gitconfig",
+        "name": "Git identity",
+        "category": "Identity",
+        "paths": [".gitconfig"],
+        "default_on": False,
+        "warning": "Shares git user.name/email. Keep off for separate commit identity per account.",
+    },
+    {
+        "id": "gnupg",
+        "name": "GPG keys",
+        "category": "Identity",
+        "paths": [".gnupg"],
+        "default_on": False,
+        "warning": "Shares GPG keyring. Keep off if you use per-identity signing keys.",
+    },
 ]
+
+# Settings file — inside alt home, above any .config symlink
+SETTINGS_FILE = ALT_HOME / ".altergo.json"
+
+# --- Settings helpers ---
+
+
+def load_settings():
+    """Load user settings overlay. Returns {id: bool} dict of non-default values."""
+    if not SETTINGS_FILE.exists():
+        return {}
+    try:
+        data = json.loads(SETTINGS_FILE.read_text())
+        shared = data.get("shared", {})
+        catalog_ids = {e["id"] for e in CATALOG}
+        return {k: v for k, v in shared.items() if k in catalog_ids and isinstance(v, bool)}
+    except Exception:
+        return {}
+
+
+def save_settings(overrides):
+    """Atomically write settings overlay to SETTINGS_FILE."""
+    ALT_HOME.mkdir(parents=True, exist_ok=True)
+    data = {"version": 1, "shared": overrides}
+    tmp = SETTINGS_FILE.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(data, indent=2))
+    os.replace(str(tmp), str(SETTINGS_FILE))
+
+
+def is_enabled(entry, overrides):
+    """Return whether a catalog entry is enabled given the user's overrides."""
+    return overrides.get(entry["id"], entry["default_on"])
+
+
+def _ensure_nested_parent(rel):
+    """For paths like .config/gh, ensure ALT_HOME/.config is a real directory.
+
+    If it's currently a wholesale symlink to MAIN_HOME/.config (from an older
+    setup), migrates it transparently: unlinks the symlink and creates a real
+    directory, then individual tool symlinks will be created inside it.
+    """
+    p = Path(rel)
+    if len(p.parts) < 2:
+        return
+    parent_name = p.parts[0]
+    alt_parent = ALT_HOME / parent_name
+    main_parent = MAIN_HOME / parent_name
+    if alt_parent.is_symlink():
+        if alt_parent.resolve() == main_parent.resolve():
+            alt_parent.unlink()
+            alt_parent.mkdir(parents=True, exist_ok=True)
+            print(f"  {_c(33, '↻')} Migrated ~/{parent_name}/ from wholesale symlink to managed dir")
+    elif not alt_parent.exists():
+        alt_parent.mkdir(parents=True, exist_ok=True)
+
+
+def _apply_entry(entry, overrides):
+    """Create or remove symlinks for one catalog entry based on current settings."""
+    enabled = is_enabled(entry, overrides)
+    for rel in entry["paths"]:
+        src = MAIN_HOME / Path(rel)
+        dst = ALT_HOME / Path(rel)
+        if enabled:
+            if not src.exists():
+                print(f"  {_c(2, 'skip')} ~/{rel} (not present in main home)")
+                continue
+            _ensure_nested_parent(rel)
+            if dst.is_symlink():
+                if dst.resolve() == src.resolve():
+                    print(f"  {_c(32, '✓')} ~/{rel} already shared")
+                else:
+                    print(f"  {_c(33, '⚠')} ~/{rel} symlinked elsewhere — skipping")
+                continue
+            if dst.exists():
+                print(f"  {_c(33, '⚠')} ~/{rel} has local data — remove it first to share")
+                continue
+            dst.symlink_to(src)
+            print(f"  {_c(32, '✓')} Sharing ~/{rel}")
+        else:
+            if dst.is_symlink() and dst.resolve() == src.resolve():
+                dst.unlink()
+                print(f"  {_c(33, '✓')} Unshared ~/{rel}")
+
 
 # --- Setup / Teardown ---
 
@@ -222,29 +386,10 @@ def do_setup():
         dst.symlink_to(src)
         print(f"  {_c(32, '✓')} Symlinked {name}")
 
-    # 4. Symlink top-level home dirs (e.g. ~/.config → shared with main)
-    for name in SYMLINK_HOME_DIRS:
-        src = MAIN_HOME / name
-        dst = ALT_HOME / name
-
-        if not src.exists():
-            print(f"  {_c(2, 'skip')} ~/{name}/ (not found in main)")
-            continue
-
-        if dst.is_symlink():
-            target = dst.resolve()
-            if target == src.resolve():
-                print(f"  {_c(32, '✓')} ~/{name}/ already symlinked (shared)")
-            else:
-                print(f"  {_c(33, '⚠')} ~/{name}/ symlinked to {target} (expected {src})")
-            continue
-
-        if dst.exists():
-            print(f"  {_c(33, '⚠')} ~/{name}/ exists as real dir — remove it first to symlink")
-            continue
-
-        dst.symlink_to(src)
-        print(f"  {_c(32, '✓')} Symlinked ~/{name}/ (shared with main — gh, aws, azure, etc.)")
+    # 4. Apply catalog entries (shared CLI tool credentials)
+    overrides = load_settings()
+    for entry in CATALOG:
+        _apply_entry(entry, overrides)
 
     # 5. Check credentials
     creds = ALT_CLAUDE / ".credentials.json"
@@ -283,11 +428,13 @@ def do_teardown():
             dst.unlink()
             print(f"  {_c(33, '✓')} Removed symlink: {name}")
 
-    for name in SYMLINK_HOME_DIRS:
-        dst = ALT_HOME / name
-        if dst.is_symlink():
-            dst.unlink()
-            print(f"  {_c(33, '✓')} Removed symlink: ~/{name}/")
+    for entry in CATALOG:
+        for rel in entry["paths"]:
+            dst = ALT_HOME / Path(rel)
+            src = MAIN_HOME / Path(rel)
+            if dst.is_symlink() and dst.resolve() == src.resolve():
+                dst.unlink()
+                print(f"  {_c(33, '✓')} Removed symlink: ~/{rel}")
 
     print()
     print(_c(32, "Teardown complete.") + " Alt home and credentials left intact.")
@@ -494,6 +641,149 @@ def _draw_picker(stdscr, sessions):
             return None
 
 
+# --- Settings TUI ---
+
+
+def interactive_settings():
+    """Open the settings TUI, save on confirm, and apply changes immediately."""
+    overrides = curses.wrapper(_draw_settings, CATALOG, load_settings())
+    if overrides is None:
+        print("Cancelled.")
+        return
+    save_settings(overrides)
+    print()
+    print(_c(1, _c(36, "=== Applying settings ===")))
+    print()
+    for entry in CATALOG:
+        _apply_entry(entry, overrides)
+    print()
+    print(_c(32, "Settings saved and applied."))
+
+
+def _draw_settings(stdscr, catalog, overrides):
+    """Settings TUI. Returns overlay {id: bool} on save, None on cancel."""
+    curses.curs_set(0)
+    curses.use_default_colors()
+    curses.init_pair(1, curses.COLOR_BLACK, curses.COLOR_CYAN)  # selected row
+    curses.init_pair(2, curses.COLOR_CYAN, -1)                  # title bar
+    curses.init_pair(6, curses.COLOR_GREEN, -1)                 # enabled item
+    curses.init_pair(7, curses.COLOR_YELLOW, -1)                # warning text
+
+    local = dict(overrides)  # mutable working copy
+
+    # Build flat row list: headers + entries in catalog order
+    rows = []
+    seen_cats = []
+    for entry in catalog:
+        cat = entry["category"]
+        if cat not in seen_cats:
+            seen_cats.append(cat)
+            rows.append({"type": "header", "text": cat})
+        rows.append({"type": "entry", "entry": entry})
+
+    selectable = [i for i, r in enumerate(rows) if r["type"] == "entry"]
+    defaults = {e["id"]: e["default_on"] for e in catalog}
+    sel_pos = 0
+    scroll_offset = 0
+
+    while True:
+        stdscr.clear()
+        max_y, max_x = stdscr.getmaxyx()
+
+        # Title bar
+        title = " Altergo — Shared Credentials  ·  Space toggle  ·  s save  ·  Esc cancel"
+        stdscr.attron(curses.color_pair(2) | curses.A_BOLD)
+        stdscr.addnstr(0, 0, title.ljust(max_x), max_x - 1)
+        stdscr.attroff(curses.color_pair(2) | curses.A_BOLD)
+
+        subtitle = "  Share CLI credentials between accounts. Only Claude login stays separate."
+        stdscr.attron(curses.A_DIM)
+        stdscr.addnstr(1, 0, subtitle[: max_x - 1], max_x - 1)
+        stdscr.attroff(curses.A_DIM)
+
+        visible_rows = max(1, max_y - 5)
+        current_row_idx = selectable[sel_pos]
+
+        # Scroll to keep selection visible
+        if current_row_idx < scroll_offset:
+            scroll_offset = current_row_idx
+        elif current_row_idx >= scroll_offset + visible_rows:
+            scroll_offset = current_row_idx - visible_rows + 1
+
+        for i in range(visible_rows):
+            row_idx = scroll_offset + i
+            if row_idx >= len(rows):
+                break
+            screen_row = i + 3
+            row = rows[row_idx]
+
+            if row["type"] == "header":
+                stdscr.attron(curses.A_BOLD)
+                stdscr.addnstr(screen_row, 2, row["text"][: max_x - 3], max_x - 3)
+                stdscr.attroff(curses.A_BOLD)
+            else:
+                entry = row["entry"]
+                enabled = is_enabled(entry, local)
+                is_current = row_idx == current_row_idx
+                has_warn = "warning" in entry
+
+                check = "[x]" if enabled else "[ ]"
+                warn_tag = " !" if has_warn else "  "
+                name_part = f"  {check} {entry['name']:<22}{warn_tag}"
+                path_hint = "  " + ", ".join(f"~/{p}" for p in entry["paths"])
+
+                if is_current:
+                    full = f"▸ {check} {entry['name']:<22}{warn_tag}{path_hint.strip()}"
+                    stdscr.attron(curses.color_pair(1) | curses.A_BOLD)
+                    stdscr.addnstr(screen_row, 0, full[: max_x - 1].ljust(max_x - 1), max_x - 1)
+                    stdscr.attroff(curses.color_pair(1) | curses.A_BOLD)
+                else:
+                    if enabled:
+                        stdscr.attron(curses.color_pair(6))
+                    stdscr.addnstr(screen_row, 0, name_part[: max_x - 1], max_x - 1)
+                    if enabled:
+                        stdscr.attroff(curses.color_pair(6))
+                    nc = len(name_part)
+                    if nc < max_x - 1:
+                        stdscr.attron(curses.A_DIM)
+                        stdscr.addnstr(screen_row, nc, path_hint[: max_x - nc - 1], max_x - nc - 1)
+                        stdscr.attroff(curses.A_DIM)
+
+        # Footer
+        footer_row = max_y - 2
+        current_entry = rows[current_row_idx].get("entry", {})
+        if current_entry.get("warning"):
+            stdscr.attron(curses.color_pair(7))
+            stdscr.addnstr(footer_row, 0, f"  ! {current_entry['warning']}"[: max_x - 1], max_x - 1)
+            stdscr.attroff(curses.color_pair(7))
+
+        nav = "  Space toggle  ·  ↑↓ / j k navigate  ·  s save & apply  ·  Esc cancel"
+        stdscr.attron(curses.A_DIM)
+        stdscr.addnstr(footer_row + 1, 0, nav[: max_x - 1], max_x - 1)
+        stdscr.attroff(curses.A_DIM)
+
+        stdscr.refresh()
+
+        key = stdscr.getch()
+        if key in (curses.KEY_UP, ord("k")):
+            sel_pos = max(0, sel_pos - 1)
+        elif key in (curses.KEY_DOWN, ord("j")):
+            sel_pos = min(len(selectable) - 1, sel_pos + 1)
+        elif key == curses.KEY_PPAGE:
+            sel_pos = max(0, sel_pos - visible_rows)
+        elif key == curses.KEY_NPAGE:
+            sel_pos = min(len(selectable) - 1, sel_pos + visible_rows)
+        elif key == ord(" "):
+            entry = rows[selectable[sel_pos]]["entry"]
+            local[entry["id"]] = not is_enabled(entry, local)
+        elif key == ord("s"):
+            # Only write non-default values to keep the file minimal
+            overlay = {k: v for k, v in local.items() if defaults.get(k) != v}
+            return overlay
+        elif key in (ord("q"), 27):
+            return None
+
+
 # --- Launch ---
 
 
@@ -552,8 +842,12 @@ def launch_command(cmd_args):
     if not cmd_args:
         print(_c(31, "altergo -- requires a command. Example: altergo -- gh auth login"), file=sys.stderr)
         sys.exit(1)
+    cmd_path = shutil.which(cmd_args[0])
+    if not cmd_path:
+        print(_c(31, f"altergo: '{cmd_args[0]}' not found in PATH"), file=sys.stderr)
+        sys.exit(1)
     env = _build_alt_env()
-    os.execvpe(cmd_args[0], cmd_args, env)
+    os.execvpe(cmd_path, [cmd_path] + cmd_args[1:], env)
 
 
 # --- Main ---
@@ -578,6 +872,10 @@ def main():
 
     if args and args[0] == "--teardown":
         do_teardown()
+        sys.exit(0)
+
+    if args and args[0] == "--settings":
+        interactive_settings()
         sys.exit(0)
 
     if args and args[0] == "--list":

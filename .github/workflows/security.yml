@@ -41,7 +41,7 @@ jobs:
       # (setuptools, build, ruff, pytest, python-semantic-release, pip-audit
       # itself) catches supply-chain vulnerabilities in the CI environment.
       - name: Audit dev/build dependencies
-        run: pip-audit --require-hashes=false --skip-editable --vulnerability-service osv
+        run: pip-audit --skip-editable --vulnerability-service osv
 
   # ---------------------------------------------------------------------------
   # OSV Scanner — cross-ecosystem vulnerability scan via osv.dev.

@@ -29,9 +29,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # persist-credentials: false lets python-semantic-release push with
-          # GH_TOKEN without double-auth conflicts from the default GITHUB_TOKEN.
-          persist-credentials: false
+          # Use the GH_TOKEN PAT as the checkout token so its credentials are
+          # persisted on the `origin` remote.  python-semantic-release shells
+          # out to plain `git push`, which reads credentials from the remote
+          # URL helper — not from the GH_TOKEN env var (that's a `gh` CLI
+          # convention).  The PAT must also have permission to push to main
+          # under any branch protection rules in force.
+          token: ${{ secrets.GH_TOKEN }}
           # Full history required so python-semantic-release can walk back to
           # the last tag when computing which commits need a new version.
           fetch-depth: 0

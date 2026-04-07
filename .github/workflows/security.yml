@@ -1,0 +1,98 @@
+name: Security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Run weekly on Monday at 08:00 UTC
+    - cron: "0 8 * * 1"
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  pip-audit:
+    name: pip-audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install pip-audit
+        run: pip install pip-audit
+      # altergo has no runtime dependencies. Auditing the build/dev toolchain
+      # (setuptools, build, ruff, pytest, python-semantic-release, pip-audit
+      # itself) catches supply-chain vulnerabilities in the CI environment.
+      - name: Audit dev/build dependencies
+        run: pip-audit --require-hashes=false --skip-editable --vulnerability-service osv
+
+  dependency-review:
+    name: Dependency Review
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/dependency-review-action@v4.9.0
+        with:
+          fail-on-severity: high
+          deny-licenses: GPL-3.0, AGPL-3.0
+          # TruffleHog is AGPL-3.0 but runs only as a CI tool — never
+          # bundled into the product, so copyleft obligations don't apply.
+          allow-dependencies-licenses: 'pkg:githubactions/trufflesecurity/trufflehog'
+
+  osv-scan:
+    name: OSV Scanner
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google/osv-scanner-action/osv-scanner-action@c51854704019a247608d928f370c98740469d4b5 # v2.3.5
+        with:
+          scan-args: |-
+            --lockfile=pyproject.toml:pyproject.toml
+            --config=osv-scanner.toml
+            --format=table
+
+  secret-scanning:
+    name: Secret Scanning (TruffleHog)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: TruffleHog scan
+        id: trufflehog
+        uses: trufflesecurity/trufflehog@6bd2d14f7a4bc1e569fa3550efa7ec632a4fa67b # v3.94.2
+        continue-on-error: true
+        with:
+          path: ./
+          base: ${{ github.event.repository.default_branch }}
+          head: HEAD
+          extra_args: >-
+            --results=verified,unknown
+            --exclude-paths=.github/trufflehog-exclude-paths.txt
+      - name: Fail on findings
+        if: steps.trufflehog.outcome == 'failure'
+        run: |
+          echo "::error::TruffleHog detected secrets in this change. See scan output above."
+          exit 1
+
+  secret-scanning-full:
+    name: Secret Scanning (Full History)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: TruffleHog full history scan
+        uses: trufflesecurity/trufflehog@6bd2d14f7a4bc1e569fa3550efa7ec632a4fa67b # v3.94.2
+        with:
+          path: ./
+          extra_args: >-
+            --results=verified,unknown
+            --exclude-paths=.github/trufflehog-exclude-paths.txt

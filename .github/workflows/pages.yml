@@ -5,10 +5,8 @@ on:
     branches: [main]
     paths: ["docs/**"]
 
-permissions:
-  contents: read
-  pages: write
-  id-token: write
+# Deny all permissions by default; the deploy job grants only what it needs.
+permissions: {}
 
 concurrency:
   group: pages
@@ -16,7 +14,12 @@ concurrency:
 
 jobs:
   deploy:
+    name: Deploy
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write    # OIDC token required by actions/deploy-pages
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

@@ -4,35 +4,72 @@ on:
   push:
     branches: [main]
 
-permissions:
-  contents: write
-  id-token: write
+# Deny all permissions by default; the release job grants only what it needs.
+permissions: {}
+
+# Never cancel an in-flight release — a second push queues behind the running
+# job rather than killing it mid-way through version bumping and tag creation.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   release:
+    name: Release
     runs-on: ubuntu-latest
-    concurrency: release
+    # The pypi environment gates OIDC trusted publishing. CI correctness is
+    # enforced by branch protection (require status checks on PRs) — not here.
     environment: pypi
+    permissions:
+      contents: write      # push version-bump commit and tag
+      issues: write        # comment on issues referenced in commits
+      pull-requests: write # comment on merged PRs with release link
+      id-token: write      # OIDC trusted publishing to PyPI
 
     steps:
       - uses: actions/checkout@v4
         with:
+          # persist-credentials: false lets python-semantic-release push with
+          # GH_TOKEN without double-auth conflicts from the default GITHUB_TOKEN.
+          persist-credentials: false
+          # Full history required so python-semantic-release can walk back to
+          # the last tag when computing which commits need a new version.
           fetch-depth: 0
-          token: ${{ secrets.GH_TOKEN }}
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      - run: pip install python-semantic-release
+      # Cache pip downloads keyed on the workflow file itself. The only deps
+      # here are python-semantic-release and build — the workflow file hash is
+      # a stable, correct cache key for this isolated tool environment.
+      - name: Cache pip downloads
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-release-${{ hashFiles('.github/workflows/release.yml') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-release-
 
-      - name: Semantic release
+      - name: Install release tooling
+        run: pip install "python-semantic-release==9.*" build
+
+      - name: Configure git bot identity
+        run: |
+          git config --global user.name "Ground Control"
+          git config --global user.email "ground-control@users.noreply.github.com"
+
+      - name: Run python-semantic-release
         id: release
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: semantic-release version --push
 
-      - name: Publish to PyPI
+      - name: Build sdist and wheel
+        if: steps.release.outputs.released == 'true'
+        run: python -m build
+
+      - name: Publish to PyPI (trusted publishing)
         if: steps.release.outputs.released == 'true'
         uses: pypa/gh-action-pypi-publish@release/v1
         with:

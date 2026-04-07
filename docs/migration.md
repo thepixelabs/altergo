@@ -16,13 +16,16 @@ v0.5.0 introduced N-account support. The directory layout changed:
 
 ### Auto-migration: no action required for most users
 
-On the first run after upgrading, altergo detects the old layout and migrates it automatically. You do not need to do anything. The migration runs before any command is processed and prints exactly one line:
+On the first run after upgrading, altergo detects the old layout and migrates it automatically. You do not need to do anything. The migration runs before any command is processed and prints the following 4-line block:
 
 ```
-Migrated ~/.altergo → ~/.altergo/accounts/default (backup at ~/.altergo/.legacy-backup)
+altergo: layout migrated for v0.5.0 N-account support
+  ~/.altergo/  →  ~/.altergo/accounts/default/
+  Backup preserved at ~/.altergo/.legacy-backup/
+  See https://altergo.pixelabs.net/docs/migration-0.5 for details
 ```
 
-After that line, altergo continues normally. All your existing sessions, credentials, and symlinks are preserved under the new path.
+After that block, altergo continues normally. All your existing sessions, credentials, and symlinks are preserved under the new path. A `MIGRATED.txt` file is also written to `~/.altergo/accounts/default/MIGRATED.txt` as a permanent audit trail — it records the altergo version, timestamp, old and new paths, and rollback instructions.
 
 ### What the migration does
 
@@ -30,7 +33,8 @@ After that line, altergo continues normally. All your existing sessions, credent
 2. Creates the new `~/.altergo/accounts/` directory
 3. Moves the temporary directory to `~/.altergo/accounts/default/`
 4. Copies the migrated content to `~/.altergo/.legacy-backup/` as a backup
-5. Prints one line to stdout
+5. Writes `~/.altergo/accounts/default/MIGRATED.txt` as an audit trail
+6. Prints the 4-line migration block to stdout
 
 The use of `/tmp/` as a staging area means the rename is atomic. If the process is interrupted between steps 1 and 3, your data sits safely in `/tmp/` under a PID-qualified name — nothing is lost.
 

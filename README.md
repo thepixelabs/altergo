@@ -1,6 +1,6 @@
 # altergo
 
-> Your other Claude — switch Claude Code identities without losing a thought.
+> A terminal with a split personality — two Claude Code accounts, one session history, zero drama.
 
 [![PyPI version](https://img.shields.io/pypi/v/altergo)](https://pypi.org/project/altergo/)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://python.org)

@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 80" role="img" aria-label="altergo">
+  <defs>
+    <filter id="blade-glow" x="-400%" y="-100%" width="900%" height="300%" color-interpolation-filters="sRGB">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="2.8" result="halo"/>
+      <feGaussianBlur in="SourceGraphic" stdDeviation="1.2" result="core"/>
+      <feMerge>
+        <feMergeNode in="halo"/>
+        <feMergeNode in="core"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <style>
+      .wm{font-family:'Avenir Next','Helvetica Neue',Arial,system-ui,sans-serif;font-weight:800;font-size:54px;letter-spacing:-1.5px}
+    </style>
+  </defs>
+  <text x="22" y="58" class="wm">
+    <tspan fill="#6366f1">alt</tspan><tspan fill="#0f1135" dx="10">e</tspan><tspan fill="#6366f1">r</tspan><tspan fill="#0f1135">go</tspan>
+  </text>
+  <rect x="110" y="12" width="3" height="52" fill="#00b8d4" filter="url(#blade-glow)" transform="skewX(-22)"/>
+</svg>

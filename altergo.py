@@ -50,7 +50,7 @@ def show_help():
 
     lines = [
         "",
-        f"  {b('altergo')} {dim(f'v{__version__}')}  —  A terminal with a split personality.",
+        f"  {b('altergo')} {dim(f'v{__version__}')}  —  Switch Claude identities. Keep your context.",
         f"  A session manager for {claude_url}.  A {pixelabs} project.",
         "",
         h("  Usage"),
@@ -168,7 +168,7 @@ def detect_legacy() -> bool:
 
 
 def migrate_legacy() -> None:
-    """Silently migrate old layout to new. Prints exactly one line if migration runs."""
+    """Migrate old single-account layout to N-account layout. Runs at most once."""
     if not detect_legacy():
         return
     old_root = MAIN_HOME / ".altergo"
@@ -183,8 +183,21 @@ def migrate_legacy() -> None:
     # Step 4: copy as backup (symlinks=True preserves existing symlinks)
     backup_path = MAIN_HOME / ".altergo" / ".legacy-backup"
     shutil.copytree(str(default_home), str(backup_path), symlinks=True)
-    # Step 5: required one-line notice (hard requirement — not optional)
-    print("Migrated ~/.altergo → ~/.altergo/accounts/default (backup at ~/.altergo/.legacy-backup)")
+    # Step 5: write audit trail so users can verify what happened
+    migrated_marker = default_home / "MIGRATED.txt"
+    migrated_marker.write_text(
+        f"Migrated by altergo v{__version__} on {__import__('datetime').datetime.now().isoformat(timespec='seconds')}\n"
+        f"Old layout: ~/.altergo/\n"
+        f"New layout: ~/.altergo/accounts/default/\n"
+        f"Backup:     ~/.altergo/.legacy-backup/\n"
+        f"Rollback:   remove ~/.altergo/accounts/ and rename .legacy-backup back to ~/.altergo\n"
+        f"See:        https://altergo.pixelabs.net/docs/migration-0.5\n"
+    )
+    # Step 6: print a visible block — this is a one-time destructive rename, silence is wrong
+    print("altergo: layout migrated for v0.5.0 N-account support")
+    print("  ~/.altergo/  →  ~/.altergo/accounts/default/")
+    print("  Backup preserved at ~/.altergo/.legacy-backup/")
+    print("  See https://altergo.pixelabs.net/docs/migration-0.5 for details")
 
 
 # --- Symlink catalogs ---
@@ -472,6 +485,9 @@ def do_setup(account: str = "default"):
     print()
     print(_c(32, "Setup complete!"))
     print(f"  Run {_c(1, launch_cmd)} to start a session  ·  {_c(1, 'altergo --resume')} to pick one")
+    print()
+    print(_c(2, "  Isolates Claude credentials. Shares AWS, GCP, Docker, and kubectl by default."))
+    print(_c(2, f"  Change sharing settings: {_c(0, 'altergo --settings')}"))
 
 
 def do_teardown(account: str = "default"):

@@ -220,14 +220,17 @@ def test_migrate_legacy_backup(legacy_home):
 
 
 def test_migrate_legacy_prints_once(legacy_home, capsys):
-    """migrate_legacy() prints exactly one line to stdout describing the migration."""
+    """migrate_legacy() prints a migration block (not silence) exactly once."""
     altergo.migrate_legacy()
 
     captured = capsys.readouterr()
-    lines = [l for l in captured.out.splitlines() if l.strip()]
-    assert len(lines) == 1
-    assert "accounts/default" in lines[0]
-    assert ".legacy-backup" in lines[0]
+    out = captured.out
+    # Must mention both the new location and the backup in its output.
+    assert "accounts/default" in out
+    assert ".legacy-backup" in out
+    # Must not print anything on a second run (idempotent — covered by separate test).
+    altergo.migrate_legacy()
+    assert capsys.readouterr().out == ""
 
 
 def test_migrate_legacy_idempotent(legacy_home, capsys):

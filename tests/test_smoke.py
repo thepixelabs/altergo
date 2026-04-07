@@ -1,9 +1,11 @@
 """Basic smoke tests — verify the script is importable and version is set."""
 
 import importlib.util
+import io
 import subprocess
 import sys
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -210,11 +212,11 @@ def test_migrate_legacy_layout(legacy_home):
 
 
 def test_migrate_legacy_backup(legacy_home):
-    """After migrate_legacy(), a backup exists at .altergo/.legacy-backup/."""
+    """After migrate_legacy(), a backup exists at ~/.altergo-legacy-backup/ (outside the tree)."""
     altergo.migrate_legacy()
 
-    backup = legacy_home["main_home"] / ".altergo" / ".legacy-backup"
-    assert backup.is_dir()
+    backup = legacy_home["main_home"] / ".altergo-legacy-backup"
+    assert backup.is_dir(), f"Expected backup at {backup}"
     # Backup preserves the original content.
     assert (backup / ".claude" / ".credentials.json").exists()
 
@@ -227,7 +229,7 @@ def test_migrate_legacy_prints_once(legacy_home, capsys):
     out = captured.out
     # Must mention both the new location and the backup in its output.
     assert "accounts/default" in out
-    assert ".legacy-backup" in out
+    assert ".altergo-legacy-backup" in out
     # Must not print anything on a second run (idempotent — covered by separate test).
     altergo.migrate_legacy()
     assert capsys.readouterr().out == ""
@@ -368,3 +370,219 @@ def test_teardown_removes_symlinks(fake_home):
         for rel in entry["paths"]:
             link = account_home / rel
             assert not link.is_symlink(), f"~/{rel} symlink should be removed after teardown"
+
+
+# ---------------------------------------------------------------------------
+# T9 — _ensure_symlinked_dir / _sweep_existing_accounts
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture()
+def sweep_home(tmp_path, monkeypatch):
+    """Isolated fake HOME with main .claude/ sources but NO account dirs yet.
+
+    MAIN_CLAUDE/projects and other SYMLINK_DIRS exist as real dirs.
+    No accounts are created — tests create them manually to control state.
+    """
+    main_home = tmp_path / "main_home"
+    main_claude = main_home / ".claude"
+    accounts_dir = main_home / ".altergo" / "accounts"
+
+    for name in altergo.SYMLINK_DIRS:
+        (main_claude / name).mkdir(parents=True, exist_ok=True)
+    for name in altergo.SYMLINK_FILES:
+        (main_claude / name).touch()
+
+    accounts_dir.mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setattr(altergo, "MAIN_HOME", main_home)
+    monkeypatch.setattr(altergo, "MAIN_CLAUDE", main_claude)
+    monkeypatch.setattr(altergo, "ACCOUNTS_DIR", accounts_dir)
+    monkeypatch.setattr(altergo, "SETTINGS_FILE", main_home / ".altergo" / ".altergo.json")
+
+    return {
+        "main_home": main_home,
+        "main_claude": main_claude,
+        "accounts_dir": accounts_dir,
+    }
+
+
+def test_resume_after_legacy_migration(sweep_home):
+    """Regression: after migration the session stored in account_claude/projects
+    is moved to MAIN_CLAUDE/projects and account_claude/projects becomes a
+    symlink — so get_sessions() can find it and --resume works.
+
+    This is the exact bug: 0.5 → 0.6 migration left a real dir at
+    accounts/default/.claude/projects/ while Claude Code wrote sessions there.
+    get_sessions() reads MAIN_CLAUDE/projects/, so those sessions were invisible.
+    """
+    main_claude = sweep_home["main_claude"]
+    accounts_dir = sweep_home["accounts_dir"]
+
+    # Simulate the post-migration state: account exists with a real (non-empty)
+    # projects dir that contains a session, while MAIN_CLAUDE/projects is empty.
+    account_home = accounts_dir / "default"
+    account_claude = account_home / ".claude"
+    account_projects = account_claude / "projects"
+    proj_dir = account_projects / "test-project"
+    proj_dir.mkdir(parents=True, exist_ok=True)
+    session_file = proj_dir / "abc123.jsonl"
+    session_file.write_text('{"type":"user","message":{"content":"hello"}}\n')
+
+    # MAIN_CLAUDE/projects exists but is empty (as left by migration).
+    # (Already created by sweep_home fixture.)
+    assert not list((main_claude / "projects").iterdir()), "precondition: main projects dir empty"
+
+    # Run the sweep — this is what main() calls after migrate_legacy().
+    altergo._sweep_existing_accounts()
+
+    # (a) session now lives in MAIN_CLAUDE/projects
+    main_session = main_claude / "projects" / "test-project" / "abc123.jsonl"
+    assert main_session.exists(), (
+        "Session was not promoted to MAIN_CLAUDE/projects — get_sessions() won't find it"
+    )
+    assert main_session.read_text() == '{"type":"user","message":{"content":"hello"}}\n'
+
+    # (b) account_claude/projects is now a symlink
+    assert account_projects.is_symlink(), (
+        "account_claude/projects must be a symlink after sweep"
+    )
+    assert account_projects.resolve() == (main_claude / "projects").resolve(), (
+        "account_claude/projects symlink must point to MAIN_CLAUDE/projects"
+    )
+
+    # (c) session is readable through the symlink (as Claude Code does it)
+    via_symlink = account_claude / "projects" / "test-project" / "abc123.jsonl"
+    assert via_symlink.exists(), "Session not readable via account symlink"
+    assert via_symlink.read_text() == main_session.read_text()
+
+
+def test_merge_conflict_quarantine(sweep_home):
+    """When both src and dst have a file with the same name, the dst file is
+    moved to a quarantine directory and a warning is printed.
+    """
+    main_claude = sweep_home["main_claude"]
+    accounts_dir = sweep_home["accounts_dir"]
+
+    # Populate MAIN_CLAUDE/projects with one version of a session file.
+    proj_dir_main = main_claude / "projects" / "foo"
+    proj_dir_main.mkdir(parents=True, exist_ok=True)
+    (proj_dir_main / "bar.jsonl").write_text("main-version\n")
+
+    # Populate account_claude/projects with a *conflicting* version.
+    account_home = accounts_dir / "default"
+    account_claude = account_home / ".claude"
+    proj_dir_acct = account_claude / "projects" / "foo"
+    proj_dir_acct.mkdir(parents=True, exist_ok=True)
+    (proj_dir_acct / "bar.jsonl").write_text("account-version\n")
+
+    with patch("sys.stdout", new_callable=io.StringIO) as mock_out:
+        altergo._sweep_existing_accounts()
+        output = mock_out.getvalue()
+
+    # The main version must be untouched.
+    assert (proj_dir_main / "bar.jsonl").read_text() == "main-version\n", (
+        "MAIN_CLAUDE/projects/foo/bar.jsonl must not be modified"
+    )
+
+    # The conflicting account version must be quarantined.
+    quarantine = account_claude / "projects.altergo-conflict" / "foo" / "bar.jsonl"
+    assert quarantine.exists(), (
+        f"Conflicting file not found in quarantine at {quarantine}"
+    )
+    assert quarantine.read_text() == "account-version\n"
+
+    # A warning must be printed.
+    assert "conflict" in output.lower(), (
+        f"Expected conflict warning in output, got: {output!r}"
+    )
+
+
+def test_list_then_resume_roundtrip(sweep_home):
+    """Session written to MAIN_CLAUDE/projects/ is found by get_sessions() and
+    is reachable via account_claude/projects/ (the path Claude Code uses when
+    HOME=account_home).  This is the full --list then --resume chain.
+    """
+    main_claude = sweep_home["main_claude"]
+    accounts_dir = sweep_home["accounts_dir"]
+
+    # Set up a properly-symlinked default account.
+    altergo.do_setup("default")
+
+    account_home = accounts_dir / "default"
+    account_claude = account_home / ".claude"
+
+    # Write a session into MAIN_CLAUDE/projects (as Claude Code would do).
+    proj_dir = main_claude / "projects" / "myproject"
+    proj_dir.mkdir(parents=True, exist_ok=True)
+    session_id = "deadbeef1234"
+    session_content = '{"type":"user","message":{"content":"what is 2+2?"}}\n'
+    (proj_dir / f"{session_id}.jsonl").write_text(session_content)
+
+    # get_sessions() must find it (it reads MAIN_CLAUDE/projects).
+    sessions = altergo.get_sessions()
+    session_ids = [s["id"] for s in sessions]
+    assert session_id in session_ids, (
+        f"Session {session_id!r} not found by get_sessions(); found: {session_ids}"
+    )
+
+    # The session file must be reachable via the account symlink
+    # (this is the path Claude Code sees when HOME=account_home).
+    via_account = account_claude / "projects" / "myproject" / f"{session_id}.jsonl"
+    assert via_account.exists(), (
+        "Session file not reachable via account_claude/projects symlink — "
+        "--resume would fail after --list found the session"
+    )
+    assert via_account.read_text() == session_content
+
+
+def test_credentials_not_in_symlink_dirs_or_files():
+    """.credentials.json must not appear in SYMLINK_DIRS or SYMLINK_FILES.
+
+    Credentials are per-account by design; symlinking them would collapse
+    account isolation entirely.
+    """
+    assert ".credentials.json" not in altergo.SYMLINK_DIRS
+    assert ".credentials.json" not in altergo.SYMLINK_FILES
+    assert "credentials" not in altergo.SYMLINK_DIRS
+    assert "credentials" not in altergo.SYMLINK_FILES
+
+
+def test_ensure_symlinked_dir_empty_real_dir(sweep_home, capsys):
+    """Case (c): empty real dir is replaced by a symlink."""
+    main_claude = sweep_home["main_claude"]
+    accounts_dir = sweep_home["accounts_dir"]
+
+    account_home = accounts_dir / "work"
+    account_claude = account_home / ".claude"
+    account_claude.mkdir(parents=True, exist_ok=True)
+
+    # Create an empty real dir at dst
+    dst = account_claude / "projects"
+    dst.mkdir()
+    src = main_claude / "projects"
+
+    result = altergo._ensure_symlinked_dir("projects", src, dst, account_claude)
+
+    assert result is True
+    assert dst.is_symlink(), "Empty real dir must become a symlink"
+    assert dst.resolve() == src.resolve()
+    captured = capsys.readouterr()
+    assert "Converted" in captured.out
+
+
+def test_ensure_symlinked_dir_noop_when_correct(sweep_home):
+    """Case (a): already a correct symlink — no-op, returns False."""
+    main_claude = sweep_home["main_claude"]
+    accounts_dir = sweep_home["accounts_dir"]
+
+    account_home = accounts_dir / "work"
+    account_claude = account_home / ".claude"
+    account_claude.mkdir(parents=True, exist_ok=True)
+
+    src = main_claude / "projects"
+    dst = account_claude / "projects"
+    dst.symlink_to(src)
+
+    result = altergo._ensure_symlinked_dir("projects", src, dst, account_claude)
+    assert result is False

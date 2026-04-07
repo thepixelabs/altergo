@@ -85,6 +85,7 @@ def show_help():
         f"  {kw('↑/k')}          Move up             {kw('PgUp/PgDn')}    Page scroll",
         f"  {kw('↓/j')}          Move down           {kw('g/G')}          Jump to top/bottom",
         f"  {kw('Enter')}        Resume session      {kw('q/Esc')}        Quit",
+        f"  {kw('p/Tab/Space')}  Preview session     {kw('Enter')}          Resume from preview",
         "",
         dim("  altergo is an independent open-source project by pixelabs · not affiliated with Anthropic PBC"),
         dim("  Claude and Claude Code are trademarks of Anthropic PBC"),
@@ -172,31 +173,35 @@ def migrate_legacy() -> None:
     if not detect_legacy():
         return
     old_root = MAIN_HOME / ".altergo"
+    # Step 1: take a backup BEFORE any rename so it is never self-referential.
+    # The backup lives outside the altergo tree at ~/.altergo-legacy-backup/.
+    backup_path = MAIN_HOME / ".altergo-legacy-backup"
+    if backup_path.exists():
+        print("altergo: backup already exists at ~/.altergo-legacy-backup — skipping backup step")
+    else:
+        shutil.copytree(str(old_root), str(backup_path), symlinks=True)
     tmp_path = Path(f"/tmp/altergo-migrate-{os.getpid()}")
-    # Step 1: rename ~/.altergo → /tmp/altergo-migrate-{pid}
+    # Step 2: rename ~/.altergo → /tmp/altergo-migrate-{pid}
     old_root.rename(tmp_path)
-    # Step 2: mkdir -p ~/.altergo/accounts/
+    # Step 3: mkdir -p ~/.altergo/accounts/
     ACCOUNTS_DIR.mkdir(parents=True, exist_ok=True)
-    # Step 3: rename /tmp/... → ~/.altergo/accounts/default/
+    # Step 4: rename /tmp/... → ~/.altergo/accounts/default/
     default_home = ACCOUNTS_DIR / "default"
     tmp_path.rename(default_home)
-    # Step 4: copy as backup (symlinks=True preserves existing symlinks)
-    backup_path = MAIN_HOME / ".altergo" / ".legacy-backup"
-    shutil.copytree(str(default_home), str(backup_path), symlinks=True)
     # Step 5: write audit trail so users can verify what happened
     migrated_marker = default_home / "MIGRATED.txt"
     migrated_marker.write_text(
-        f"Migrated by altergo v{__version__} on {__import__('datetime').datetime.now().isoformat(timespec='seconds')}\n"
+        f"Migrated by altergo v{__version__} on {datetime.now().isoformat(timespec='seconds')}\n"
         f"Old layout: ~/.altergo/\n"
         f"New layout: ~/.altergo/accounts/default/\n"
-        f"Backup:     ~/.altergo/.legacy-backup/\n"
-        f"Rollback:   remove ~/.altergo/accounts/ and rename .legacy-backup back to ~/.altergo\n"
+        f"Backup:     ~/.altergo-legacy-backup/\n"
+        f"Rollback:   remove ~/.altergo/accounts/ and rename ~/.altergo-legacy-backup back to ~/.altergo\n"
         f"See:        https://altergo.pixelabs.net/docs/migration-0.5\n"
     )
     # Step 6: print a visible block — this is a one-time destructive rename, silence is wrong
     print("altergo: layout migrated for v0.5.0 N-account support")
     print("  ~/.altergo/  →  ~/.altergo/accounts/default/")
-    print("  Backup preserved at ~/.altergo/.legacy-backup/")
+    print("  Backup preserved at ~/.altergo-legacy-backup/")
     print("  See https://altergo.pixelabs.net/docs/migration-0.5 for details")
 
 
@@ -407,6 +412,91 @@ def _apply_entry(entry, overrides, account_home):
 # --- Setup / Teardown ---
 
 
+def _ensure_symlinked_dir(name: str, src: Path, dst: Path, account_claude: Path) -> bool:
+    """Ensure dst is a symlink pointing to src, auto-migrating real dirs if needed.
+
+    Returns True if any change was made (symlink created or content moved).
+
+    Cases:
+      (a) dst is already a symlink to src         -> no-op, return False
+      (b) dst does not exist                      -> create src + symlink, return True
+      (c) dst is a real empty dir                 -> rmdir + symlink, return True
+      (d) dst is real non-empty, src empty/absent -> move content to src, symlink, return True
+      (e) both have content                       -> merge; conflict items go to quarantine dir
+    """
+    # (a) Already correct symlink
+    if dst.is_symlink():
+        if dst.resolve() == src.resolve():
+            return False
+        # Symlinked elsewhere — leave alone (don't clobber user's intentional link)
+        return False
+
+    # (b) dst does not exist
+    if not dst.exists():
+        src.mkdir(parents=True, exist_ok=True)
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        dst.symlink_to(src)
+        return True
+
+    # dst is a real directory (or file) at this point
+    if not dst.is_dir():
+        # It's a real file named the same as a dir entry — skip it safely
+        return False
+
+    dst_entries = list(dst.iterdir())
+
+    # (c) Real empty dir
+    if not dst_entries:
+        dst.rmdir()
+        src.mkdir(parents=True, exist_ok=True)
+        dst.symlink_to(src)
+        print(f"  Converted empty {name}/ to symlink")
+        return True
+
+    # dst is non-empty
+    src_exists_and_nonempty = src.exists() and any(True for _ in src.iterdir())
+
+    if not src_exists_and_nonempty:
+        # (d) src absent or empty — move dst content wholesale
+        src.parent.mkdir(parents=True, exist_ok=True)
+        if not src.exists():
+            shutil.move(str(dst), str(src))
+        else:
+            # src exists but is empty: move each entry in
+            for entry in list(dst.iterdir()):
+                shutil.move(str(entry), str(src / entry.name))
+            dst.rmdir()
+        dst.symlink_to(src)
+        print(f"  Promoted {name}/ to shared store")
+        return True
+
+    # (e) Both src and dst have content — merge with conflict quarantine
+    quarantine_base = account_claude / f"{name}.altergo-conflict"
+    for entry in list(dst.iterdir()):
+        target = src / entry.name
+        if not target.exists():
+            shutil.move(str(entry), str(target))
+        else:
+            # Conflict: move to quarantine.
+            # Ensure the quarantine base dir exists but do NOT pre-create the
+            # entry's subdirectory — shutil.move needs the destination path to
+            # not already exist as a directory (otherwise it moves inside it).
+            quarantine_base.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(entry), str(quarantine_base / entry.name))
+            print(f"  warning: conflict: {name}/{entry.name} preserved in {name}.altergo-conflict/")
+
+    # Check if dst is now empty after moves
+    remaining = list(dst.iterdir())
+    if not remaining:
+        dst.rmdir()
+        dst.symlink_to(src)
+        print(f"  Merged {name}/ into shared store")
+        return True
+    else:
+        print(f"  warning: {name}/ has unresolved conflicts; not symlinked")
+        return False
+
+
 def do_setup(account: str = "default"):
     account_home, account_claude = resolve_account(account)
     header = f"altergo v{__version__} · " + _link("https://pixelabs.net", "pixelabs.net")
@@ -429,10 +519,6 @@ def do_setup(account: str = "default"):
         src = MAIN_CLAUDE / name
         dst = account_claude / name
 
-        if not src.exists():
-            print(f"  {_c(2, 'skip')} {name}/ (not found in main)")
-            continue
-
         if dst.is_symlink():
             target = dst.resolve()
             if target == src.resolve():
@@ -441,12 +527,15 @@ def do_setup(account: str = "default"):
                 print(f"  {_c(33, '⚠')} {name}/ symlinked to {target} (expected {src})")
             continue
 
-        if dst.exists():
-            print(f"  {_c(33, '⚠')} {name}/ exists as real dir — remove it first to symlink")
-            continue
-
-        dst.symlink_to(src)
-        print(f"  {_c(32, '✓')} Symlinked {name}/")
+        # _ensure_symlinked_dir handles all real-dir migration cases (empty
+        # real dir, non-empty real dir, merge conflicts).  It prints its own
+        # richer messages for promotion/merge/conflict cases.  For the normal
+        # fresh-install path (dst absent) it silently creates the symlink and
+        # returns True, so we print the standard checkmark here.
+        was_absent = not dst.exists()
+        _ensure_symlinked_dir(name, src, dst, account_claude)
+        if was_absent and dst.is_symlink():
+            print(f"  {_c(32, '✓')} Symlinked {name}/")
 
     # 3. Symlink files inside .claude/
     for name in SYMLINK_FILES:
@@ -525,7 +614,12 @@ def do_teardown(account: str = "default"):
 
 
 def get_sessions():
-    """Find all sessions across all projects, return sorted by modification time."""
+    """Find all sessions across all projects, return sorted by modification time.
+
+    Cheap pass: stat + first-user-message extraction only. Full preview content
+    is loaded on demand by ``load_session_preview`` when the user opens the
+    preview pane.
+    """
     sessions = []
     projects_dir = MAIN_CLAUDE / "projects"
 
@@ -542,22 +636,26 @@ def get_sessions():
             if f.suffix != ".jsonl" or f.parent.name == "subagents":
                 continue
 
-            session_id = f.stem
-            mod_time = f.stat().st_mtime
-            mod_dt = datetime.fromtimestamp(mod_time)
-            size_mb = f.stat().st_size / (1024 * 1024)
+            try:
+                st = f.stat()
+            except OSError:
+                continue
 
-            # Try to extract last user message as a preview
-            preview = get_session_preview(f)
+            session_id = f.stem
+            mod_dt = datetime.fromtimestamp(st.st_mtime)
+            size_mb = st.st_size / (1024 * 1024)
+
+            topic, cwd = _scan_session_head(f)
 
             sessions.append(
                 {
                     "id": session_id,
                     "project": project_name,
+                    "cwd": cwd,
                     "modified": mod_dt,
                     "size_mb": size_mb,
                     "path": f,
-                    "preview": preview,
+                    "topic": topic,
                 }
             )
 
@@ -565,42 +663,195 @@ def get_sessions():
     return sessions
 
 
-def get_session_preview(jsonl_path):
-    """Read the last few user messages from a session file for preview."""
-    try:
-        last_msg = ""
-        with open(jsonl_path, "rb") as f:
-            # Read last 8KB to find recent messages
-            f.seek(0, 2)
-            size = f.tell()
-            f.seek(max(0, size - 8192))
-            tail = f.read().decode("utf-8", errors="replace")
+def _extract_text(content):
+    """Flatten a Claude Code message ``content`` field into plain text.
 
-        for line in tail.strip().split("\n"):
-            try:
-                obj = json.loads(line)
-                if obj.get("type") == "human" and isinstance(obj.get("message"), dict):
-                    content = obj["message"].get("content", "")
-                    if isinstance(content, str) and content.strip():
-                        last_msg = content.strip()
-                    elif isinstance(content, list):
-                        for block in content:
-                            if isinstance(block, dict) and block.get("type") == "text":
-                                last_msg = block["text"].strip()
-            except (json.JSONDecodeError, KeyError):
+    ``content`` may be a string, or a list of blocks (text, tool_use,
+    tool_result, image, ...). Only ``text`` blocks contribute. Returns "".
+    """
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        out = []
+        for block in content:
+            if not isinstance(block, dict):
                 continue
+            btype = block.get("type")
+            if btype == "text" and isinstance(block.get("text"), str):
+                out.append(block["text"])
+            elif btype == "tool_result":
+                tc = block.get("content")
+                if isinstance(tc, str):
+                    out.append(tc)
+                elif isinstance(tc, list):
+                    for sub in tc:
+                        if isinstance(sub, dict) and sub.get("type") == "text":
+                            out.append(sub.get("text", ""))
+        return "\n".join(out)
+    return ""
 
-        return last_msg[:80] if last_msg else ""
-    except Exception:
+
+_CODE_FENCE_RE = re.compile(r"```[^\n]*\n.*?```", re.DOTALL)
+_INLINE_CODE_RE = re.compile(r"`([^`]*)`")
+_MD_LINK_RE = re.compile(r"\[([^\]]+)\]\([^)]*\)")
+_WS_RE = re.compile(r"\s+")
+
+
+def _clean_topic(text: str) -> str:
+    """Strip code fences, collapse whitespace, return single-line summary."""
+    if not text:
         return ""
+    text = _CODE_FENCE_RE.sub(" [code] ", text)
+    text = _MD_LINK_RE.sub(r"\1", text)
+    text = _INLINE_CODE_RE.sub(r"\1", text)
+    text = _WS_RE.sub(" ", text).strip()
+    return text
+
+
+def _is_real_user_message(obj) -> bool:
+    """Return True for genuine human user turns (not tool_result-only echoes)."""
+    if obj.get("type") != "user":
+        return False
+    msg = obj.get("message")
+    if not isinstance(msg, dict):
+        return False
+    content = msg.get("content")
+    if isinstance(content, str):
+        return bool(content.strip())
+    if isinstance(content, list):
+        # Skip turns that are only tool_result blocks (Claude Code injects these)
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "text":
+                return bool(block.get("text", "").strip())
+        return False
+    return False
+
+
+def _scan_session_head(jsonl_path, max_lines: int = 40) -> tuple:
+    """Cheap scan: return (topic, cwd) from the first ``max_lines`` of a session."""
+    topic = ""
+    cwd = ""
+    try:
+        with open(jsonl_path, "r", encoding="utf-8", errors="replace") as f:
+            for i, line in enumerate(f):
+                if i >= max_lines and topic:
+                    break
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not cwd and isinstance(obj.get("cwd"), str):
+                    cwd = obj["cwd"]
+                if not topic and _is_real_user_message(obj):
+                    text = _extract_text(obj["message"].get("content"))
+                    topic = _clean_topic(text)
+    except OSError:
+        pass
+    return topic, cwd
+
+
+def load_session_preview(jsonl_path, max_messages: int = 4, max_lines: int = 400) -> dict:
+    """Load opening prompt + first few message turns for the preview pane.
+
+    Reads at most ``max_lines`` lines and returns once ``max_messages`` real
+    user/assistant turns have been collected. ``truncated`` is True if the
+    session has more content than was returned.
+    """
+    messages = []
+    cwd = ""
+    total_lines = 0
+    truncated = False
+    try:
+        with open(jsonl_path, "r", encoding="utf-8", errors="replace") as f:
+            for line in f:
+                total_lines += 1
+                if total_lines > max_lines:
+                    truncated = True
+                    break
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not cwd and isinstance(obj.get("cwd"), str):
+                    cwd = obj["cwd"]
+                t = obj.get("type")
+                msg = obj.get("message") if isinstance(obj.get("message"), dict) else None
+                if t == "user" and _is_real_user_message(obj):
+                    text = _extract_text(msg.get("content"))
+                    if text.strip():
+                        messages.append(("user", text.strip()))
+                elif t == "assistant" and msg:
+                    text = _extract_text(msg.get("content"))
+                    if text.strip():
+                        messages.append(("assistant", text.strip()))
+                if len(messages) >= max_messages:
+                    # Peek one more line to know if there's more content
+                    if f.readline():
+                        truncated = True
+                    break
+    except OSError as e:
+        return {"messages": [], "cwd": "", "truncated": False, "error": str(e)}
+    return {"messages": messages, "cwd": cwd, "truncated": truncated, "error": None}
+
+
+def decode_project_path(encoded: str) -> str:
+    """Decode Claude Code's project dir name back into a readable path.
+
+    ``-Users-netz-Documents-git-altergo`` -> ``/home/user/Documents/git/altergo``.
+    Best-effort: dashes inside path components are indistinguishable from
+    separators in this encoding scheme, so we return the most likely form.
+    """
+    if not encoded:
+        return ""
+    s = encoded
+    if s.startswith("-"):
+        s = "/" + s[1:].replace("-", "/")
+    else:
+        s = s.replace("-", "/")
+    return s
 
 
 def format_project_name(encoded):
-    """Convert encoded project path back to readable name."""
-    # -Users-netz-Documents-git-dispatch → dispatch
-    parts = encoded.strip("-").split("-")
-    # Return last meaningful part
-    return parts[-1] if parts else encoded
+    """Short, readable project name (last path component)."""
+    if not encoded:
+        return ""
+    decoded = decode_project_path(encoded)
+    name = decoded.rstrip("/").rsplit("/", 1)[-1]
+    return name or encoded
+
+
+def relative_time(dt: datetime, now: datetime = None) -> str:
+    """Return a compact relative-time string ('2h ago', 'yesterday', '3d ago')."""
+    if now is None:
+        now = datetime.now()
+    delta = now - dt
+    secs = int(delta.total_seconds())
+    if secs < 0:
+        return "just now"
+    if secs < 60:
+        return f"{secs}s ago"
+    mins = secs // 60
+    if mins < 60:
+        return f"{mins}m ago"
+    hrs = mins // 60
+    if hrs < 24:
+        return f"{hrs}h ago"
+    days = hrs // 24
+    if days == 1:
+        return "yesterday"
+    if days < 7:
+        return f"{days}d ago"
+    if days < 30:
+        return f"{days // 7}w ago"
+    if days < 365:
+        return f"{days // 30}mo ago"
+    return f"{days // 365}y ago"
 
 
 # --- Interactive Menu ---
@@ -616,110 +867,311 @@ def interactive_picker(sessions):
     return selected
 
 
+def _picker_attrs():
+    """Initialize color pairs for the picker. Returns an attrs dict.
+
+    Falls back to monochrome (A_BOLD/A_REVERSE/A_DIM) when colors aren't
+    available so the picker degrades gracefully on dumb terminals.
+    """
+    has_color = False
+    try:
+        if curses.has_colors():
+            curses.start_color()
+            curses.use_default_colors()
+            has_color = True
+    except curses.error:
+        has_color = False
+
+    attrs = {}
+    if has_color:
+        # Brand: cyan + indigo. Prefer 256-color brights when available.
+        cyan = 51 if curses.COLORS >= 256 else curses.COLOR_CYAN
+        indigo = 105 if curses.COLORS >= 256 else curses.COLOR_BLUE
+        gray = 244 if curses.COLORS >= 256 else curses.COLOR_WHITE
+        try:
+            curses.init_pair(1, curses.COLOR_BLACK, cyan)  # selected row
+            curses.init_pair(2, cyan, -1)  # header / accent
+            curses.init_pair(3, indigo, -1)  # project col
+            curses.init_pair(4, gray, -1)  # time col / dim
+            curses.init_pair(5, cyan, -1)  # preview pane border
+        except curses.error:
+            has_color = False
+
+    if has_color:
+        attrs["selected"] = curses.color_pair(1) | curses.A_BOLD
+        attrs["header"] = curses.color_pair(2) | curses.A_BOLD | curses.A_UNDERLINE
+        attrs["title"] = curses.color_pair(2) | curses.A_BOLD
+        attrs["project"] = curses.color_pair(3)
+        attrs["time"] = curses.color_pair(4) | curses.A_DIM
+        attrs["topic"] = curses.A_NORMAL
+        attrs["dim"] = curses.A_DIM
+        attrs["accent"] = curses.color_pair(2)
+    else:
+        attrs["selected"] = curses.A_REVERSE | curses.A_BOLD
+        attrs["header"] = curses.A_BOLD | curses.A_UNDERLINE
+        attrs["title"] = curses.A_BOLD
+        attrs["project"] = curses.A_BOLD
+        attrs["time"] = curses.A_DIM
+        attrs["topic"] = curses.A_NORMAL
+        attrs["dim"] = curses.A_DIM
+        attrs["accent"] = curses.A_BOLD
+    return attrs
+
+
+def _compute_columns(max_x: int) -> dict:
+    """Responsive column widths. Topic gets the leftover space."""
+    # Minimum widths for metadata cols
+    proj_w = 18 if max_x >= 100 else (14 if max_x >= 80 else 10)
+    time_w = 11  # "yesterday  " / "12h ago    "
+    msgs_w = 0  # message count column dropped — not cheap to compute
+    gutter = 2  # leading "▸ "
+    spacing = 2  # between cols
+    used = gutter + proj_w + spacing + time_w + spacing
+    topic_w = max(20, max_x - used - 1)
+    # Cap topic width so it doesn't run off the screen on ultra-wide terms
+    topic_w = min(topic_w, max(40, max_x - used - 1))
+    return {"gutter": gutter, "proj": proj_w, "time": time_w, "topic": topic_w, "msgs": msgs_w}
+
+
+def _truncate(text: str, width: int) -> str:
+    if width <= 0:
+        return ""
+    if len(text) <= width:
+        return text
+    if width == 1:
+        return "…"
+    return text[: width - 1] + "…"
+
+
+def _safe_addnstr(stdscr, y, x, text, n, attr=0):
+    """addnstr that swallows curses.error at the bottom-right cell."""
+    try:
+        stdscr.addnstr(y, x, text, n, attr)
+    except curses.error:
+        pass
+
+
 def _draw_picker(stdscr, sessions):
     curses.curs_set(0)
-    curses.use_default_colors()
-
-    # Init color pairs
-    curses.init_pair(1, curses.COLOR_BLACK, curses.COLOR_CYAN)  # selected
-    curses.init_pair(2, curses.COLOR_CYAN, -1)  # header
-    curses.init_pair(3, curses.COLOR_YELLOW, -1)  # project name
-    curses.init_pair(4, curses.COLOR_WHITE, -1)  # session id
-    curses.init_pair(5, curses.COLOR_GREEN, -1)  # time
+    attrs = _picker_attrs()
 
     current = 0
     scroll_offset = 0
+    preview_cache = {}  # session_id -> loaded preview dict
 
     while True:
-        stdscr.clear()
+        stdscr.erase()
         max_y, max_x = stdscr.getmaxyx()
+        cols = _compute_columns(max_x)
 
-        # Header
-        header = " Altergo — Pick a session (↑/↓ navigate, Enter select, q quit)"
-        stdscr.attron(curses.color_pair(2) | curses.A_BOLD)
-        stdscr.addnstr(0, 0, header.ljust(max_x), max_x - 1)
-        stdscr.attroff(curses.color_pair(2) | curses.A_BOLD)
+        # Title bar
+        title = f" altergo — pick a session  ·  {len(sessions)} total"
+        _safe_addnstr(stdscr, 0, 0, title.ljust(max_x), max_x - 1, attrs["title"])
 
-        # Column headers
-        col_header = f"  {'Project':<20} {'Modified':<18} {'Size':>6}  {'Last message'}"
-        stdscr.attron(curses.A_DIM)
-        stdscr.addnstr(2, 0, col_header[: max_x - 1], max_x - 1)
-        stdscr.attroff(curses.A_DIM)
+        # Column header row
+        proj_h = "Project".ljust(cols["proj"])
+        time_h = "When".ljust(cols["time"])
+        topic_h = "Topic"
+        col_header = f"  {proj_h}  {time_h}  {topic_h}"
+        _safe_addnstr(stdscr, 2, 0, col_header.ljust(max_x), max_x - 1, attrs["header"])
 
-        # Visible area
-        visible_rows = max_y - 5  # header + col header + footer + padding
-        if visible_rows < 1:
-            visible_rows = 1
+        # Visible area: title(1) + blank(1) + col_header(2) + footer(2)
+        visible_rows = max(1, max_y - 6)
 
-        # Adjust scroll
         if current < scroll_offset:
             scroll_offset = current
         elif current >= scroll_offset + visible_rows:
             scroll_offset = current - visible_rows + 1
 
-        # Draw sessions
         for i in range(visible_rows):
             idx = scroll_offset + i
             if idx >= len(sessions):
                 break
-
             s = sessions[idx]
-            row = i + 3  # after header rows
+            row = i + 3
+            is_sel = idx == current
 
-            project = format_project_name(s["project"])
-            modified = s["modified"].strftime("%Y-%m-%d %H:%M")
-            size = f"{s['size_mb']:.1f}MB"
-            preview = s["preview"]
+            project = _truncate(format_project_name(s["project"]), cols["proj"])
+            when = _truncate(relative_time(s["modified"]), cols["time"])
+            topic = s.get("topic") or _c(2, "")  # placeholder
+            if not topic:
+                topic = "(no opening prompt found)"
+            topic = _truncate(topic, cols["topic"])
 
-            # Truncate preview to fit
-            preview_width = max(0, max_x - 50)
-            if len(preview) > preview_width:
-                preview = preview[: preview_width - 1] + "…"
-
-            line = f"  {project:<20} {modified:<18} {size:>6}  {preview}"
-
-            if idx == current:
-                stdscr.attron(curses.color_pair(1) | curses.A_BOLD)
-                stdscr.addnstr(row, 0, f"▸ {line[2:]}"[: max_x - 1].ljust(max_x - 1), max_x - 1)
-                stdscr.attroff(curses.color_pair(1) | curses.A_BOLD)
+            if is_sel:
+                line = f"▸ {project.ljust(cols['proj'])}  {when.ljust(cols['time'])}  {topic}"
+                _safe_addnstr(stdscr, row, 0, line.ljust(max_x), max_x - 1, attrs["selected"])
             else:
-                stdscr.addnstr(row, 0, line[: max_x - 1], max_x - 1)
+                # Render columns separately so each gets its own color
+                _safe_addnstr(stdscr, row, 0, "  ", 2)
+                _safe_addnstr(stdscr, row, 2, project.ljust(cols["proj"]), cols["proj"], attrs["project"])
+                x = 2 + cols["proj"] + 2
+                _safe_addnstr(stdscr, row, x, when.ljust(cols["time"]), cols["time"], attrs["time"])
+                x += cols["time"] + 2
+                _safe_addnstr(stdscr, row, x, topic, max_x - x - 1, attrs["topic"])
 
-        # Footer — show session ID of current selection
+        # Footer
         footer_row = max_y - 2
-        if current < len(sessions):
-            sid = sessions[current]["id"]
-            footer = f" Session: {sid}"
-            stdscr.attron(curses.A_DIM)
-            stdscr.addnstr(footer_row, 0, footer[: max_x - 1], max_x - 1)
-            stdscr.attroff(curses.A_DIM)
-
-        count_info = f" {current + 1}/{len(sessions)} sessions"
-        stdscr.attron(curses.A_DIM)
-        stdscr.addnstr(footer_row + 1, 0, count_info[: max_x - 1], max_x - 1)
-        stdscr.attroff(curses.A_DIM)
+        if 0 <= current < len(sessions):
+            s = sessions[current]
+            sid = s["id"]
+            cwd = s.get("cwd") or decode_project_path(s["project"])
+            foot = f" {sid}  ·  {cwd}"
+            _safe_addnstr(stdscr, footer_row, 0, _truncate(foot, max_x - 1), max_x - 1, attrs["dim"])
+        nav = " ↑↓/jk move · g/G top/bot · PgUp/PgDn page · p/Tab preview · Enter resume · q quit"
+        _safe_addnstr(stdscr, footer_row + 1, 0, _truncate(nav, max_x - 1), max_x - 1, attrs["dim"])
 
         stdscr.refresh()
-
-        # Input
         key = stdscr.getch()
 
-        if key == curses.KEY_UP or key == ord("k"):
+        if key in (curses.KEY_UP, ord("k")):
             current = max(0, current - 1)
-        elif key == curses.KEY_DOWN or key == ord("j"):
+        elif key in (curses.KEY_DOWN, ord("j")):
             current = min(len(sessions) - 1, current + 1)
-        elif key == curses.KEY_PPAGE:  # Page Up
+        elif key == curses.KEY_PPAGE:
             current = max(0, current - visible_rows)
-        elif key == curses.KEY_NPAGE:  # Page Down
+        elif key == curses.KEY_NPAGE:
             current = min(len(sessions) - 1, current + visible_rows)
-        elif key == ord("g"):  # Home
+        elif key == ord("g"):
             current = 0
-        elif key == ord("G"):  # End
+        elif key == ord("G"):
             current = len(sessions) - 1
         elif key in (curses.KEY_ENTER, 10, 13):
             return sessions[current]
-        elif key in (ord("q"), 27):  # q or Escape
+        elif key in (ord("p"), ord(" "), 9):  # p, space, Tab → preview
+            if 0 <= current < len(sessions):
+                s = sessions[current]
+                if s["id"] not in preview_cache:
+                    preview_cache[s["id"]] = load_session_preview(s["path"])
+                action = _draw_preview(stdscr, attrs, s, preview_cache[s["id"]])
+                if action == "resume":
+                    return s
+                # else: just return to picker
+        elif key in (ord("q"), 27):
             return None
+        elif key == curses.KEY_RESIZE:
+            continue
+
+
+def _wrap_text(text: str, width: int):
+    """Simple word-wrap that also breaks on existing newlines."""
+    if width <= 0:
+        return [text]
+    out = []
+    for raw_line in text.splitlines() or [""]:
+        if not raw_line:
+            out.append("")
+            continue
+        line = ""
+        for word in raw_line.split(" "):
+            if not line:
+                candidate = word
+            else:
+                candidate = line + " " + word
+            if len(candidate) <= width:
+                line = candidate
+            else:
+                if line:
+                    out.append(line)
+                # Hard-break very long tokens
+                while len(word) > width:
+                    out.append(word[:width])
+                    word = word[width:]
+                line = word
+        out.append(line)
+    return out
+
+
+def _draw_preview(stdscr, attrs, session, preview):
+    """Modal preview pane. Returns 'resume' if user hit Enter, else 'back'."""
+    scroll = 0
+    while True:
+        stdscr.erase()
+        max_y, max_x = stdscr.getmaxyx()
+
+        title = f" Preview — {format_project_name(session['project'])} "
+        _safe_addnstr(stdscr, 0, 0, title.ljust(max_x), max_x - 1, attrs["title"])
+
+        # Metadata block
+        meta_lines = [
+            f"Session : {session['id']}",
+            f"Project : {session.get('cwd') or decode_project_path(session['project'])}",
+            f"Modified: {session['modified'].strftime('%Y-%m-%d %H:%M:%S')}  ({relative_time(session['modified'])})",
+            f"Size    : {session['size_mb']:.2f} MB",
+        ]
+        if preview.get("error"):
+            meta_lines.append(f"Error   : {preview['error']}")
+
+        # Build the body lines (metadata + messages)
+        body = []
+        for ml in meta_lines:
+            body.append(("meta", ml))
+        body.append(("blank", ""))
+        body.append(("sep", "─" * max(10, max_x - 4)))
+        body.append(("blank", ""))
+
+        msgs = preview.get("messages") or []
+        if not msgs:
+            body.append(("dim", "(no readable messages found in this session)"))
+        else:
+            wrap_w = max(20, max_x - 4)
+            for role, text in msgs:
+                label = "You" if role == "user" else "Claude"
+                role_attr = "accent" if role == "user" else "project"
+                body.append((role_attr, f"▸ {label}"))
+                # Cap each message preview to ~12 wrapped lines so the pane stays scrollable
+                wrapped = _wrap_text(text, wrap_w)
+                for line in wrapped[:12]:
+                    body.append(("text", "  " + line))
+                if len(wrapped) > 12:
+                    body.append(("dim", f"  … ({len(wrapped) - 12} more lines)"))
+                body.append(("blank", ""))
+            if preview.get("truncated"):
+                body.append(("dim", "… session continues beyond preview"))
+
+        # Scrollable region: rows 2..max_y-3
+        view_h = max(1, max_y - 4)
+        max_scroll = max(0, len(body) - view_h)
+        scroll = max(0, min(scroll, max_scroll))
+
+        for i in range(view_h):
+            bi = scroll + i
+            if bi >= len(body):
+                break
+            kind, text = body[bi]
+            row = 2 + i
+            if kind == "meta":
+                _safe_addnstr(stdscr, row, 2, _truncate(text, max_x - 3), max_x - 3, attrs["dim"])
+            elif kind == "sep":
+                _safe_addnstr(stdscr, row, 2, _truncate(text, max_x - 3), max_x - 3, attrs["dim"])
+            elif kind == "blank":
+                pass
+            elif kind == "dim":
+                _safe_addnstr(stdscr, row, 2, _truncate(text, max_x - 3), max_x - 3, attrs["dim"])
+            elif kind in ("accent", "project"):
+                _safe_addnstr(stdscr, row, 2, _truncate(text, max_x - 3), max_x - 3, attrs[kind])
+            else:
+                _safe_addnstr(stdscr, row, 2, _truncate(text, max_x - 3), max_x - 3, attrs["topic"])
+
+        nav = " ↑↓/jk scroll · PgUp/PgDn page · Enter resume · q/Esc back"
+        _safe_addnstr(stdscr, max_y - 1, 0, _truncate(nav, max_x - 1), max_x - 1, attrs["dim"])
+
+        stdscr.refresh()
+        key = stdscr.getch()
+        if key in (curses.KEY_UP, ord("k")):
+            scroll -= 1
+        elif key in (curses.KEY_DOWN, ord("j")):
+            scroll += 1
+        elif key == curses.KEY_PPAGE:
+            scroll -= view_h
+        elif key == curses.KEY_NPAGE:
+            scroll += view_h
+        elif key in (curses.KEY_ENTER, 10, 13):
+            return "resume"
+        elif key in (ord("q"), 27, ord("p"), 9, ord(" ")):
+            return "back"
+        elif key == curses.KEY_RESIZE:
+            continue
 
 
 # --- Settings TUI ---
@@ -916,8 +1368,27 @@ def _find_claude() -> str | None:
     return None
 
 
+def _sweep_existing_accounts() -> bool:
+    """Repair any accounts that still have real dirs where symlinks are expected.
+
+    Runs automatically after migrate_legacy() and at the start of launch_claude()
+    so that existing 0.6.0 users are repaired on next launch without needing
+    to run --setup manually.  Silent unless something actually changes.
+    """
+    changed = False
+    for acct in list_accounts():
+        _, account_claude = resolve_account(acct)
+        for name in SYMLINK_DIRS:
+            src = MAIN_CLAUDE / name
+            dst = account_claude / name
+            if _ensure_symlinked_dir(name, src, dst, account_claude):
+                changed = True
+    return changed
+
+
 def launch_claude(account: str = "default", args=None):
     """Launch claude with account HOME, passing args through unchanged."""
+    _sweep_existing_accounts()
     claude_path = _find_claude()
     if not claude_path:
         sys.exit(
@@ -987,6 +1458,10 @@ def _looks_like_account(token: str) -> bool:
 def main():
     # Auto-migrate legacy layout before any other processing
     migrate_legacy()
+    # Repair any accounts that still have real dirs instead of symlinks
+    # (covers the default account after legacy migration, and any 0.6.0 users
+    # whose accounts/default/.claude/projects/ was left as a real dir).
+    _sweep_existing_accounts()
 
     args = sys.argv[1:]
 

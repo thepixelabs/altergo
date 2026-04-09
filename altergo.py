@@ -30,73 +30,104 @@ def _link(url, text):
     return f"\033]8;;{url}\033\\{text}\033]8;;\033\\"
 
 
+# Color tokens — standardized palette used across help, picker, and launcher
+_C_COMMAND = "38;5;39"       # command text (blue)
+_C_ARG     = "38;5;87"       # <placeholder> args (electric cyan)
+_C_HEADER  = "1;38;5;39"     # section headers (bold blue)
+_C_VERSION = "2;38;5;244"    # version / dim text
+_C_DIM     = "2"             # secondary descriptions
+_C_BRAND   = "38;5;105"      # pixelabs wordmark (indigo)
+_C_SUCCESS = "38;5;76"       # checkmarks / success
+_C_WARN    = "38;5;220"      # warnings
+
+
+def show_banner():
+    """Print the altergo ASCII banner with gradient. TTY-only."""
+    if not sys.stdout.isatty():
+        print(f"  altergo {__version__}  —  Switch Claude identities. Keep your context.")
+        return
+    try:
+        from rich_pyfiglet import RichFiglet
+        from rich.console import Console
+        console = Console()
+        figlet = RichFiglet("altergo", font="smslant", colors=["#00d7ff", "#005fd7"], horizontal=True)
+        console.print(figlet)
+    except Exception:
+        print(f"  altergo {__version__}  —  Switch Claude identities. Keep your context.")
+
+
 def show_help():
     """Print --help output with color and OSC 8 hyperlinks when on a TTY."""
 
-    def b(t):
-        return _c("1", t)  # bold
-
     def h(t):
-        return _c("1;36", t)  # bold cyan — section headers
+        return _c(_C_HEADER, t)   # bold blue — section headers
 
     def kw(t):
-        return _c("36", t)  # cyan — commands / keys
+        return _c(_C_COMMAND, t)  # blue — commands / keys
+
+    def arg(t):
+        return _c(_C_ARG, t)      # electric cyan — <placeholders>
 
     def dim(t):
-        return _c("2", t)  # dim — secondary text
+        return _c(_C_DIM, t)      # dim — secondary text
 
-    pixelabs = _link("https://pixelabs.net", "pixelabs.net")
+    def sep():
+        return _c(_C_DIM, "  " + "─" * 58)
+
+    pixelabs = _link("https://pixelabs.net", _c(_C_BRAND, "pixelabs.net"))
     claude_url = _link("https://claude.ai/code", "Claude Code")
+
+    show_banner()
+    print(f"  {dim('Because one personality was not causing enough bugs.')}")
+    print(f"  A session manager for {claude_url}.  A {pixelabs} project.")
 
     lines = [
         "",
-        f"  {b('altergo')} {dim(f'v{__version__}')}  —  Switch Claude identities. Keep your context.",
-        f"  A session manager for {claude_url}.  A {pixelabs} project.",
-        "",
+        sep(),
         h("  Usage"),
-        f"  {kw('altergo')} [flags...]             Launch claude with default account",
-        f"  {kw('altergo <name>')} [flags...]      Launch claude with named account",
-        f"  {kw('altergo --resume')}               Pick a session interactively (↑/↓/j/k, Enter, q)",
-        f"  {kw('altergo --resume <id>')}          Resume a specific session directly",
-        f"  {kw('altergo --list')}                 List recent sessions",
-        f"  {kw('altergo --setup')}                First-time setup or re-run to repair {dim('(interactive)')}",
-        f"  {kw('altergo --setup --name <name>')}  Create or reconfigure a named account",
-        f"  {kw('altergo --setup --provider <p>[,<p>]')}",
-        f"                                 Specify providers {dim('(claude, gemini)')}",
-        f"  {kw('altergo --teardown')}             Remove symlinks (default account)",
-        f"  {kw('altergo --teardown --name <n>')}  Remove symlinks for named account",
-        f"  {kw('altergo --settings')}             Configure shared credentials (interactive)",
-        f"  {kw('altergo shell')}                  Open a shell inside default account HOME",
-        f"  {kw('altergo <name> shell')}           Open a shell inside named account HOME",
-        f"  {kw('altergo -- <cmd> [args...]')}     Run command in default account context",
-        f"  {kw('altergo <name> -- <cmd> [...]')}  Run command in named account context",
-        f"  {kw('altergo --version')}              Show version",
-        f"  {kw('altergo -h, --help')}             Show this help",
+        f"  {kw('altergo')} [flags...]                    {dim('Launch with default account')}",
+        f"  {kw('altergo')} {arg('<name>')} [flags...]           {dim('Launch with named account')}",
+        f"  {kw('altergo --resume')}                      {dim('Pick a session interactively')}",
+        f"  {kw('altergo --resume')} {arg('<id>')}              {dim('Resume a specific session')}",
+        f"  {kw('altergo --list')}                        {dim('List recent sessions')}",
+        f"  {kw('altergo --setup')}                       {dim('First-time setup or re-run to repair')}",
+        f"  {kw('altergo --setup --name')} {arg('<name>')}       {dim('Create or reconfigure a named account')}",
+        f"  {kw('altergo --setup --provider')} {arg('<p>[,<p>]')} {dim('Specify providers (claude, gemini)')}",
+        f"  {kw('altergo --teardown')}                    {dim('Remove symlinks (default account)')}",
+        f"  {kw('altergo --teardown --name')} {arg('<n>')}       {dim('Remove symlinks for named account')}",
+        f"  {kw('altergo --settings')}                    {dim('Configure shared credentials')}",
+        f"  {kw('altergo shell')}                         {dim('Shell inside default account HOME')}",
+        f"  {kw('altergo')} {arg('<name>')} {kw('shell')}              {dim('Shell inside named account HOME')}",
+        f"  {kw('altergo --')} {arg('<cmd> [args...]')}          {dim('Run command in default account context')}",
+        f"  {kw('altergo')} {arg('<name>')} {kw('--')} {arg('<cmd> [...]')}   {dim('Run command in named account context')}",
+        f"  {kw('altergo --version')}                     {dim('Show version')}",
+        f"  {kw('altergo -h, --help')}                    {dim('Show this help')}",
         "",
+        sep(),
         h("  Accounts"),
-        f"  {kw('altergo --setup --name <name>')}  Create or reconfigure a named account",
-        f"  {kw('altergo --teardown --name <n>')}  Remove symlinks for a named account",
-        f"  {kw('altergo <name>')} [flags...]      Launch with a named account",
-        f"  Each account can use one or more AI providers {dim('(claude, gemini, ...)')}.",
-        f"  Run {kw('--setup')} interactively or pass {kw('--provider')} to specify.",
+        f"  {kw('altergo --setup --name')} {arg('<name>')}       {dim('Create or reconfigure a named account')}",
+        f"  {kw('altergo --teardown --name')} {arg('<n>')}       {dim('Remove symlinks for a named account')}",
+        f"  {kw('altergo')} {arg('<name>')} [flags...]           {dim('Launch with a named account')}",
+        f"  {dim('Each account can use one or more providers (claude, gemini, ...).')}",
+        f"  {dim('Run')} {kw('--setup')} {dim('interactively or pass')} {kw('--provider')} {dim('to specify.')}",
         "",
+        sep(),
         h("  Examples"),
-        f"  {kw('altergo')}                        Start a new session (default account)",
-        f"  {kw('altergo work')}                   Start a new session (work account)",
-        f"  {kw('altergo --setup --name work')}    Create the work account",
-        f"  {kw('altergo --setup --provider claude,gemini')}",
-        f"  {dim('                                 Setup with multiple providers')}",
-        f"  {kw('altergo work shell')}             Enter work-account shell",
-        f"  {kw('altergo work -- gh auth login')}  Authenticate gh CLI in work context",
-        f"  {kw('altergo --resume')}               Open session picker",
-        f"  {kw('altergo --dangerously-skip-permissions')}",
-        f"  {dim('                                 Pass any claude flag straight through')}",
+        f"  {kw('altergo')}                                {dim('Start a new session (default account)')}",
+        f"  {kw('altergo work')}                          {dim('Start a new session (work account)')}",
+        f"  {kw('altergo --setup --name work')}           {dim('Create the work account')}",
+        f"  {kw('altergo --setup --provider claude,gemini')}  {dim('Setup with multiple providers')}",
+        f"  {kw('altergo work shell')}                    {dim('Enter work-account shell')}",
+        f"  {kw('altergo work -- gh auth login')}         {dim('Authenticate gh in work context')}",
+        f"  {kw('altergo --resume')}                      {dim('Open session picker')}",
+        f"  {kw('altergo --dangerously-skip-permissions')}  {dim('Pass any claude flag through')}",
         "",
+        sep(),
         h("  Navigation (session picker)"),
-        f"  {kw('↑/k')}          Move up             {kw('PgUp/PgDn')}    Page scroll",
-        f"  {kw('↓/j')}          Move down           {kw('g/G')}          Jump to top/bottom",
-        f"  {kw('Enter')}        Resume session      {kw('q/Esc')}        Quit",
-        f"  {kw('p/Tab/Space')}  Preview session     {kw('Enter')}          Resume from preview",
+        f"  {kw('↑/k')}  {dim('Move up')}       {kw('PgUp/PgDn')}  {dim('Page scroll')}",
+        f"  {kw('↓/j')}  {dim('Move down')}     {kw('g/G')}        {dim('Jump to top/bottom')}",
+        f"  {kw('Enter')}  {dim('Resume')}       {kw('q/Esc')}      {dim('Quit')}",
+        f"  {kw('p/Tab')}  {dim('Preview session')}",
         "",
         dim("  altergo is an independent open-source project by pixelabs · not affiliated with Anthropic PBC"),
         dim("  Claude and Claude Code are trademarks of Anthropic PBC"),
@@ -1005,6 +1036,8 @@ def _picker_attrs():
             curses.init_pair(4, gray, -1)  # time col
             curses.init_pair(5, cyan, -1)  # preview pane border
             curses.init_pair(6, white, -1)  # shine peak
+            amber = 220 if curses.COLORS >= 256 else curses.COLOR_YELLOW
+            curses.init_pair(7, amber, -1)  # size warning (>10MB)
         except curses.error:
             has_color = False
 
@@ -1021,6 +1054,7 @@ def _picker_attrs():
         attrs["brand"] = curses.color_pair(3) | curses.A_BOLD
         attrs["shine_peak"] = curses.color_pair(6) | curses.A_BOLD
         attrs["shine_mid"] = curses.color_pair(2) | curses.A_BOLD
+        attrs["size_warn"] = curses.color_pair(7) | curses.A_DIM
     else:
         attrs["selected"] = curses.A_REVERSE | curses.A_BOLD
         attrs["header"] = curses.A_BOLD | curses.A_UNDERLINE
@@ -1034,22 +1068,21 @@ def _picker_attrs():
         attrs["brand"] = curses.A_BOLD
         attrs["shine_peak"] = curses.A_BOLD | curses.A_REVERSE
         attrs["shine_mid"] = curses.A_BOLD
+        attrs["size_warn"] = curses.A_DIM
     return attrs
 
 
 def _compute_columns(max_x: int) -> dict:
     """Responsive column widths. Topic gets the leftover space."""
-    # Minimum widths for metadata cols
     proj_w = 18 if max_x >= 100 else (14 if max_x >= 80 else 10)
     time_w = 11  # "yesterday  " / "12h ago    "
-    msgs_w = 0  # message count column dropped — not cheap to compute
-    gutter = 2  # leading "▸ "
+    size_w = 7   # " 1.2MB " right-aligned
+    gutter = 2   # leading "▸ "
     spacing = 2  # between cols
-    used = gutter + proj_w + spacing + time_w + spacing
+    used = gutter + proj_w + spacing + time_w + spacing + size_w + spacing
     topic_w = max(20, max_x - used - 1)
-    # Cap topic width so it doesn't run off the screen on ultra-wide terms
     topic_w = min(topic_w, max(40, max_x - used - 1))
-    return {"gutter": gutter, "proj": proj_w, "time": time_w, "topic": topic_w, "msgs": msgs_w}
+    return {"gutter": gutter, "proj": proj_w, "time": time_w, "size": size_w, "topic": topic_w}
 
 
 def _truncate(text: str, width: int) -> str:
@@ -1150,8 +1183,9 @@ def _draw_picker(stdscr, sessions):
         # Column header row
         proj_h = "Project".ljust(cols["proj"])
         time_h = "When".ljust(cols["time"])
+        size_h = "Size".rjust(cols["size"])
         topic_h = "Topic"
-        col_header = f"  {proj_h}  {time_h}  {topic_h}"
+        col_header = f"  {proj_h}  {time_h}  {size_h}  {topic_h}"
         _safe_addnstr(stdscr, 2, 0, col_header.ljust(max_x), max_x - 1, attrs["header"])
 
         # Visible area: title(1) + blank(1) + col_header(2) + footer(2)
@@ -1172,13 +1206,17 @@ def _draw_picker(stdscr, sessions):
 
             project = _truncate(format_project_name(s["project"]), cols["proj"])
             when = _truncate(relative_time(s["modified"]), cols["time"])
-            topic = s.get("topic") or _c(2, "")  # placeholder
-            if not topic:
-                topic = "(no opening prompt found)"
+            topic = s.get("topic") or ""
+            topic_is_empty = not topic
+            if topic_is_empty:
+                topic = "(no prompt)"
             topic = _truncate(topic, cols["topic"])
 
+            size_str = f"{s.get('size_mb', 0):.1f}MB".rjust(cols["size"])
+            size_attr = attrs["size_warn"] if s.get("size_mb", 0) > 10 else attrs["time"]
+
             if is_sel:
-                line = f"▸ {project.ljust(cols['proj'])}  {when.ljust(cols['time'])}  {topic}"
+                line = f"▸ {project.ljust(cols['proj'])}  {when.ljust(cols['time'])}  {size_str}  {topic}"
                 _safe_addnstr(stdscr, row, 0, line.ljust(max_x), max_x - 1, attrs["selected"])
             else:
                 # Render columns separately so each gets its own color
@@ -1187,7 +1225,10 @@ def _draw_picker(stdscr, sessions):
                 x = 2 + cols["proj"] + 2
                 _safe_addnstr(stdscr, row, x, when.ljust(cols["time"]), cols["time"], attrs["time"])
                 x += cols["time"] + 2
-                _safe_addnstr(stdscr, row, x, topic, max_x - x - 1, attrs["topic"])
+                _safe_addnstr(stdscr, row, x, size_str, cols["size"], size_attr)
+                x += cols["size"] + 2
+                topic_attr = attrs["dim"] if topic_is_empty else attrs["topic"]
+                _safe_addnstr(stdscr, row, x, topic, max_x - x - 1, topic_attr)
 
         # Footer: session id + cwd (normal brightness, not dim)
         footer_row = max_y - 2
@@ -1623,6 +1664,7 @@ def launch_claude(account: str = "default", args=None, provider: str | None = No
 
     env = _build_alt_env(account)
     cmd = [binary_path] + (args or [])
+    _print_launch_message()
     os.execvpe(binary_path, cmd, env)
 
 
@@ -1643,6 +1685,7 @@ def launch_shell(account: str = "default"):
         env["PROMPT"] = f"({label}) {env.get('PROMPT', '%n@%m %~ %# ')}"
     print(_c(36, f"Entering altergo shell [{account}] (HOME={account_home})"))
     print(_c(2, "Run 'exit' or Ctrl-D to return to your primary account.\n"))
+    _print_launch_message()
     os.execvpe(shell, [shell], env)
 
 
@@ -1656,6 +1699,7 @@ def launch_command(account: str = "default", cmd_args=None):
         print(_c(31, f"altergo: '{cmd_args[0]}' not found in PATH"), file=sys.stderr)
         sys.exit(1)
     env = _build_alt_env(account)
+    _print_launch_message()
     os.execvpe(cmd_path, [cmd_path] + cmd_args[1:], env)
 
 
@@ -1763,6 +1807,216 @@ def _prompt_provider_selection(current_providers: list[str] | None = None) -> li
     return deduped
 
 
+# --- Goodbye messages ---
+
+_GOODBYE = [
+    "Back to reality. Good luck with the next bug.",
+    "Session closed. The context window has left the building.",
+    "That was productive, ah?",
+    "Claude has left the chat. Your git blame remains.",
+    "All that intelligence, and it still couldn't push to main for you.",
+    "See you in 5 minutes when the next edge case appears.",
+    "The model has spoken. Whether it was right is your problem.",
+    "Tokens spent. Wisdom optional.",
+    "Another session closed. Another PR description that writes itself.",
+    "Done. The AI did the thinking. You take the blame.",
+    "Clean exit. The work continues.",
+    "Until next time. May your tests be green.",
+    "Context preserved. You know where to find it.",
+    "Ship it.",
+    "Commit early, commit often. You know the drill.",
+]
+
+
+def _print_launch_message():
+    """Print a witty handoff line to stderr before handing off to an AI session."""
+    if not sys.stderr.isatty():
+        return
+    import random
+    msg = random.choice(_GOODBYE)
+    print(f"\n  {_c(_C_COMMAND, 'altergo')}  {_c(_C_DIM, msg)}\n", file=sys.stderr)
+
+
+# --- Interactive provider+account launcher ---
+
+_LAUNCHER_PROVIDERS = [
+    {"id": "claude",  "label": "anthropic", "binary": "claude"},
+    {"id": "gemini",  "label": "gemini",    "binary": "gemini"},
+    {"id": "codex",   "label": "openai",    "binary": "codex"},
+]
+
+
+def build_launcher_menu() -> list:
+    """Build provider-grouped account menu for the interactive launcher.
+
+    Returns a list of provider dicts:
+        [{"provider_id": str, "label": str, "accounts": [{"name": str, "age": str, "available": bool}]}]
+    """
+    accounts = list_accounts()
+    # Group accounts by their primary provider from account.json
+    provider_accounts: dict = {}
+    for acct in accounts:
+        acct_home = ACCOUNTS_DIR / acct
+        meta = load_account_meta(acct_home)
+        providers_for_acct = meta["providers"] if meta else ["claude"]
+        primary = providers_for_acct[0] if providers_for_acct else "claude"
+        provider_accounts.setdefault(primary, []).append(acct)
+
+    # Resolve most-recent session age per account (best-effort)
+    all_sessions = get_sessions()
+    acct_ages: dict = {}
+    for s in all_sessions:
+        # Sessions live under MAIN_CLAUDE/projects — not per-account, so use
+        # the first session encountered as a proxy for "recently active"
+        for acct in accounts:
+            if acct not in acct_ages:
+                acct_ages[acct] = relative_time(s["modified"])
+        if len(acct_ages) == len(accounts):
+            break
+
+    # Build ordered menu following _LAUNCHER_PROVIDERS order, then any extras
+    seen_providers = set()
+    menu = []
+    ordered_ids = [p["id"] for p in _LAUNCHER_PROVIDERS] + list(provider_accounts.keys())
+    for pid in ordered_ids:
+        if pid in seen_providers or pid not in provider_accounts:
+            continue
+        seen_providers.add(pid)
+        label = next((p["label"] for p in _LAUNCHER_PROVIDERS if p["id"] == pid), pid)
+        binary = next((p["binary"] for p in _LAUNCHER_PROVIDERS if p["id"] == pid), pid)
+        available = bool(shutil.which(binary))
+        chips = []
+        for acct in provider_accounts[pid]:
+            chips.append({
+                "name": acct,
+                "age": acct_ages.get(acct, ""),
+                "available": available,
+            })
+        menu.append({"provider_id": pid, "label": label, "accounts": chips})
+    return menu
+
+
+def _draw_launcher(stdscr, menu):
+    """Two-axis curses TUI: ↑↓ providers, ←→ account chips. Returns (account, shell_mode)."""
+    curses.curs_set(0)
+    attrs = _picker_attrs()
+    stdscr.timeout(80)
+
+    cursor_row = 0
+    cursor_col = 0
+    phase = 0
+
+    # Sanitize initial cursor position
+    def clamp_col(row, col):
+        if not menu:
+            return 0
+        return min(col, max(0, len(menu[row]["accounts"]) - 1))
+
+    while True:
+        stdscr.erase()
+        max_y, max_x = stdscr.getmaxyx()
+
+        total_accounts = sum(len(p["accounts"]) for p in menu)
+        n_providers = len(menu)
+
+        # Header
+        title = " altergo — launch"
+        right = f"{n_providers} provider{'s' if n_providers != 1 else ''} · {total_accounts} account{'s' if total_accounts != 1 else ''} "
+        header = title.ljust(max_x - len(right)) + right
+        _safe_addnstr(stdscr, 0, 0, header[:max_x], max_x - 1, attrs["title"])
+
+        # Separator
+        _safe_addnstr(stdscr, 1, 0, ("─" * (max_x - 1))[:max_x - 1], max_x - 1, attrs["dim"])
+
+        # Provider rows (start at row 3, blank row between each)
+        row = 3
+        for pi, prov in enumerate(menu):
+            if row >= max_y - 3:
+                break
+            label = prov["label"][:12].ljust(12)
+            is_focused_row = pi == cursor_row
+            label_attr = attrs["project"] | curses.A_BOLD if is_focused_row else attrs["project"]
+            _safe_addnstr(stdscr, row, 2, label, 12, label_attr)
+
+            x = 16
+            for ci, chip in enumerate(prov["accounts"]):
+                if x >= max_x - 5:
+                    _safe_addnstr(stdscr, row, x, "…", 1, attrs["dim"])
+                    break
+                name = chip["name"][:10]
+                age = chip["age"][:5] if chip["age"] else ""
+                chip_text = f"{name} · {age}" if age else name
+                is_selected = is_focused_row and ci == cursor_col
+
+                if not chip["available"]:
+                    chip_str = f"✗ {chip_text}  "
+                    _safe_addnstr(stdscr, row, x, chip_str[:max_x - x - 1], max_x - x - 1, attrs["dim"])
+                elif is_selected:
+                    chip_str = f"▓ {chip_text} ▓ "
+                    _safe_addnstr(stdscr, row, x, chip_str[:max_x - x - 1], max_x - x - 1, attrs["selected"])
+                elif is_focused_row:
+                    chip_str = f"░ {chip_text} ░ "
+                    _safe_addnstr(stdscr, row, x, chip_str[:max_x - x - 1], max_x - x - 1, attrs["time"])
+                else:
+                    chip_str = f"  {chip_text}   "
+                    _safe_addnstr(stdscr, row, x, chip_str[:max_x - x - 1], max_x - x - 1, attrs["dim"])
+                x += len(chip_str)
+
+            row += 2  # blank line between providers
+
+        # Nav footer
+        nav = " ↑↓/jk provider  ·  ←→/hl account  ·  Enter launch  ·  s shell  ·  q quit  ·  pixelabs"
+        _draw_animated_nav(stdscr, max_y - 1, nav, max_x - 1, phase, attrs)
+
+        stdscr.refresh()
+        key = stdscr.getch()
+
+        if key == -1:
+            phase += 1
+            continue
+
+        if key in (curses.KEY_UP, ord("k")):
+            cursor_row = max(0, cursor_row - 1)
+            cursor_col = clamp_col(cursor_row, 0)
+        elif key in (curses.KEY_DOWN, ord("j")):
+            cursor_row = min(len(menu) - 1, cursor_row + 1)
+            cursor_col = clamp_col(cursor_row, 0)
+        elif key in (curses.KEY_LEFT, ord("h")):
+            cursor_col = max(0, cursor_col - 1)
+        elif key in (curses.KEY_RIGHT, ord("l")):
+            cursor_col = clamp_col(cursor_row, cursor_col + 1)
+        elif key in (curses.KEY_ENTER, 10, 13):
+            if menu and menu[cursor_row]["accounts"]:
+                chip = menu[cursor_row]["accounts"][cursor_col]
+                if chip["available"]:
+                    return chip["name"], False
+        elif key == ord("s"):
+            if menu and menu[cursor_row]["accounts"]:
+                chip = menu[cursor_row]["accounts"][cursor_col]
+                if chip["available"]:
+                    return chip["name"], True
+        elif key in (ord("q"), 27):
+            return None, False
+        elif key == curses.KEY_RESIZE:
+            continue
+
+
+def interactive_launcher():
+    """Show the provider+account picker and launch the selected account."""
+    menu = build_launcher_menu()
+    if not menu:
+        print("altergo: no accounts found. Run 'altergo --setup' first.", file=sys.stderr)
+        sys.exit(1)
+    result = curses.wrapper(_draw_launcher, menu)
+    account, shell_mode = result if result else (None, False)
+    if not account:
+        sys.exit(0)
+    if shell_mode:
+        launch_shell(account)
+    else:
+        launch_claude(account)
+
+
 # --- Main ---
 
 
@@ -1777,6 +2031,11 @@ def main():
     args = sys.argv[1:]
 
     # ── Altergo-owned commands (not passed to claude) ──────────────────────────
+
+    # No args + TTY + multiple accounts → show interactive launcher
+    if not args and sys.stdout.isatty() and len(list_accounts()) >= 2:
+        interactive_launcher()
+        sys.exit(0)
 
     if args and args[0] in ("-h", "--help"):
         show_help()

@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.8.1 (2026-04-09)
+
+### Bug Fixes
+
+- --resume always launched with hardcoded default account
+  ([`1ad5b1b`](https://github.com/thepixelabs/altergo/commit/1ad5b1bfb159727fe1a4bbac27cd154265f7c887))
+
+
 ## v0.8.0 (2026-04-09)
 
 ### Features

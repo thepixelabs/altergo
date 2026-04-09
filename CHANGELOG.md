@@ -1,6 +1,24 @@
 # CHANGELOG
 
 
+## v0.8.0 (2026-04-09)
+
+### Features
+
+- **setup**: Interactive account name + multi-provider selection
+  ([`9d1a9e6`](https://github.com/thepixelabs/altergo/commit/9d1a9e6c2f28b8f072c8c8399fc28aa4cab0ec0b))
+
+--setup now prompts for account name when no --name is given (TTY), shows a numbered provider
+  checklist with installed binaries pre-checked, and wires only the selected providers'
+  dotdirs/symlinks.
+
+New flags: --setup --provider <p>[,<p>] specify providers non-interactively <account> --provider <p>
+  select provider at launch time
+
+Provider manifests (claude, gemini) drive all setup/teardown/launch logic. Accounts persist their
+  provider list in account.json. Existing accounts without account.json are treated as claude-only.
+
+
 ## v0.7.1 (2026-04-09)
 
 ### Bug Fixes

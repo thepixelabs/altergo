@@ -1,6 +1,24 @@
 # CHANGELOG
 
 
+## v0.10.0 (2026-04-09)
+
+### Features
+
+- V0.9.0 — active account pointer, wire launcher, restructure help
+  ([`48f535a`](https://github.com/thepixelabs/altergo/commit/48f535a40c44d49f9d3a3407b409b6a9a3241548))
+
+- Add --use <name> to persist active account in ~/.altergo/.altergo.json - Bare altergo now
+  resolves: explicit arg → active_account → single account → launcher → error - Wire
+  interactive_launcher() as default entry when multiple accounts exist - Add 'd' key in launcher to
+  set active account with confirmation flash - Show active account indicator in launcher header -
+  --resume respects active_account when multiple accounts exist - Restructure --help into Quick
+  Start / Account Management / Session / Advanced / Examples / Navigation - Fix save_settings() to
+  merge-write (preserves active_account alongside shared credentials) - Remove 'default' from
+  reserved names — no longer special-cased - _prompt_account_name() no longer defaults to the string
+  'default'
+
+
 ## v0.9.0 (2026-04-09)
 
 ### Features

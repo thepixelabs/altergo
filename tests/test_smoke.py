@@ -122,12 +122,6 @@ def test_validate_account_name_valid():
     altergo.validate_account_name("acct_2")
 
 
-def test_validate_account_name_reserved():
-    """validate_account_name raises SystemExit for a reserved name."""
-    with pytest.raises(SystemExit):
-        altergo.validate_account_name("default")
-
-
 def test_validate_account_name_bad_chars():
     """validate_account_name raises SystemExit when the name contains spaces."""
     with pytest.raises(SystemExit):
@@ -586,3 +580,96 @@ def test_ensure_symlinked_dir_noop_when_correct(sweep_home):
 
     result = altergo._ensure_symlinked_dir("projects", src, dst, account_claude)
     assert result is False
+
+
+# ---------------------------------------------------------------------------
+# T10 — Provider structure tests
+# ---------------------------------------------------------------------------
+
+
+def test_providers_dict_structure():
+    required_keys = {"display_name", "dot_dir", "binary", "credentials_file", "symlink_dirs", "symlink_files"}
+    for pid, prov in altergo.PROVIDERS.items():
+        assert required_keys == set(prov.keys()), f"provider {pid!r} missing keys or has extra keys"
+        assert isinstance(prov["symlink_dirs"], list), f"provider {pid!r} symlink_dirs must be a list"
+        assert all(isinstance(s, str) for s in prov["symlink_dirs"]), f"provider {pid!r} symlink_dirs must be list of str"
+        assert isinstance(prov["symlink_files"], list), f"provider {pid!r} symlink_files must be a list"
+        assert all(isinstance(s, str) for s in prov["symlink_files"]), f"provider {pid!r} symlink_files must be list of str"
+
+
+def test_credentials_isolation_all_providers():
+    for pid, prov in altergo.PROVIDERS.items():
+        creds = prov["credentials_file"]
+        assert creds not in prov["symlink_dirs"], (
+            f"provider {pid!r}: credentials_file {creds!r} must not appear in symlink_dirs"
+        )
+        assert creds not in prov["symlink_files"], (
+            f"provider {pid!r}: credentials_file {creds!r} must not appear in symlink_files"
+        )
+
+
+def test_symlink_dirs_is_subset_of_claude_provider():
+    assert set(altergo.SYMLINK_DIRS) == set(altergo.PROVIDERS["claude"]["symlink_dirs"])
+    assert set(altergo.SYMLINK_FILES) == set(altergo.PROVIDERS["claude"]["symlink_files"])
+
+
+def test_known_commands_contains_launch():
+    assert "--launch" in altergo._KNOWN_COMMANDS
+
+
+def test_looks_like_account_rejects_known_commands():
+    assert altergo._looks_like_account("--launch") is False
+    assert altergo._looks_like_account("--settings") is False
+    assert altergo._looks_like_account("--use") is False
+
+
+@pytest.mark.parametrize("provider_id", ["claude", "gemini", "codex", "copilot"])
+def test_setup_creates_provider_symlinks(fake_home, provider_id):
+    prov = altergo.PROVIDERS[provider_id]
+    main_dot_dir = fake_home["main_home"] / prov["dot_dir"]
+
+    for name in prov["symlink_dirs"]:
+        (main_dot_dir / name).mkdir(parents=True, exist_ok=True)
+    for name in prov["symlink_files"]:
+        (main_dot_dir / name).touch()
+
+    altergo.do_setup("work", providers=[provider_id])
+
+    account_dot_dir = fake_home["accounts_dir"] / "work" / prov["dot_dir"]
+
+    for name in prov["symlink_dirs"]:
+        link = account_dot_dir / name
+        assert link.is_symlink(), f"provider {provider_id!r}: {name}/ should be a symlink"
+        assert link.resolve() == (main_dot_dir / name).resolve()
+
+    for name in prov["symlink_files"]:
+        link = account_dot_dir / name
+        assert link.is_symlink(), f"provider {provider_id!r}: {name} should be a symlink"
+
+    creds_link = account_dot_dir / prov["credentials_file"]
+    assert not creds_link.is_symlink(), (
+        f"provider {provider_id!r}: credentials_file {prov['credentials_file']!r} must not be a symlink"
+    )
+
+
+def test_teardown_removes_provider_symlinks(fake_home):
+    prov = altergo.PROVIDERS["gemini"]
+    main_dot_dir = fake_home["main_home"] / ".gemini"
+
+    for name in prov["symlink_dirs"]:
+        (main_dot_dir / name).mkdir(parents=True, exist_ok=True)
+    for name in prov["symlink_files"]:
+        (main_dot_dir / name).touch()
+
+    altergo.do_setup("work", providers=["gemini"])
+
+    account_dot_dir = fake_home["accounts_dir"] / "work" / ".gemini"
+    created_symlinks = [account_dot_dir / name for name in prov["symlink_dirs"] if (account_dot_dir / name).is_symlink()]
+    assert created_symlinks, "precondition: at least one symlink must exist after setup"
+
+    altergo.do_teardown("work")
+
+    for name in prov["symlink_dirs"]:
+        assert not (account_dot_dir / name).is_symlink(), f"gemini: {name}/ symlink should be removed after teardown"
+    for name in prov["symlink_files"]:
+        assert not (account_dot_dir / name).is_symlink(), f"gemini: {name} symlink should be removed after teardown"

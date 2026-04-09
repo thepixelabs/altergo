@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Altergo — multi-account session manager for Claude Code. Run 'altergo --help' for usage."""
 
-__version__ = "0.8.0"
+__version__ = "0.8.1"
 
 import curses
 import json
@@ -1866,10 +1866,23 @@ def main():
 
     # --resume with no ID → open interactive picker
     if args and args[0] == "--resume" and len(args) == 1:
+        accounts = list_accounts()
+        if not accounts:
+            print("altergo: no accounts found. Run 'altergo --setup' first.", file=sys.stderr)
+            sys.exit(1)
+        if len(accounts) == 1:
+            resume_account = accounts[0]
+        else:
+            print(
+                f"altergo: multiple accounts exist ({', '.join(accounts)}).\n"
+                f"  Use 'altergo <name> --resume' to pick an account.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
         sessions = get_sessions()
         selected = interactive_picker(sessions)
         if selected:
-            launch_claude("default", ["--resume", selected["id"]])
+            launch_claude(resume_account, ["--resume", selected["id"]])
         else:
             print("Cancelled.")
         sys.exit(0)

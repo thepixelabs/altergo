@@ -1,6 +1,22 @@
 # CHANGELOG
 
 
+## v0.9.0 (2026-04-09)
+
+### Features
+
+- Rich-pyfiglet banner, redesigned help/TUI, provider launcher, goodbye messages
+  ([`1aa3ac4`](https://github.com/thepixelabs/altergo/commit/1aa3ac4067bfe21ff111e6b4917d7886aa014ab2))
+
+- Add show_banner() with smslant font gradient (#00d7ff→#005fd7) via rich-pyfiglet - Standardize
+  color tokens (_C_COMMAND, _C_ARG, _C_HEADER, _C_DIM, etc.) - Rewrite show_help() with new palette,
+  section separators, and split arg coloring - Add 15-message _GOODBYE pool printed before every
+  os.execvpe() handoff - Add interactive provider+account launcher TUI (_draw_launcher,
+  build_launcher_menu) shown automatically when no args given and 2+ accounts exist - Resume picker:
+  size column (7-char, amber warning >10MB), (no prompt) dim fallback - Add size_warn color pair
+  (amber 220) to _picker_attrs
+
+
 ## v0.8.1 (2026-04-09)
 
 ### Bug Fixes

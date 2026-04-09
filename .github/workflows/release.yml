@@ -56,7 +56,9 @@ jobs:
             ${{ runner.os }}-pip-release-
 
       - name: Install release tooling
-        run: pip install "python-semantic-release==9.*" build
+        run: |
+          pip install --upgrade pip
+          pip install "python-semantic-release==9.*" build
 
       - name: Configure git bot identity
         run: |

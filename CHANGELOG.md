@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.7.1 (2026-04-09)
+
+### Bug Fixes
+
+- Clarify setup/teardown help text and add Accounts section
+  ([`c1f43cb`](https://github.com/thepixelabs/altergo/commit/c1f43cb649a2ef19eb1247882409a3bf518f8f2c))
+
+
 ## v0.7.0 (2026-04-07)
 
 ### Bug Fixes

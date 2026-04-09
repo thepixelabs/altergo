@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.10.1 (2026-04-09)
+
+### Bug Fixes
+
+- Show goodbye message after provider exits, not before launch
+  ([`21ba651`](https://github.com/thepixelabs/altergo/commit/21ba65124fc7f8f8819d62a47ff64e54c4904d47))
+
+
 ## v0.10.0 (2026-04-09)
 
 ### Features

@@ -84,50 +84,53 @@ def show_help():
     lines = [
         "",
         sep(),
-        h("  Usage"),
-        f"  {kw('altergo')} [flags...]                    {dim('Launch with default account')}",
-        f"  {kw('altergo')} {arg('<name>')} [flags...]           {dim('Launch with named account')}",
+        h("  Quick Start"),
+        f"  {kw('altergo')}                                {dim('Open launcher or launch active account')}",
+        f"  {kw('altergo')} {arg('<name>')}                        {dim('Launch a specific account directly')}",
+        f"  {kw('altergo --setup')}                       {dim('Create your first account')}",
+        f"  {kw('altergo --use')} {arg('<name>')}                  {dim('Set which account bare altergo launches')}",
+        "",
+        sep(),
+        h("  Account Management"),
+        f"  {kw('altergo --setup --name')} {arg('<name>')}         {dim('Create or reconfigure an account')}",
+        f"  {kw('altergo --setup --provider')} {arg('<p>[,<p>]')}  {dim('Specify providers: claude, gemini')}",
+        f"  {kw('altergo --use')} {arg('<name>')}                  {dim('Set active account for bare altergo')}",
+        f"  {kw('altergo --teardown --name')} {arg('<name>')}      {dim('Remove symlinks for an account')}",
+        f"  {kw('altergo --settings')}                    {dim('Configure shared credentials (TUI)')}",
+        "",
+        sep(),
+        h("  Session Management"),
         f"  {kw('altergo --resume')}                      {dim('Pick a session interactively')}",
-        f"  {kw('altergo --resume')} {arg('<id>')}              {dim('Resume a specific session')}",
+        f"  {kw('altergo --resume')} {arg('<id>')}                {dim('Resume a specific session by ID')}",
         f"  {kw('altergo --list')}                        {dim('List recent sessions')}",
-        f"  {kw('altergo --setup')}                       {dim('First-time setup or re-run to repair')}",
-        f"  {kw('altergo --setup --name')} {arg('<name>')}       {dim('Create or reconfigure a named account')}",
-        f"  {kw('altergo --setup --provider')} {arg('<p>[,<p>]')} {dim('Specify providers (claude, gemini)')}",
-        f"  {kw('altergo --teardown')}                    {dim('Remove symlinks (default account)')}",
-        f"  {kw('altergo --teardown --name')} {arg('<n>')}       {dim('Remove symlinks for named account')}",
-        f"  {kw('altergo --settings')}                    {dim('Configure shared credentials')}",
-        f"  {kw('altergo shell')}                         {dim('Shell inside default account HOME')}",
-        f"  {kw('altergo')} {arg('<name>')} {kw('shell')}              {dim('Shell inside named account HOME')}",
-        f"  {kw('altergo --')} {arg('<cmd> [args...]')}          {dim('Run command in default account context')}",
-        f"  {kw('altergo')} {arg('<name>')} {kw('--')} {arg('<cmd> [...]')}   {dim('Run command in named account context')}",
+        "",
+        sep(),
+        h("  Advanced"),
+        f"  {kw('altergo')} {arg('<name>')} {kw('shell')}                {dim('Shell inside account HOME')}",
+        f"  {kw('altergo')} {arg('<name>')} {kw('--')} {arg('<cmd> [args]')}    {dim('Run command in account context')}",
+        f"  {kw('altergo --teardown')}                    {dim('Remove symlinks (active account)')}",
         f"  {kw('altergo --version')}                     {dim('Show version')}",
         f"  {kw('altergo -h, --help')}                    {dim('Show this help')}",
         "",
         sep(),
-        h("  Accounts"),
-        f"  {kw('altergo --setup --name')} {arg('<name>')}       {dim('Create or reconfigure a named account')}",
-        f"  {kw('altergo --teardown --name')} {arg('<n>')}       {dim('Remove symlinks for a named account')}",
-        f"  {kw('altergo')} {arg('<name>')} [flags...]           {dim('Launch with a named account')}",
-        f"  {dim('Each account can use one or more providers (claude, gemini, ...).')}",
-        f"  {dim('Run')} {kw('--setup')} {dim('interactively or pass')} {kw('--provider')} {dim('to specify.')}",
-        "",
-        sep(),
         h("  Examples"),
-        f"  {kw('altergo')}                                {dim('Start a new session (default account)')}",
-        f"  {kw('altergo work')}                          {dim('Start a new session (work account)')}",
-        f"  {kw('altergo --setup --name work')}           {dim('Create the work account')}",
+        f"  {kw('altergo')}                                {dim('Open launcher — pick account interactively')}",
+        f"  {kw('altergo work')}                          {dim('Direct launch, work account')}",
+        f"  {kw('altergo --use work')}                    {dim('Set work as active for bare altergo')}",
+        f"  {kw('altergo --setup --name personal')}       {dim('Create personal account')}",
         f"  {kw('altergo --setup --provider claude,gemini')}  {dim('Setup with multiple providers')}",
-        f"  {kw('altergo work shell')}                    {dim('Enter work-account shell')}",
         f"  {kw('altergo work -- gh auth login')}         {dim('Authenticate gh in work context')}",
+        f"  {kw('altergo work shell')}                    {dim('Enter work-account shell')}",
         f"  {kw('altergo --resume')}                      {dim('Open session picker')}",
         f"  {kw('altergo --dangerously-skip-permissions')}  {dim('Pass any claude flag through')}",
         "",
         sep(),
-        h("  Navigation (session picker)"),
-        f"  {kw('↑/k')}  {dim('Move up')}       {kw('PgUp/PgDn')}  {dim('Page scroll')}",
-        f"  {kw('↓/j')}  {dim('Move down')}     {kw('g/G')}        {dim('Jump to top/bottom')}",
-        f"  {kw('Enter')}  {dim('Resume')}       {kw('q/Esc')}      {dim('Quit')}",
-        f"  {kw('p/Tab')}  {dim('Preview session')}",
+        h("  Navigation  (launcher + session picker)"),
+        f"  {kw('↑↓/jk')}  {dim('Move')}          {kw('←→/hl')}  {dim('Account (launcher)')}",
+        f"  {kw('Enter')}   {dim('Launch')}         {kw('s')}       {dim('Shell mode (launcher)')}",
+        f"  {kw('d')}       {dim('Set active (launcher)')}  {kw('p/Tab')}  {dim('Preview (session picker)')}",
+        f"  {kw('PgUp/PgDn')}  {dim('Page scroll')}  {kw('g/G')}   {dim('Top/bottom (session picker)')}",
+        f"  {kw('q/Esc')}   {dim('Quit')}",
         "",
         dim("  altergo is an independent open-source project by pixelabs · not affiliated with Anthropic PBC"),
         dim("  Claude and Claude Code are trademarks of Anthropic PBC"),
@@ -150,7 +153,6 @@ ACCOUNTS_DIR = MAIN_HOME / ".altergo" / "accounts"
 # Reserved account names — blocked at --setup --name time
 _RESERVED_NAMES = frozenset(
     [
-        "default",
         "main",
         "list",
         "new",
@@ -441,9 +443,45 @@ def load_settings():
 
 
 def save_settings(overrides):
-    """Atomically write settings overlay to SETTINGS_FILE."""
+    """Atomically write settings overlay to SETTINGS_FILE. Preserves other top-level keys."""
     SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    data = {"version": 1, "shared": overrides}
+    data = {}
+    if SETTINGS_FILE.exists():
+        try:
+            data = json.loads(SETTINGS_FILE.read_text())
+        except Exception:
+            data = {}
+    data["version"] = 1
+    data["shared"] = overrides
+    tmp = SETTINGS_FILE.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(data, indent=2))
+    os.replace(str(tmp), str(SETTINGS_FILE))
+
+
+def get_active_account() -> str | None:
+    """Return the persisted active account name, or None if not set / no longer valid."""
+    if not SETTINGS_FILE.exists():
+        return None
+    try:
+        data = json.loads(SETTINGS_FILE.read_text())
+        name = data.get("active_account")
+        if name and isinstance(name, str) and (ACCOUNTS_DIR / name).is_dir():
+            return name
+        return None
+    except Exception:
+        return None
+
+
+def set_active_account(name: str) -> None:
+    """Persist active_account to SETTINGS_FILE without clobbering other keys."""
+    SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    data = {}
+    if SETTINGS_FILE.exists():
+        try:
+            data = json.loads(SETTINGS_FILE.read_text())
+        except Exception:
+            data = {}
+    data["active_account"] = name
     tmp = SETTINGS_FILE.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(data, indent=2))
     os.replace(str(tmp), str(SETTINGS_FILE))
@@ -1707,7 +1745,7 @@ def launch_command(account: str = "default", cmd_args=None):
 
 
 _KNOWN_COMMANDS = frozenset(
-    ["shell", "--resume", "--list", "--setup", "--teardown", "--settings", "--version", "-h", "--help", "--"]
+    ["shell", "--resume", "--list", "--setup", "--teardown", "--settings", "--version", "--use", "-h", "--help", "--"]
 )
 
 
@@ -1730,15 +1768,15 @@ def _prompt_account_name() -> str:
     if existing:
         print(f"  Existing accounts: {', '.join(_c(36, a) for a in existing)}")
     while True:
-        raw = input(f"  Account name [{_c(36, 'default')}]: ").strip()
-        name = raw or "default"
-        if name == "default":
-            return "default"
+        raw = input("  Account name: ").strip()
+        if not raw:
+            print("  Please enter an account name.")
+            continue
         try:
-            validate_account_name(name)
-            return name
+            validate_account_name(raw)
+            return raw
         except SystemExit:
-            print(f"  Invalid name '{name}'. Use letters, digits, - or _ only.")
+            print(f"  Invalid name '{raw}'. Use letters, digits, - or _ only.")
 
 
 def _prompt_provider_selection(current_providers: list[str] | None = None) -> list[str]:
@@ -1964,8 +2002,14 @@ def _draw_launcher(stdscr, menu):
 
             row += 2  # blank line between providers
 
+        # Active account indicator (shown in header area if set)
+        active_acct = get_active_account()
+        if active_acct and max_y > 2:
+            active_hint = f" active: {active_acct} "
+            _safe_addnstr(stdscr, 0, max(0, max_x - len(active_hint) - 1), active_hint, len(active_hint), attrs["accent"])
+
         # Nav footer
-        nav = " ↑↓/jk provider  ·  ←→/hl account  ·  Enter launch  ·  s shell  ·  q quit  ·  pixelabs"
+        nav = " ↑↓/jk provider  ·  ←→/hl account  ·  Enter launch  ·  s shell  ·  d set active  ·  q quit"
         _draw_animated_nav(stdscr, max_y - 1, nav, max_x - 1, phase, attrs)
 
         stdscr.refresh()
@@ -1995,6 +2039,15 @@ def _draw_launcher(stdscr, menu):
                 chip = menu[cursor_row]["accounts"][cursor_col]
                 if chip["available"]:
                     return chip["name"], True
+        elif key == ord("d"):
+            if menu and menu[cursor_row]["accounts"]:
+                chip = menu[cursor_row]["accounts"][cursor_col]
+                set_active_account(chip["name"])
+                # Show brief flash on the footer so user sees confirmation
+                confirm = f" ✓ '{chip['name']}' set as active account "
+                _safe_addnstr(stdscr, max_y - 1, 0, confirm[:max_x - 1].ljust(max_x - 1), max_x - 1, attrs["accent"])
+                stdscr.refresh()
+                curses.napms(800)
         elif key in (ord("q"), 27):
             return None, False
         elif key == curses.KEY_RESIZE:
@@ -2031,11 +2084,6 @@ def main():
     args = sys.argv[1:]
 
     # ── Altergo-owned commands (not passed to claude) ──────────────────────────
-
-    # No args + TTY + multiple accounts → show interactive launcher
-    if not args and sys.stdout.isatty() and len(list_accounts()) >= 2:
-        interactive_launcher()
-        sys.exit(0)
 
     if args and args[0] in ("-h", "--help"):
         show_help()
@@ -2123,6 +2171,23 @@ def main():
             print(f"{_c(36, f'{project:<20}')} {_c(2, f'{modified:<18}')} {_c(33, f'{size:>6}')}  {s['id']}")
         sys.exit(0)
 
+    if args and args[0] == "--use":
+        if len(args) < 2:
+            print("altergo: --use requires an account name. Example: altergo --use work", file=sys.stderr)
+            sys.exit(1)
+        use_name = args[1]
+        use_home = ACCOUNTS_DIR / use_name
+        if not use_home.is_dir():
+            print(
+                f"altergo: account '{use_name}' not found. Run 'altergo --setup --name {use_name}' to create it.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        set_active_account(use_name)
+        print(f"altergo: active account set to {_c(_C_COMMAND, use_name)}")
+        print(_c(_C_DIM, f"  Bare 'altergo' will now launch '{use_name}' by default."))
+        sys.exit(0)
+
     # --resume with no ID → open interactive picker
     if args and args[0] == "--resume" and len(args) == 1:
         accounts = list_accounts()
@@ -2132,12 +2197,17 @@ def main():
         if len(accounts) == 1:
             resume_account = accounts[0]
         else:
-            print(
-                f"altergo: multiple accounts exist ({', '.join(accounts)}).\n"
-                f"  Use 'altergo <name> --resume' to pick an account.",
-                file=sys.stderr,
-            )
-            sys.exit(1)
+            active = get_active_account()
+            if active:
+                resume_account = active
+            else:
+                print(
+                    f"altergo: multiple accounts exist ({', '.join(accounts)}).\n"
+                    f"  Use 'altergo <name> --resume' to pick an account, or\n"
+                    f"  'altergo --use <name>' to set an active account.",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
         sessions = get_sessions()
         selected = interactive_picker(sessions)
         if selected:
@@ -2148,7 +2218,7 @@ def main():
 
     # ── Account name as first positional arg ──────────────────────────────────
     # altergo <name> [sub-command | claude flags...]
-    account = "default"
+    account = None
     if args and _looks_like_account(args[0]):
         candidate = args[0]
         acct_home = ACCOUNTS_DIR / candidate
@@ -2161,6 +2231,32 @@ def main():
         account = candidate
         args = args[1:]
 
+    # ── Implicit account resolution (no positional name given) ───────────────
+    if account is None:
+        _all_accounts = list_accounts()
+        _active = get_active_account()
+        if _active:
+            account = _active
+            if sys.stderr.isatty():
+                print(f"  {_c(_C_DIM, 'account:')} {_c(_C_COMMAND, account)}", file=sys.stderr)
+        elif len(_all_accounts) == 1:
+            account = _all_accounts[0]
+        elif len(_all_accounts) > 1 and sys.stdout.isatty():
+            interactive_launcher()
+            sys.exit(0)
+        elif not _all_accounts:
+            print("altergo: no accounts found. Run 'altergo --setup' first.", file=sys.stderr)
+            sys.exit(1)
+        else:
+            # Multiple accounts, non-interactive — cannot pick one silently
+            print(
+                f"altergo: multiple accounts exist ({', '.join(_all_accounts)}).\n"
+                f"  Run 'altergo <name>' to launch a specific account, or\n"
+                f"  'altergo --use <name>' to set an active account for bare 'altergo'.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
     # ── Sub-commands (after optional account prefix) ──────────────────────────
 
     # altergo [<name>] shell
@@ -2172,7 +2268,7 @@ def main():
         launch_command(account, args[1:])
 
     # ── Everything else → pass straight through to claude ────────────────────
-    # altergo                    → claude (default account)
+    # altergo                    → claude (active account)
     # altergo work               → claude (work account, args=[])
     # altergo --resume x         → claude --resume x
     # altergo --dangerously-...  → claude --dangerously-...

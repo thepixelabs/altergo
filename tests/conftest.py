@@ -97,6 +97,7 @@ def full_home(tmp_path):
         altergo.do_setup("default")
         altergo.do_setup("work")
         altergo.do_setup("personal")
+        altergo.set_active_account("default")
     finally:
         # Always restore — even if do_setup raises.
         for attr, val in _saved.items():

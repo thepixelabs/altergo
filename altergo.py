@@ -59,8 +59,10 @@ def show_help():
         f"  {kw('altergo --resume')}               Pick a session interactively (↑/↓/j/k, Enter, q)",
         f"  {kw('altergo --resume <id>')}          Resume a specific session directly",
         f"  {kw('altergo --list')}                 List recent sessions",
-        f"  {kw('altergo --setup')}                First-time setup or re-run to repair default account",
+        f"  {kw('altergo --setup')}                First-time setup or re-run to repair {dim('(interactive)')}",
         f"  {kw('altergo --setup --name <name>')}  Create or reconfigure a named account",
+        f"  {kw('altergo --setup --provider <p>[,<p>]')}",
+        f"                                 Specify providers {dim('(claude, gemini)')}",
         f"  {kw('altergo --teardown')}             Remove symlinks (default account)",
         f"  {kw('altergo --teardown --name <n>')}  Remove symlinks for named account",
         f"  {kw('altergo --settings')}             Configure shared credentials (interactive)",
@@ -74,12 +76,16 @@ def show_help():
         h("  Accounts"),
         f"  {kw('altergo --setup --name <name>')}  Create or reconfigure a named account",
         f"  {kw('altergo --teardown --name <n>')}  Remove symlinks for a named account",
-        f"  {kw('altergo <name>')} [flags...]      Launch Claude with a named account",
+        f"  {kw('altergo <name>')} [flags...]      Launch with a named account",
+        f"  Each account can use one or more AI providers {dim('(claude, gemini, ...)')}.",
+        f"  Run {kw('--setup')} interactively or pass {kw('--provider')} to specify.",
         "",
         h("  Examples"),
         f"  {kw('altergo')}                        Start a new session (default account)",
         f"  {kw('altergo work')}                   Start a new session (work account)",
         f"  {kw('altergo --setup --name work')}    Create the work account",
+        f"  {kw('altergo --setup --provider claude,gemini')}",
+        f"  {dim('                                 Setup with multiple providers')}",
         f"  {kw('altergo work shell')}             Enter work-account shell",
         f"  {kw('altergo work -- gh auth login')}  Authenticate gh CLI in work context",
         f"  {kw('altergo --resume')}               Open session picker",
@@ -231,6 +237,31 @@ SYMLINK_FILES = [
     "keybindings.json",
 ]
 
+# Provider definitions — drives per-provider setup/teardown/launch logic.
+# SYMLINK_DIRS and SYMLINK_FILES above are kept for backwards compat (teardown
+# of legacy accounts that predate account.json).
+PROVIDERS = {
+    "claude": {
+        "display_name": "Claude Code",
+        "dot_dir": ".claude",
+        "binary": "claude",
+        "credentials_file": ".credentials.json",
+        "symlink_dirs": [
+            "projects", "tasks", "session-env", "file-history",
+            "shell-snapshots", "agents", "plans", "cache",
+        ],
+        "symlink_files": ["settings.json", "CLAUDE.md", "keybindings.json"],
+    },
+    "gemini": {
+        "display_name": "Gemini CLI",
+        "dot_dir": ".gemini",
+        "binary": "gemini",
+        "credentials_file": ".credentials.json",
+        "symlink_dirs": [],
+        "symlink_files": ["settings.json"],
+    },
+}
+
 # Catalog of CLI tools whose credentials can be shared between main and alt.
 # Each entry maps to one or more paths relative to $HOME that are symlinked.
 # default_on=True  → shared by default (user must explicitly opt out)
@@ -335,6 +366,34 @@ CATALOG = [
 # (SETTINGS_FILE is defined in the Config section above, shared across all accounts)
 
 # --- Settings helpers ---
+
+
+def load_account_meta(account_home: Path) -> dict:
+    """Load account metadata. Returns dict with 'providers' list.
+
+    Backwards compat: if account.json missing but .claude/ exists, returns
+    {"version": 1, "providers": ["claude"]} without writing anything.
+    If neither exists, returns None.
+    """
+    meta_file = account_home / "account.json"
+    if meta_file.exists():
+        try:
+            return json.loads(meta_file.read_text())
+        except Exception:
+            return {"version": 1, "providers": ["claude"]}
+    # Legacy account: .claude dir exists but no account.json
+    if (account_home / ".claude").exists():
+        return {"version": 1, "providers": ["claude"]}
+    return None
+
+
+def save_account_meta(account_home: Path, meta: dict) -> None:
+    """Atomically write account.json."""
+    account_home.mkdir(parents=True, exist_ok=True)
+    meta_file = account_home / "account.json"
+    tmp = meta_file.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(meta, indent=2))
+    os.replace(str(tmp), str(meta_file))
 
 
 def load_settings():
@@ -502,12 +561,17 @@ def _ensure_symlinked_dir(name: str, src: Path, dst: Path, account_claude: Path)
         return False
 
 
-def do_setup(account: str = "default"):
+def do_setup(account: str = "default", providers: list[str] | None = None):
+    if providers is None:
+        providers = ["claude"]
     account_home, account_claude = resolve_account(account)
     header = f"altergo v{__version__} · " + _link("https://pixelabs.net", "pixelabs.net")
     print(_c(2, header))
     print(_c(1, _c(36, f"=== Altergo — Setup ({account}) ===")))
     print()
+
+    # Load existing metadata for created timestamp preservation
+    meta = load_account_meta(account_home)
 
     # 1. Create account home
     if not account_home.exists():
@@ -516,71 +580,87 @@ def do_setup(account: str = "default"):
     else:
         print(f"  {_c(32, '✓')} Account home exists: {account_home}")
 
-    # Ensure .claude dir exists
-    account_claude.mkdir(parents=True, exist_ok=True)
+    # 2. Wire each provider
+    for pid in providers:
+        prov = PROVIDERS[pid]
+        main_dot_dir = MAIN_HOME / prov["dot_dir"]
+        acct_dot_dir = account_home / prov["dot_dir"]
 
-    # 2. Symlink directories inside .claude/
-    for name in SYMLINK_DIRS:
-        src = MAIN_CLAUDE / name
-        dst = account_claude / name
+        print()
+        print(_c(1, _c(36, f"=== Provider: {prov['display_name']} ===")))
 
-        if dst.is_symlink():
-            target = dst.resolve()
-            if target == src.resolve():
-                print(f"  {_c(32, '✓')} {name}/ already symlinked")
-            else:
-                print(f"  {_c(33, '⚠')} {name}/ symlinked to {target} (expected {src})")
-            continue
+        # Ensure provider dot-dir exists
+        acct_dot_dir.mkdir(parents=True, exist_ok=True)
 
-        # _ensure_symlinked_dir handles all real-dir migration cases (empty
-        # real dir, non-empty real dir, merge conflicts).  It prints its own
-        # richer messages for promotion/merge/conflict cases.  For the normal
-        # fresh-install path (dst absent) it silently creates the symlink and
-        # returns True, so we print the standard checkmark here.
-        was_absent = not dst.exists()
-        _ensure_symlinked_dir(name, src, dst, account_claude)
-        if was_absent and dst.is_symlink():
-            print(f"  {_c(32, '✓')} Symlinked {name}/")
+        # Symlink directories
+        for name in prov["symlink_dirs"]:
+            src = main_dot_dir / name
+            dst = acct_dot_dir / name
 
-    # 3. Symlink files inside .claude/
-    for name in SYMLINK_FILES:
-        src = MAIN_CLAUDE / name
-        dst = account_claude / name
+            if dst.is_symlink():
+                target = dst.resolve()
+                if target == src.resolve():
+                    print(f"  {_c(32, '✓')} {name}/ already symlinked")
+                else:
+                    print(f"  {_c(33, '⚠')} {name}/ symlinked to {target} (expected {src})")
+                continue
 
-        if not src.exists():
-            continue
+            # _ensure_symlinked_dir handles all real-dir migration cases (empty
+            # real dir, non-empty real dir, merge conflicts).  It prints its own
+            # richer messages for promotion/merge/conflict cases.  For the normal
+            # fresh-install path (dst absent) it silently creates the symlink and
+            # returns True, so we print the standard checkmark here.
+            was_absent = not dst.exists()
+            _ensure_symlinked_dir(name, src, dst, acct_dot_dir)
+            if was_absent and dst.is_symlink():
+                print(f"  {_c(32, '✓')} Symlinked {name}/")
 
-        if dst.is_symlink():
-            print(f"  {_c(32, '✓')} {name} already symlinked")
-            continue
+        # Symlink files
+        for name in prov["symlink_files"]:
+            src = main_dot_dir / name
+            dst = acct_dot_dir / name
 
-        if dst.exists():
-            dst.unlink()
+            if not src.exists():
+                continue
 
-        dst.symlink_to(src)
-        print(f"  {_c(32, '✓')} Symlinked {name}")
+            if dst.is_symlink():
+                print(f"  {_c(32, '✓')} {name} already symlinked")
+                continue
 
-    # 4. Apply catalog entries (shared CLI tool credentials) at account_home level
+            if dst.exists():
+                dst.unlink()
+
+            dst.symlink_to(src)
+            print(f"  {_c(32, '✓')} Symlinked {name}")
+
+        # Check credentials for this provider
+        creds = acct_dot_dir / prov["credentials_file"]
+        print()
+        if creds.exists():
+            print(f"  {_c(32, '✓')} {prov['display_name']} credentials found")
+        else:
+            print(f"  {_c(33, '⚠')} No {prov['display_name']} credentials found.")
+            cmd = f"altergo {account}" if account != "default" else "altergo"
+            print(f"     Run '{cmd}' to authenticate.\n")
+
+    # 3. Apply catalog entries (shared CLI tool credentials) at account_home level
     overrides = load_settings()
     for entry in CATALOG:
         _apply_entry(entry, overrides, account_home)
 
-    # 5. Check credentials
-    creds = account_claude / ".credentials.json"
-    print()
-    if creds.exists():
-        print(f"  {_c(32, '✓')} Account credentials found")
-    else:
-        print(f"  {_c(33, '⚠')} No account credentials found.")
-        cmd = f"altergo {account}" if account != "default" else "altergo"
-        print(f"     Run '{cmd}' to authenticate.\n")
+    # 4. Save account metadata
+    save_account_meta(account_home, {
+        "version": 1,
+        "providers": providers,
+        "created": (meta.get("created") if meta else None) or datetime.now().isoformat(timespec="seconds"),
+    })
 
     launch_cmd = f"altergo {account}" if account != "default" else "altergo"
     print()
     print(_c(32, "Setup complete!"))
     print(f"  Run {_c(1, launch_cmd)} to start a session  ·  {_c(1, 'altergo --resume')} to pick one")
     print()
-    print(_c(2, "  Isolates Claude credentials. Shares AWS, GCP, Docker, and kubectl by default."))
+    print(_c(2, "  Isolates credentials per provider. Shares AWS, GCP, Docker, and kubectl by default."))
     print(_c(2, f"  Change sharing settings: {_c(0, 'altergo --settings')}"))
 
 
@@ -591,18 +671,42 @@ def do_teardown(account: str = "default"):
     print(_c(1, _c(36, f"=== Altergo — Teardown ({account}) ===")))
     print()
 
-    for name in SYMLINK_DIRS:
-        dst = account_claude / name
-        if dst.is_symlink():
-            dst.unlink()
-            print(f"  {_c(33, '✓')} Removed symlink: {name}/")
+    meta = load_account_meta(account_home)
 
-    for name in SYMLINK_FILES:
-        dst = account_claude / name
-        if dst.is_symlink():
-            dst.unlink()
-            print(f"  {_c(33, '✓')} Removed symlink: {name}")
+    if meta is not None and "providers" in meta:
+        # Modern account with account.json — tear down per-provider symlinks
+        for pid in meta["providers"]:
+            prov = PROVIDERS.get(pid)
+            if prov is None:
+                continue
+            acct_dot_dir = account_home / prov["dot_dir"]
 
+            for name in prov["symlink_dirs"]:
+                dst = acct_dot_dir / name
+                if dst.is_symlink():
+                    dst.unlink()
+                    print(f"  {_c(33, '✓')} Removed symlink: {prov['dot_dir']}/{name}/")
+
+            for name in prov["symlink_files"]:
+                dst = acct_dot_dir / name
+                if dst.is_symlink():
+                    dst.unlink()
+                    print(f"  {_c(33, '✓')} Removed symlink: {prov['dot_dir']}/{name}")
+    else:
+        # Legacy account (no account.json) — fall back to SYMLINK_DIRS + SYMLINK_FILES
+        for name in SYMLINK_DIRS:
+            dst = account_claude / name
+            if dst.is_symlink():
+                dst.unlink()
+                print(f"  {_c(33, '✓')} Removed symlink: {name}/")
+
+        for name in SYMLINK_FILES:
+            dst = account_claude / name
+            if dst.is_symlink():
+                dst.unlink()
+                print(f"  {_c(33, '✓')} Removed symlink: {name}")
+
+    # Catalog entries (shared CLI tool credentials) — always at account_home level
     for entry in CATALOG:
         for rel in entry["paths"]:
             dst = account_home / Path(rel)
@@ -1466,19 +1570,60 @@ def _sweep_existing_accounts() -> bool:
     return changed
 
 
-def launch_claude(account: str = "default", args=None):
-    """Launch claude with account HOME, passing args through unchanged."""
+def launch_claude(account: str = "default", args=None, provider: str | None = None):
+    """Launch a provider CLI with account HOME, passing args through unchanged.
+
+    If provider is None, reads account.json to determine which provider to use.
+    Single-provider accounts auto-select; multi-provider accounts require an
+    explicit --provider flag (handled by SE2 in main()).
+    """
     _sweep_existing_accounts()
-    claude_path = _find_claude()
-    if not claude_path:
-        sys.exit(
-            "altergo: 'claude' not found in PATH or common install locations.\n"
-            "  If you just opened this terminal, your shell may still be initializing.\n"
-            "  Wait a moment and try again, or open a new tab."
-        )
+
+    account_home, _ = resolve_account(account)
+
+    # Resolve provider
+    if provider is None:
+        meta = load_account_meta(account_home)
+        if meta is not None and "providers" in meta:
+            prov_list = meta["providers"]
+        else:
+            prov_list = ["claude"]
+
+        if len(prov_list) == 1:
+            provider = prov_list[0]
+        else:
+            names = ", ".join(prov_list)
+            print(
+                f"altergo: account '{account}' has multiple providers ({names}).\n"
+                f"  Pass --provider <name> to select one.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+    # Find the binary
+    if provider == "claude":
+        binary_path = _find_claude()
+        if not binary_path:
+            sys.exit(
+                "altergo: 'claude' not found in PATH or common install locations.\n"
+                "  If you just opened this terminal, your shell may still be initializing.\n"
+                "  Wait a moment and try again, or open a new tab."
+            )
+    else:
+        prov = PROVIDERS.get(provider)
+        if prov is None:
+            print(f"altergo: unknown provider '{provider}'.", file=sys.stderr)
+            sys.exit(1)
+        binary_path = shutil.which(prov["binary"])
+        if not binary_path:
+            sys.exit(
+                f"altergo: '{prov['binary']}' not found in PATH.\n"
+                f"  Install {prov['display_name']} and try again."
+            )
+
     env = _build_alt_env(account)
-    cmd = [claude_path] + (args or [])
-    os.execvpe(claude_path, cmd, env)
+    cmd = [binary_path] + (args or [])
+    os.execvpe(binary_path, cmd, env)
 
 
 def launch_shell(account: str = "default"):
@@ -1532,6 +1677,92 @@ def _looks_like_account(token: str) -> bool:
     return bool(re.match(r"^[a-zA-Z0-9][a-zA-Z0-9_-]*$", token))
 
 
+# --- Interactive prompt helpers ---
+
+
+def _prompt_account_name() -> str:
+    """Interactively prompt for account name. Shows existing accounts."""
+    existing = list_accounts()
+    if existing:
+        print(f"  Existing accounts: {', '.join(_c(36, a) for a in existing)}")
+    while True:
+        raw = input(f"  Account name [{_c(36, 'default')}]: ").strip()
+        name = raw or "default"
+        if name == "default":
+            return "default"
+        try:
+            validate_account_name(name)
+            return name
+        except SystemExit:
+            print(f"  Invalid name '{name}'. Use letters, digits, - or _ only.")
+
+
+def _prompt_provider_selection(current_providers: list[str] | None = None) -> list[str]:
+    """Prompt user to select which AI providers this account uses.
+
+    Detects installed provider binaries and pre-checks them.
+    current_providers: if set, pre-check these instead of detecting.
+    Returns list of provider IDs (at least one).
+    """
+    # Build ordered list: installed ones first, then others
+    installed = [pid for pid, p in PROVIDERS.items() if shutil.which(p["binary"])]
+    all_providers = list(PROVIDERS.keys())
+    ordered = installed + [p for p in all_providers if p not in installed]
+
+    pre_checked = current_providers if current_providers is not None else installed
+    # Always ensure claude is pre-checked if nothing is installed
+    if not pre_checked:
+        pre_checked = ["claude"]
+
+    print()
+    print("  Select AI providers for this account (space to toggle, enter to confirm):")
+    print()
+
+    selected = set(pre_checked)
+    items = ordered
+
+    # Simple interactive: show numbered list, ask for comma-separated selection
+    for i, pid in enumerate(items):
+        p = PROVIDERS[pid]
+        check_mark = _c(32, "\u2713")
+        checked = check_mark if pid in selected else " "
+        installed_hint = _c(2, " (installed)") if shutil.which(p["binary"]) else _c(31, " (not found)")
+        print(f"  [{checked}] {i+1}. {p['display_name']}{installed_hint}")
+
+    print()
+    pre_nums = [str(items.index(p) + 1) for p in pre_checked if p in items]
+    default_str = ",".join(pre_nums) or "1"
+    raw = input(f"  Enter numbers separated by commas [{_c(36, default_str)}]: ").strip()
+
+    if not raw:
+        chosen_indices = [int(n) - 1 for n in default_str.split(",")]
+    else:
+        try:
+            chosen_indices = [int(n.strip()) - 1 for n in raw.split(",")]
+        except ValueError:
+            chosen_indices = [int(n) - 1 for n in default_str.split(",")]
+
+    result = []
+    for i in chosen_indices:
+        if 0 <= i < len(items):
+            result.append(items[i])
+
+    # Deduplicate while preserving order
+    seen = set()
+    deduped = []
+    for pid in result:
+        if pid not in seen:
+            seen.add(pid)
+            deduped.append(pid)
+
+    if not deduped:
+        warn = _c(33, "\u26a0")
+        print(f"  {warn} No provider selected \u2014 defaulting to Claude Code.")
+        deduped = ["claude"]
+
+    return deduped
+
+
 # --- Main ---
 
 
@@ -1556,12 +1787,54 @@ def main():
         sys.exit(0)
 
     if args and args[0] == "--setup":
-        # Support: --setup --name <name>
-        name = "default"
-        if len(args) >= 3 and args[1] == "--name":
-            name = args[2]
-            validate_account_name(name)
-        do_setup(name)
+        # Parse --name and --provider flags
+        # Supported forms:
+        #   altergo --setup                              (interactive)
+        #   altergo --setup --name work                  (named, interactive provider)
+        #   altergo --setup --name work --provider claude,gemini  (fully specified)
+        #   altergo --setup --provider gemini            (interactive name, specified provider)
+        remaining = args[1:]
+        name = None
+        provider_arg = None
+        i = 0
+        while i < len(remaining):
+            if remaining[i] == "--name" and i + 1 < len(remaining):
+                name = remaining[i + 1]
+                validate_account_name(name)
+                i += 2
+            elif remaining[i] == "--provider" and i + 1 < len(remaining):
+                provider_arg = remaining[i + 1]
+                i += 2
+            else:
+                i += 1
+
+        # Resolve name
+        if name is None:
+            if sys.stdin.isatty():
+                name = _prompt_account_name()
+            else:
+                name = "default"
+
+        # Resolve providers
+        if provider_arg is not None:
+            providers = [p.strip() for p in provider_arg.split(",")]
+            unknown = [p for p in providers if p not in PROVIDERS]
+            if unknown:
+                print(f"altergo: unknown provider(s): {', '.join(unknown)}. Known: {', '.join(PROVIDERS)}", file=sys.stderr)
+                sys.exit(1)
+        else:
+            if sys.stdin.isatty():
+                account_home, _ = resolve_account(name)
+                meta = load_account_meta(account_home)
+                current = meta["providers"] if meta else None
+                providers = _prompt_provider_selection(current)
+            else:
+                # Non-interactive: default to claude (backwards compat)
+                account_home, _ = resolve_account(name)
+                meta = load_account_meta(account_home)
+                providers = meta["providers"] if meta else ["claude"]
+
+        do_setup(name, providers)
         sys.exit(0)
 
     if args and args[0] == "--teardown":
@@ -1631,7 +1904,19 @@ def main():
     # altergo work               → claude (work account, args=[])
     # altergo --resume x         → claude --resume x
     # altergo --dangerously-...  → claude --dangerously-...
-    launch_claude(account, args)
+
+    # Extract --provider flag if present (consumed by altergo, not passed to claude)
+    provider = None
+    filtered_args = []
+    i = 0
+    while i < len(args):
+        if args[i] == "--provider" and i + 1 < len(args):
+            provider = args[i + 1]
+            i += 2
+        else:
+            filtered_args.append(args[i])
+            i += 1
+    launch_claude(account, filtered_args, provider=provider)
 
 
 if __name__ == "__main__":

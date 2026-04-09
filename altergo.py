@@ -9,6 +9,7 @@ import os
 import pwd
 import re
 import shutil
+import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -93,10 +94,11 @@ def show_help():
         sep(),
         h("  Account Management"),
         f"  {kw('altergo --setup --name')} {arg('<name>')}         {dim('Create or reconfigure an account')}",
-        f"  {kw('altergo --setup --provider')} {arg('<p>[,<p>]')}  {dim('Specify providers: claude, gemini')}",
+        f"  {kw('altergo --setup --provider')} {arg('<p>[,<p>]')}  {dim('Specify providers: claude, gemini, codex, copilot')}",
         f"  {kw('altergo --use')} {arg('<name>')}                  {dim('Set active account for bare altergo')}",
         f"  {kw('altergo --teardown --name')} {arg('<name>')}      {dim('Remove symlinks for an account')}",
         f"  {kw('altergo --settings')}                    {dim('Configure shared credentials (TUI)')}",
+        f"  {kw('altergo --launch')}                      {dim('Open provider/account launcher (TUI)')}",
         "",
         sep(),
         h("  Session Management"),
@@ -118,7 +120,7 @@ def show_help():
         f"  {kw('altergo work')}                          {dim('Direct launch, work account')}",
         f"  {kw('altergo --use work')}                    {dim('Set work as active for bare altergo')}",
         f"  {kw('altergo --setup --name personal')}       {dim('Create personal account')}",
-        f"  {kw('altergo --setup --provider claude,gemini')}  {dim('Setup with multiple providers')}",
+        f"  {kw('altergo --setup --provider claude,codex')}  {dim('Setup with multiple providers')}",
         f"  {kw('altergo work -- gh auth login')}         {dim('Authenticate gh in work context')}",
         f"  {kw('altergo work shell')}                    {dim('Enter work-account shell')}",
         f"  {kw('altergo --resume')}                      {dim('Open session picker')}",
@@ -289,9 +291,25 @@ PROVIDERS = {
         "display_name": "Gemini CLI",
         "dot_dir": ".gemini",
         "binary": "gemini",
-        "credentials_file": ".credentials.json",
-        "symlink_dirs": [],
-        "symlink_files": ["settings.json"],
+        "credentials_file": "oauth_creds.json",
+        "symlink_dirs": ["tmp", "commands"],
+        "symlink_files": ["settings.json", "GEMINI.md"],
+    },
+    "codex": {
+        "display_name": "Codex CLI",
+        "dot_dir": ".codex",
+        "binary": "codex",
+        "credentials_file": "auth.json",
+        "symlink_dirs": ["sessions", "rules"],
+        "symlink_files": ["config.toml", "AGENTS.md", "AGENTS.override.md"],
+    },
+    "copilot": {
+        "display_name": "GitHub Copilot",
+        "dot_dir": ".copilot",
+        "binary": "copilot",
+        "credentials_file": "config.json",
+        "symlink_dirs": ["session-state", "agents", "skills", "hooks"],
+        "symlink_files": ["mcp-config.json", "lsp-config.json"],
     },
 }
 
@@ -1702,8 +1720,9 @@ def launch_claude(account: str = "default", args=None, provider: str | None = No
 
     env = _build_alt_env(account)
     cmd = [binary_path] + (args or [])
+    result = subprocess.run(cmd, env=env)
     _print_launch_message()
-    os.execvpe(binary_path, cmd, env)
+    sys.exit(result.returncode)
 
 
 def launch_shell(account: str = "default"):
@@ -1723,8 +1742,9 @@ def launch_shell(account: str = "default"):
         env["PROMPT"] = f"({label}) {env.get('PROMPT', '%n@%m %~ %# ')}"
     print(_c(36, f"Entering altergo shell [{account}] (HOME={account_home})"))
     print(_c(2, "Run 'exit' or Ctrl-D to return to your primary account.\n"))
+    result = subprocess.run([shell], env=env)
     _print_launch_message()
-    os.execvpe(shell, [shell], env)
+    sys.exit(result.returncode)
 
 
 def launch_command(account: str = "default", cmd_args=None):
@@ -1737,15 +1757,16 @@ def launch_command(account: str = "default", cmd_args=None):
         print(_c(31, f"altergo: '{cmd_args[0]}' not found in PATH"), file=sys.stderr)
         sys.exit(1)
     env = _build_alt_env(account)
+    result = subprocess.run([cmd_path] + cmd_args[1:], env=env)
     _print_launch_message()
-    os.execvpe(cmd_path, [cmd_path] + cmd_args[1:], env)
+    sys.exit(result.returncode)
 
 
 # --- Account name disambiguation helper ---
 
 
 _KNOWN_COMMANDS = frozenset(
-    ["shell", "--resume", "--list", "--setup", "--teardown", "--settings", "--version", "--use", "-h", "--help", "--"]
+    ["shell", "--resume", "--list", "--setup", "--teardown", "--settings", "--version", "--use", "--launch", "-h", "--help", "--"]
 )
 
 
@@ -1881,6 +1902,7 @@ _LAUNCHER_PROVIDERS = [
     {"id": "claude",  "label": "anthropic", "binary": "claude"},
     {"id": "gemini",  "label": "gemini",    "binary": "gemini"},
     {"id": "codex",   "label": "openai",    "binary": "codex"},
+    {"id": "copilot", "label": "github",    "binary": "copilot"},
 ]
 
 
@@ -2154,6 +2176,10 @@ def main():
 
     if args and args[0] == "--settings":
         interactive_settings()
+        sys.exit(0)
+
+    if args and args[0] == "--launch":
+        interactive_launcher()
         sys.exit(0)
 
     if args and args[0] == "--list":

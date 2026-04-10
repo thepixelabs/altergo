@@ -1,6 +1,24 @@
 # CHANGELOG
 
 
+## v0.17.0 (2026-04-10)
+
+### Features
+
+- Multi-page settings TUI with live theme preview
+  ([`c5ed3c5`](https://github.com/thepixelabs/altergo/commit/c5ed3c56107829b8c932e6df5e0a44c8d7b4791f))
+
+Replace the single-page credentials settings screen with a three-page TUI accessed via altergo
+  --settings:
+
+- Appearance: theme picker with live color preview, gradient swatches, and launch animation toggle -
+  Behavior: toggles for greeting messages, goodbye messages, and update checker - Credentials:
+  shared CLI credentials (upgraded visual style)
+
+Navigation via arrow keys, h/l, Tab between pages. Themes auto-select on cursor movement with
+  instant color recoloring. All settings saved in a single atomic write to .altergo.json.
+
+
 ## v0.16.1 (2026-04-10)
 
 ### Bug Fixes

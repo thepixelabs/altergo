@@ -289,78 +289,81 @@ def show_banner(
         logo_row.add_column(no_wrap=True)
         logo_row.add_row(figlet, Align(version_text, "left", vertical="middle"))
 
-        # Body renderables assembled in strict top-to-bottom order:
-        #   [logo_row]  figlet + version tag (inline update arrow)
-        #   [greeting]  optional dry one-liner, keyed to time-of-day
-        #   [stars]     account name between twinkling stars (animated when
-        #               animate_duration > 0)
-        #   [upgrade]   dim action line, only when an update exists
+        # Body renderables assembled top-to-bottom:
+        #   [logo_row]  figlet + version tag
+        #   [bottom]    * account (left) + gradient greeting (right)
+        #   [upgrade]   dim pip command, only when an update is pending
         body: list = [logo_row]
 
-        # Greeting line: lazy-imported so --help / --version don't pay the
-        # import cost on their hot path. Cell width is bounded to the
-        # logo width so the line never wraps awkwardly on narrow terms.
+        # Pre-fetch greeting so both animated and static paths share the same
+        # pick — same minute seed, same result, no double-import.
+        greet_icon = greet_line = ""
         if show_greeting:
             try:
                 import altergo_greetings as _greet
-                icon = _greet.pick_icon()
-                line = _greet.pick_greeting()
-                greeting_text = Text()
-                greeting_text.append(f"  {icon}  ", style=C("dim"))
-                greeting_text.append(line, style=C("dim"))
-                body.append(greeting_text)
+                greet_icon, greet_line = _greet.pick_greeting()
             except Exception:
                 # Greetings are a nice-to-have — never break the banner.
                 pass
 
-        # Account-stars line: when animating we render each '*' as an actual
-        # Rich Spinner, laid out via a Table.grid so every cell is its own
-        # renderable and Rich can tick them independently. Otherwise the
-        # original static Text version is used — cheaper and renders once.
-        if account:
+        # Bottom row: account name left-aligned to the logo edge (left) and
+        # the greeting right of it, gradient-tinted with the theme palette.
+        # During the launch-handoff animation the static '*' is replaced by a
+        # Rich Spinner so the symbol visibly ticks while the provider warms up.
+        if account or greet_line:
             DIM    = grad[-1]
             BRIGHT = f"bold {grad[0]}"
             MID    = grad[len(grad) // 2] if len(grad) > 2 else grad[0]
 
-            if animate_duration > 0:
-                try:
-                    import altergo_greetings as _greet
-                    spinner_name = _greet.spinner_for_theme(theme_id)
-                except Exception:
-                    spinner_name = "dots"
-                row = Table.grid(padding=(0, 1), expand=False)
-                for _ in range(7):
-                    row.add_column(no_wrap=True)
-                row.add_row(
-                    Text(".", style=DIM),
-                    Spinner(spinner_name, style=BRIGHT),
-                    Text(".", style=DIM),
-                    Text(account, style=BRIGHT),
-                    Text(".", style=DIM),
-                    Spinner(spinner_name, style=BRIGHT),
-                    Text(".", style=DIM),
-                )
-                # Center the animated row under the figlet by wrapping in
-                # a fixed-width Align block matching the logo width.
-                body.append(Align(row, align="center", width=logo_right))
+            # Greeting text with theme gradient sweep across the message body.
+            greet_text = Text()
+            if greet_line:
+                greet_text.append(f"  {greet_icon}  ", style=MID)
+                _n, _g = len(greet_line), len(grad)
+                _chunk = max(1, _n // _g)
+                for _i, _col in enumerate(grad):
+                    _s = _i * _chunk
+                    _e = min(_s + _chunk, _n) if _i < _g - 1 else _n
+                    if _s < _n:
+                        greet_text.append(greet_line[_s:_e], style=_col)
+
+            if account:
+                if animate_duration > 0:
+                    try:
+                        import altergo_greetings as _greet
+                        spinner_name = _greet.spinner_for_theme(theme_id)
+                    except Exception:
+                        spinner_name = "dots"
+                    from rich.padding import Padding
+                    acct_inner = Table.grid(padding=(0, 0), expand=False)
+                    acct_inner.add_column(no_wrap=True)
+                    acct_inner.add_column(no_wrap=True)
+                    acct_inner.add_row(
+                        Spinner(spinner_name, style=BRIGHT),
+                        Text(f"  {account}", style=BRIGHT),
+                    )
+                    bottom = Table.grid(padding=(0, 0), expand=False)
+                    bottom.add_column(min_width=logo_right, no_wrap=True)
+                    bottom.add_column(no_wrap=True)
+                    bottom.add_row(Padding(acct_inner, (0, 0, 0, 2)), greet_text)
+                    body.append(bottom)
+                else:
+                    left_text = Text()
+                    left_text.append("  ")
+                    left_text.append("*", style=BRIGHT)
+                    left_text.append("  ", style=MID)
+                    left_text.append(account, style=BRIGHT)
+                    if greet_line:
+                        bottom = Table.grid(padding=(0, 0), expand=False)
+                        bottom.add_column(min_width=logo_right, no_wrap=True)
+                        bottom.add_column(no_wrap=True)
+                        bottom.add_row(left_text, greet_text)
+                        body.append(bottom)
+                    else:
+                        body.append(left_text)
             else:
-                name_line = Text()
-                name_line.append(".",     style=DIM)
-                name_line.append("  ",    style=MID)
-                name_line.append("*",     style=BRIGHT)
-                name_line.append("  ",    style=MID)
-                name_line.append(".",     style=DIM)
-                name_line.append("  ",    style=MID)
-                name_line.append(account, style=BRIGHT)
-                name_line.append("  ",    style=MID)
-                name_line.append(".",     style=DIM)
-                name_line.append("  ",    style=MID)
-                name_line.append("*",     style=BRIGHT)
-                name_line.append("  ",    style=MID)
-                name_line.append(".",     style=DIM)
-                name_w = name_line.cell_len
-                lead = logo_left + max(0, (logo_width - name_w) // 2)
-                body.append(Text(" " * lead) + name_line)
+                # Greeting only (no account context).
+                body.append(greet_text)
 
         # Upgrade action line — one dim line with the literal pip command
         # so the user knows what to type. Only when an update is pending.
@@ -2842,6 +2845,137 @@ def _draw_launcher(stdscr, menu):
             continue
 
 
+def _first_run_onboarding():
+    """Full-screen onboarding for brand-new users with zero accounts configured.
+
+    Shows a thin-font logo, two lines of copy, a setup-options hint, and an
+    inline name prompt. On a valid name the function runs do_setup() then drops
+    straight into interactive_launcher() so the user never has to type a second
+    command. On empty input or Ctrl-C it prints a hint and exits cleanly.
+    """
+    # Rich is always present (show_banner uses it); import locally so the
+    # function is self-contained and mirrors the pattern in show_banner().
+    try:
+        from rich.console import Console
+        from rich.text import Text
+        from rich.prompt import Prompt
+        console = Console()
+    except Exception:
+        # Extremely degraded environment — fall back to plain text and bail.
+        print("altergo: no accounts found. Run 'altergo --setup' first.", file=sys.stderr)
+        sys.exit(1)
+
+    # ── Logo ──────────────────────────────────────────────────────────────────
+    # Use pyfiglet's "thin" font (onboarding-only — show_banner stays smslant).
+    # Apply the current theme's banner gradient character-by-character across
+    # all non-whitespace glyphs so it reads as a gradient sweep.
+    theme = THEMES.get(get_current_theme(), THEMES[_DEFAULT_THEME])
+    grad = theme["banner"]
+
+    logo_lines = []
+    try:
+        import pyfiglet
+        rendered = pyfiglet.Figlet(font="thin").renderText("altergo")
+        logo_lines = [l for l in rendered.splitlines() if l.strip()]
+    except Exception:
+        logo_lines = ["altergo"]
+
+    # Collect every non-space character position across all lines so we can
+    # spread the gradient evenly — same technique show_banner uses for greetings.
+    all_chars = []
+    for line in logo_lines:
+        for ch in line:
+            if ch != " ":
+                all_chars.append(ch)
+    total = max(len(all_chars), 1)
+    n_grad = len(grad)
+    chunk = max(1, total // n_grad)
+
+    char_idx = 0
+    for line_idx, line in enumerate(logo_lines):
+        text = Text()
+        for ch in line:
+            if ch == " ":
+                text.append(" ")
+            else:
+                color_slot = min(char_idx // chunk, n_grad - 1)
+                text.append(ch, style=grad[color_slot])
+                char_idx += 1
+
+        # Append version tag dim-styled to the right of the last logo line.
+        if line_idx == len(logo_lines) - 1:
+            text.append(f"  v{__version__}", style="dim")
+
+        console.print(text)
+
+    # ── Copy ──────────────────────────────────────────────────────────────────
+    console.print()
+    console.print(Text(
+        "  altergo \u2014 multiple Claude identities from one terminal.",
+        style="dim",
+    ))
+    console.print()
+    console.print(Text("  You don't have any accounts yet. Let's fix that.", style="dim"))
+    console.print()
+
+    # ── Setup-options hint ────────────────────────────────────────────────────
+    console.print(Text("  run altergo --setup to configure interactively", style="dim"))
+    console.print(Text("  or altergo --setup --name <name> to skip the prompts", style="dim"))
+    console.print()
+
+    # ── Name prompt loop ──────────────────────────────────────────────────────
+    while True:
+        try:
+            raw = Prompt.ask(
+                "  Account name (e.g., work, personal, side-project)"
+                " [or press Enter to run --setup]",
+                default="",
+                show_default=False,
+                console=console,
+            ).strip()
+        except KeyboardInterrupt:
+            console.print()
+            console.print("  \u2192 run: altergo --setup --name <name> when ready")
+            sys.exit(0)
+
+        if not raw:
+            console.print()
+            console.print("  \u2192 run: altergo --setup")
+            sys.exit(0)
+
+        # Inline validation — we cannot call validate_account_name() here
+        # because it calls sys.exit(1) on failure, which would kill the loop.
+        if not re.match(r"^[a-zA-Z0-9][a-zA-Z0-9_-]*$", raw) or len(raw) > 64:
+            console.print(Text(
+                f"  Invalid name '{raw}'. Use letters, digits, - or _ only; "
+                "must not start with a digit or special char.",
+                style="dim",
+            ))
+            continue
+
+        if raw in _RESERVED_NAMES:
+            console.print(Text(
+                f"  '{raw}' is a reserved name. Choose a different account name.",
+                style="dim",
+            ))
+            continue
+
+        # Valid name — proceed.
+        break
+
+    # ── Provider detection (silent — no prompt) ───────────────────────────────
+    # Mirror the logic in _prompt_provider_selection() but skip the interactive
+    # bits: detect what's installed and default to ["claude"] if nothing is.
+    detected = [pid for pid, p in PROVIDERS.items() if shutil.which(p["binary"])]
+    if not detected:
+        detected = ["claude"]
+
+    # ── Run setup then drop into the launcher ────────────────────────────────
+    console.print()
+    do_setup(raw, detected)
+    interactive_launcher()
+
+
 def interactive_launcher():
     """Show the provider+account picker and launch the selected account."""
     menu = build_launcher_menu()
@@ -3117,8 +3251,12 @@ def main():
             interactive_launcher()
             sys.exit(0)
         elif not _all_accounts:
-            print("altergo: no accounts found. Run 'altergo --setup' first.", file=sys.stderr)
-            sys.exit(1)
+            if sys.stdout.isatty():
+                _first_run_onboarding()
+                sys.exit(0)
+            else:
+                print("altergo: no accounts found. Run 'altergo --setup' first.", file=sys.stderr)
+                sys.exit(1)
         else:
             # Multiple accounts, non-interactive — cannot pick one silently
             print(

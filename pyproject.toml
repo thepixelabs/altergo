@@ -27,6 +27,9 @@ classifiers = [
     "Topic :: Utilities",
 ]
 
+[tool.setuptools]
+py-modules = ["altergo", "altergo_greetings"]
+
 [project.scripts]
 altergo = "altergo:main"
 

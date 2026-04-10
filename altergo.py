@@ -11,6 +11,8 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -170,12 +172,72 @@ def C(role: str) -> str:
     return theme["ansi"].get(role, "")
 
 
-def show_banner(account: str | None = None):
-    """Print the altergo ASCII banner with gradient. TTY-only.
+def _ansi_to_rich(code: str) -> str:
+    """Translate one of altergo's ANSI color codes into a Rich style string.
 
-    If ``account`` is given, the account name is rendered to the right of the
-    logo with little stars around it so the user can see at a glance which
-    identity the upcoming session will run under.
+    Our themes store colors as raw ANSI parameter lists (``"38;5;220"``,
+    ``"1;38;5;39"``, ``"2"``) because that's what the plain-``_c`` path
+    emits. Rich doesn't speak those directly, so this converts them into
+    its native style string (``"color(220)"``, ``"bold color(39)"``,
+    ``"dim"``) for use inside ``Text`` / ``Spinner`` styles.
+
+    Only the subset we actually emit is handled; unrecognized codes fall
+    back to empty string (Rich treats that as default).
+    """
+    if not code:
+        return ""
+    parts = code.split(";")
+    out = []
+    i = 0
+    while i < len(parts):
+        p = parts[i]
+        if p == "1":
+            out.append("bold")
+            i += 1
+        elif p == "2":
+            out.append("dim")
+            i += 1
+        elif p == "38" and i + 2 < len(parts) and parts[i + 1] == "5":
+            out.append(f"color({parts[i + 2]})")
+            i += 3
+        else:
+            i += 1
+    return " ".join(out)
+
+
+def show_banner(
+    account: str | None = None,
+    *,
+    latest_version: str | None = None,
+    show_greeting: bool = False,
+    animate_duration: float = 0.0,
+):
+    """Print the altergo banner. TTY-only.
+
+    Parameters
+    ----------
+    account
+        If given, the account name is rendered beneath the logo with stars
+        around it so the user can see at a glance which identity the
+        upcoming session will run under.
+    latest_version
+        The cached "latest version from PyPI" string. When strictly newer
+        than the running version, the version column shows an arrow to it
+        (``v0.12.0 → v0.13.0``) and a dim upgrade-action line is appended
+        under the banner. Sanitized again here — defense in depth against
+        a poisoned cache file.
+    show_greeting
+        When True, a dry time-of-day line (from :mod:`altergo_greetings`)
+        is rendered below the figlet. Only set True on interactive launch
+        paths (``launch_claude``/``launch_shell``/``launch_command``/
+        ``interactive_launcher``). Silent on ``--help``/``--list`` etc. so
+        piped and scripted output stays grep-able.
+    animate_duration
+        If > 0 and we're on a TTY, wrap the final render in ``rich.live.Live``
+        for roughly this many seconds before returning. Used only on the
+        launch handoff path so the star positions in the account line
+        twinkle for ~700ms while the provider binary warms up. Capped by
+        the caller to ``min(provider_cold_start, 0.7)``.
     """
     if not sys.stdout.isatty():
         suffix = f"  [{account}]" if account else ""
@@ -188,8 +250,10 @@ def show_banner(account: str | None = None):
         from rich.text import Text
         from rich.table import Table
         from rich.align import Align
+        from rich.spinner import Spinner
         console = Console()
         theme = THEMES.get(get_current_theme(), THEMES[_DEFAULT_THEME])
+        theme_id = get_current_theme()
         grad = theme["banner"]
         figlet = RichFiglet("altergo", font="smslant", colors=grad, horizontal=True)
 
@@ -202,53 +266,129 @@ def show_banner(account: str | None = None):
         logo_right = max((len(l.rstrip()) for l in logo_lines), default=32)
         logo_width = logo_right - logo_left
 
-        # Short version tag to the right of the logo, vertically centered
-        # against the figlet block. Rendered in the theme's mid gradient stop
-        # so it reads as part of the logo rather than a separate banner.
+        # Re-sanitize the latest version string — the cache is trusted
+        # territory but we double-check before interpolating into output.
+        clean_latest = _sanitize_version(latest_version)
+        has_update = bool(clean_latest and _is_newer(clean_latest, __version__))
+
+        # Build the right-column version tag. When an update is available,
+        # the text becomes ``v<cur> → v<new>``, with the arrow + new version
+        # in the theme's warn color so it reads as an attention beat
+        # (creative-technologist's call — warn is deliberately chosen over
+        # the banner gradient so it stays legible even in rainbow theme).
         version_color = grad[len(grad) // 2] if len(grad) >= 2 else grad[0]
-        version_str = f"v{__version__}"
-        version_text = Text(version_str, style=f"bold {version_color}")
+        version_text = Text()
+        version_text.append(f"v{__version__}", style=f"bold {version_color}")
+        if has_update:
+            warn_style = _ansi_to_rich(C("warn"))
+            version_text.append(" → ", style=warn_style)
+            version_text.append(f"v{clean_latest}", style=f"bold {warn_style}")
+
         logo_row = Table.grid(padding=(0, 1), expand=False)
-        # Pin the first column to the actual logo width so the version
-        # column hugs the right edge of the figlet rather than stretching
-        # to fill the terminal.
         logo_row.add_column(width=logo_right, no_wrap=True)
         logo_row.add_column(no_wrap=True)
         logo_row.add_row(figlet, Align(version_text, "left", vertical="middle"))
 
-        if account:
+        # Body renderables assembled in strict top-to-bottom order:
+        #   [logo_row]  figlet + version tag (inline update arrow)
+        #   [greeting]  optional dry one-liner, keyed to time-of-day
+        #   [stars]     account name between twinkling stars (animated when
+        #               animate_duration > 0)
+        #   [upgrade]   dim action line, only when an update exists
+        body: list = [logo_row]
 
-            # Star palette is pulled from the banner gradient so the account
-            # line always matches the logo, whatever the theme.
-            # DIM=darkest stop, BRIGHT=lightest stop, MID=middle interpolation.
+        # Greeting line: lazy-imported so --help / --version don't pay the
+        # import cost on their hot path. Cell width is bounded to the
+        # logo width so the line never wraps awkwardly on narrow terms.
+        if show_greeting:
+            try:
+                import altergo_greetings as _greet
+                icon = _greet.pick_icon()
+                line = _greet.pick_greeting()
+                greeting_text = Text()
+                greeting_text.append(f"  {icon}  ", style=C("dim"))
+                greeting_text.append(line, style=C("dim"))
+                body.append(greeting_text)
+            except Exception:
+                # Greetings are a nice-to-have — never break the banner.
+                pass
+
+        # Account-stars line: when animating we render each '*' as an actual
+        # Rich Spinner, laid out via a Table.grid so every cell is its own
+        # renderable and Rich can tick them independently. Otherwise the
+        # original static Text version is used — cheaper and renders once.
+        if account:
             DIM    = grad[-1]
             BRIGHT = f"bold {grad[0]}"
             MID    = grad[len(grad) // 2] if len(grad) > 2 else grad[0]
-            name_line = Text()
-            name_line.append(".",     style=DIM)
-            name_line.append("  ",    style=MID)
-            name_line.append("*",     style=BRIGHT)
-            name_line.append("  ",    style=MID)
-            name_line.append(".",     style=DIM)
-            name_line.append("  ",    style=MID)
-            name_line.append(account, style=BRIGHT)
-            name_line.append("  ",    style=MID)
-            name_line.append(".",     style=DIM)
-            name_line.append("  ",    style=MID)
-            name_line.append("*",     style=BRIGHT)
-            name_line.append("  ",    style=MID)
-            name_line.append(".",     style=DIM)
 
-            # Pad the name line so its center aligns with the logo's center,
-            # then print directly — no Align wrapper, no extra row. Alignment
-            # is computed against the figlet alone so the version label on
-            # the right of the logo_row doesn't shift the stars off-center.
-            name_w = name_line.cell_len
-            lead = logo_left + max(0, (logo_width - name_w) // 2)
-            padded = Text(" " * lead) + name_line
-            console.print(Group(logo_row, padded))
+            if animate_duration > 0:
+                try:
+                    import altergo_greetings as _greet
+                    spinner_name = _greet.spinner_for_theme(theme_id)
+                except Exception:
+                    spinner_name = "dots"
+                row = Table.grid(padding=(0, 1), expand=False)
+                for _ in range(7):
+                    row.add_column(no_wrap=True)
+                row.add_row(
+                    Text(".", style=DIM),
+                    Spinner(spinner_name, style=BRIGHT),
+                    Text(".", style=DIM),
+                    Text(account, style=BRIGHT),
+                    Text(".", style=DIM),
+                    Spinner(spinner_name, style=BRIGHT),
+                    Text(".", style=DIM),
+                )
+                # Center the animated row under the figlet by wrapping in
+                # a fixed-width Align block matching the logo width.
+                body.append(Align(row, align="center", width=logo_right))
+            else:
+                name_line = Text()
+                name_line.append(".",     style=DIM)
+                name_line.append("  ",    style=MID)
+                name_line.append("*",     style=BRIGHT)
+                name_line.append("  ",    style=MID)
+                name_line.append(".",     style=DIM)
+                name_line.append("  ",    style=MID)
+                name_line.append(account, style=BRIGHT)
+                name_line.append("  ",    style=MID)
+                name_line.append(".",     style=DIM)
+                name_line.append("  ",    style=MID)
+                name_line.append("*",     style=BRIGHT)
+                name_line.append("  ",    style=MID)
+                name_line.append(".",     style=DIM)
+                name_w = name_line.cell_len
+                lead = logo_left + max(0, (logo_width - name_w) // 2)
+                body.append(Text(" " * lead) + name_line)
+
+        # Upgrade action line — one dim line with the literal pip command
+        # so the user knows what to type. Only when an update is pending.
+        if has_update:
+            upgrade_text = Text()
+            upgrade_text.append("  ", style=C("dim"))
+            try:
+                import altergo_greetings as _greet
+                upgrade_text.append(_greet.pick_icon() + "  ", style=C("dim"))
+            except Exception:
+                upgrade_text.append("* ", style=C("dim"))
+            upgrade_text.append("upgrade: ", style=C("dim"))
+            upgrade_text.append("pip install -U altergo", style=C("command"))
+            body.append(upgrade_text)
+
+        group = Group(*body)
+
+        if animate_duration > 0:
+            # Rich Live ticks the Spinner cells in a render thread while the
+            # main thread sleeps the capped duration. On exit Live prints the
+            # last frame as persistent output, so the terminal is left in a
+            # clean state before we hand off to the provider CLI.
+            from rich.live import Live
+            with Live(group, console=console, refresh_per_second=12,
+                      transient=False):
+                time.sleep(animate_duration)
         else:
-            console.print(logo_row)
+            console.print(group)
     except Exception:
         suffix = f"  [{account}]" if account else ""
         print(f"  altergo {__version__}  —  Switch Claude identities. Keep your context.{suffix}")
@@ -308,6 +448,8 @@ def show_help():
         f"  {kw('altergo --theme')}                       {dim('List themes and show the active one')}",
         f"  {kw('altergo --theme')} {arg('<name>')}                {dim('Set color theme: ' + ', '.join(THEMES.keys()))}",
         f"  {dim('  (or press')} {kw('t')} {dim('in the launcher to cycle themes live)')}",
+        f"  {kw('altergo --update-check')}                {dim('Show update-check state and last known version')}",
+        f"  {kw('altergo --update-check')} {arg('on|off')}         {dim('Enable or disable the PyPI version checker')}",
         "",
         sep(),
         h("  Advanced"),
@@ -715,6 +857,333 @@ def save_persisted_theme(name: str) -> None:
     os.replace(str(tmp), str(SETTINGS_FILE))
 
 
+# --- Launch-handoff animation duration (per-provider) ---
+#
+# Capped by panel decision (option A) at 0.7s max so the animation never
+# adds perceived latency beyond provider cold start. Codex is effectively
+# instant (27ms measured) so we skip animation for it — a 700ms dance
+# would finish long after codex itself is up.
+_HANDOFF_ANIM_SECONDS: dict[str, float] = {
+    "claude":  0.7,
+    "gemini":  0.7,
+    "copilot": 0.7,
+    "codex":   0.0,
+}
+
+
+def _handoff_duration(provider: str | None) -> float:
+    """Return the capped twinkle duration for the given provider id."""
+    if provider is None:
+        return 0.0
+    return _HANDOFF_ANIM_SECONDS.get(provider, 0.0)
+
+
+def _status_wrap(message: str, func, *args, **kwargs):
+    """Call ``func`` while showing a Rich spinner-status line.
+
+    Falls back to a plain synchronous call on non-TTY or if Rich is not
+    importable (shouldn't happen — altergo depends on it — but we don't
+    want a status wrapper to ever hide a real error). The spinner picked
+    matches the active theme via ``altergo_greetings.spinner_for_theme``.
+    """
+    if not sys.stdout.isatty():
+        return func(*args, **kwargs)
+    try:
+        from rich.console import Console
+        try:
+            import altergo_greetings as _greet
+            spinner = _greet.spinner_for_theme(get_current_theme())
+        except Exception:
+            spinner = "dots"
+        console = Console()
+        with console.status(f"[dim]{message}[/dim]", spinner=spinner):
+            return func(*args, **kwargs)
+    except Exception:
+        return func(*args, **kwargs)
+
+
+# --- Update check: settings, cache, fetch ---
+#
+# The version checker is a stale-while-revalidate design hardened by the
+# security review: a daemon-threaded fetch writes a cache file with a
+# strictly validated version string; show_banner reads that cache on the
+# hot path with zero network involvement. Everything fails silently.
+#
+# Design constraints (from panel review):
+#   - Default ON, with a one-time first-launch consent line (CEO + product
+#     compromise with security's "must consent before first request" rule).
+#   - stdlib only — urllib.request, json, threading. No `requests`, no
+#     `packaging`. altergo currently ships with only rich + pyfiglet.
+#   - 3s socket timeout, 32KB response cap, 3-redirect cap.
+#   - Version string allowlisted (`^[0-9a-zA-Z.\-+]{1,32}$`) both at fetch
+#     (discard on mismatch) and at render (discard on mismatch). Defense in
+#     depth against a poisoned cache or crafted PyPI response.
+#   - User-Agent reveals version only — no hostname, no account names.
+#   - Cache file lives alongside settings but is a separate file: different
+#     lifecycle, avoids churning settings on every daily check.
+
+UPDATE_CACHE_FILE = MAIN_HOME / ".altergo" / "version_check.json"
+UPDATE_CACHE_TTL_SECONDS = 24 * 60 * 60  # daily refresh
+UPDATE_FETCH_TIMEOUT = 3.0
+UPDATE_FETCH_MAX_BYTES = 32 * 1024
+UPDATE_PYPI_URL = "https://pypi.org/pypi/altergo/json"
+
+# Regex allowlist for any version string that touches a terminal. Rejects
+# anything containing whitespace, control chars, ANSI, or exotic unicode —
+# all of which could corrupt the banner render if printed unsanitized.
+_VERSION_RE = re.compile(r"^[0-9a-zA-Z.\-+]{1,32}$")
+
+
+def _sanitize_version(v) -> str | None:
+    """Return ``v`` if it is a valid, printable version string, else None.
+
+    Must be called on every boundary where a version string enters from
+    untrusted territory: PyPI response, cache file read, banner render.
+    """
+    if not isinstance(v, str):
+        return None
+    if _VERSION_RE.match(v):
+        return v
+    return None
+
+
+def load_update_check_enabled() -> bool:
+    """Return whether the user has opted into update checks.
+
+    Default is **True** — panel consensus was that altergo is pre-adoption
+    and needs users on current versions. The one-time consent line printed
+    on first launch (see :func:`first_launch_notice_if_needed`) is the
+    compensating control for the opt-out default.
+    """
+    if not SETTINGS_FILE.exists():
+        return True
+    try:
+        data = json.loads(SETTINGS_FILE.read_text())
+        v = data.get("update_check")
+        if isinstance(v, bool):
+            return v
+    except Exception:
+        pass
+    return True
+
+
+def save_update_check_enabled(enabled: bool) -> None:
+    """Persist the update-check opt-in flag without clobbering siblings."""
+    SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    data = {}
+    if SETTINGS_FILE.exists():
+        try:
+            data = json.loads(SETTINGS_FILE.read_text())
+        except Exception:
+            data = {}
+    data["update_check"] = bool(enabled)
+    tmp = SETTINGS_FILE.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(data, indent=2))
+    os.replace(str(tmp), str(SETTINGS_FILE))
+
+
+def _get_intro_shown() -> bool:
+    if not SETTINGS_FILE.exists():
+        return False
+    try:
+        data = json.loads(SETTINGS_FILE.read_text())
+        return bool(data.get("update_check_intro_shown"))
+    except Exception:
+        return False
+
+
+def _mark_intro_shown() -> None:
+    SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    data = {}
+    if SETTINGS_FILE.exists():
+        try:
+            data = json.loads(SETTINGS_FILE.read_text())
+        except Exception:
+            data = {}
+    data["update_check_intro_shown"] = True
+    tmp = SETTINGS_FILE.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(data, indent=2))
+    os.replace(str(tmp), str(SETTINGS_FILE))
+
+
+def _read_update_cache() -> dict:
+    """Read and validate the update cache. Returns {} on any error.
+
+    Re-sanitizes the cached version string — a local attacker who can write
+    ``~/.altergo/`` can still poison the cache, but can no longer inject a
+    crafted string into a future banner render. A poisoned entry is simply
+    dropped and treated as a cache miss.
+    """
+    if not UPDATE_CACHE_FILE.exists():
+        return {}
+    try:
+        data = json.loads(UPDATE_CACHE_FILE.read_text())
+    except Exception:
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    # Schema guard
+    if data.get("schema_version") != 1:
+        return {}
+    # Sanitize on read — belt and suspenders
+    v = _sanitize_version(data.get("latest_version"))
+    if v is None:
+        data.pop("latest_version", None)
+    else:
+        data["latest_version"] = v
+    return data
+
+
+def _write_update_cache(latest_version: str | None) -> None:
+    """Atomically write the update cache. Validates before writing."""
+    UPDATE_CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "schema_version": 1,
+        "last_check": int(time.time()),
+    }
+    v = _sanitize_version(latest_version)
+    if v is not None:
+        payload["latest_version"] = v
+    tmp = UPDATE_CACHE_FILE.with_suffix(".json.tmp")
+    try:
+        tmp.write_text(json.dumps(payload))
+        os.replace(str(tmp), str(UPDATE_CACHE_FILE))
+        try:
+            os.chmod(str(UPDATE_CACHE_FILE), 0o600)
+        except OSError:
+            pass
+    except Exception:
+        # Silent failure — we never want the update checker to break launch.
+        pass
+
+
+def _parse_version(v: str) -> tuple:
+    """Parse a MAJOR.MINOR.PATCH string into a comparable tuple.
+
+    Strips any pre-release or local version suffix (``0.13.0rc1`` →
+    ``(0, 13, 0)``) and returns an empty tuple on parse error. Intentionally
+    stdlib-only — avoids adding ``packaging`` as a runtime dep.
+    """
+    try:
+        core = v.split("+", 1)[0].split("-", 1)[0]
+        parts: list[int] = []
+        for p in core.split("."):
+            # Trim anything non-numeric from the end of the segment to
+            # tolerate trailing letters like "0rc1" → "0".
+            digits = ""
+            for ch in p:
+                if ch.isdigit():
+                    digits += ch
+                else:
+                    break
+            if digits:
+                parts.append(int(digits))
+        return tuple(parts)
+    except Exception:
+        return ()
+
+
+def _is_newer(latest: str, current: str) -> bool:
+    """Return True iff ``latest`` is strictly newer than ``current``."""
+    a = _parse_version(latest)
+    b = _parse_version(current)
+    if not a or not b:
+        return False
+    return a > b
+
+
+def _fetch_latest_version() -> None:
+    """Fetch altergo's latest version from PyPI and update the cache.
+
+    Runs in a daemon thread — MUST never raise out of this function and
+    MUST never print. All exceptions are swallowed. Hardening per security
+    review: 3s timeout, 32KB response cap, 3-redirect cap, TLS enforced,
+    version string allowlisted before caching.
+    """
+    try:
+        import urllib.request
+        import urllib.error
+
+        class _CappedRedirect(urllib.request.HTTPRedirectHandler):
+            """Redirect handler that caps at 3 hops."""
+            max_redirections = 3
+
+        ua = f"altergo/{__version__} Python/{sys.version_info.major}.{sys.version_info.minor}"
+        req = urllib.request.Request(UPDATE_PYPI_URL, headers={"User-Agent": ua})
+        opener = urllib.request.build_opener(_CappedRedirect())
+        with opener.open(req, timeout=UPDATE_FETCH_TIMEOUT) as resp:
+            raw = resp.read(UPDATE_FETCH_MAX_BYTES + 1)
+            if len(raw) > UPDATE_FETCH_MAX_BYTES:
+                # Response unexpectedly large — reject, don't partial-parse.
+                _write_update_cache(None)
+                return
+            data = json.loads(raw.decode("utf-8", errors="replace"))
+        info = data.get("info") if isinstance(data, dict) else None
+        raw_v = info.get("version") if isinstance(info, dict) else None
+        sanitized = _sanitize_version(raw_v)
+        _write_update_cache(sanitized)
+    except Exception:
+        # Write a timestamp-only record so we don't hammer a broken endpoint
+        # on every launch — still retried after the TTL.
+        try:
+            _write_update_cache(None)
+        except Exception:
+            pass
+
+
+def maybe_refresh_update_cache() -> None:
+    """Kick off a background refresh if the cache is stale and opt-in is on.
+
+    Called from the launch path. First launch (no cache file at all) writes
+    a timestamp-only record and skips the network entirely — first runs
+    feel instant, and the consent line has already been printed by the
+    time any real fetch fires.
+    """
+    if not load_update_check_enabled():
+        return
+    cache = _read_update_cache()
+    # First launch ever: write a stub, skip the network.
+    if not cache:
+        _write_update_cache(None)
+        return
+    last = cache.get("last_check", 0)
+    now = int(time.time())
+    # Clock-skew guard: if last_check is in the future by more than a
+    # minute, treat it as stale and refresh.
+    if now < last - 60:
+        pass
+    elif now - last < UPDATE_CACHE_TTL_SECONDS:
+        return
+    # Daemon thread so it never blocks exit. Product-engineer chose this
+    # over os.fork() after the architect conceded on macOS fork-safety.
+    t = threading.Thread(target=_fetch_latest_version, daemon=True)
+    t.start()
+
+
+def get_cached_latest_version() -> str | None:
+    """Return the last-known sanitized latest version, or None."""
+    cache = _read_update_cache()
+    return _sanitize_version(cache.get("latest_version"))
+
+
+def first_launch_notice_if_needed() -> None:
+    """Print the one-time consent notice if the user hasn't seen it yet.
+
+    This is the compensating control the security review demanded for the
+    opt-out default. Printed once, then never again, regardless of whether
+    a nag ever fires. Satisfies informed-consent-before-first-request.
+    """
+    if _get_intro_shown():
+        return
+    if sys.stdout.isatty():
+        print(
+            "  " + _c(C("dim"),
+                       "Version checks are enabled by default. "
+                       "Disable with: altergo --update-check off")
+        )
+    _mark_intro_shown()
+
+
 def get_active_account() -> str | None:
     """Return the persisted active account name, or None if not set / no longer valid."""
     if not SETTINGS_FILE.exists():
@@ -972,8 +1441,12 @@ def do_setup(account: str = "default", providers: list[str] | None = None):
 
     # 3. Apply catalog entries (shared CLI tool credentials) at account_home level
     overrides = load_settings()
-    for entry in CATALOG:
-        _apply_entry(entry, overrides, account_home)
+
+    def _apply_catalog_entries():
+        for entry in CATALOG:
+            _apply_entry(entry, overrides, account_home)
+
+    _status_wrap("Linking shared credentials…", _apply_catalog_entries)
 
     # 4. Save account metadata
     save_account_meta(account_home, {
@@ -1721,11 +2194,15 @@ def interactive_settings():
     print()
     print(_c(C("header"), "=== Applying settings ==="))
     print()
-    for acct_name in list_accounts() or ["default"]:
-        acct_home, _ = resolve_account(acct_name)
-        if acct_home.exists():
-            for entry in CATALOG:
-                _apply_entry(entry, overrides, acct_home)
+
+    def _apply_all():
+        for acct_name in list_accounts() or ["default"]:
+            acct_home, _ = resolve_account(acct_name)
+            if acct_home.exists():
+                for entry in CATALOG:
+                    _apply_entry(entry, overrides, acct_home)
+
+    _status_wrap("Applying shared credentials…", _apply_all)
     print()
     print(_c(C("success"), "Settings saved and applied."))
 
@@ -1973,7 +2450,16 @@ def launch_claude(account: str = "default", args=None, provider: str | None = No
 
     env = _build_alt_env(account)
     cmd = [binary_path] + (args or [])
-    show_banner(account)
+    # Kick off the background PyPI check (no-op if opt-out or not yet due)
+    # BEFORE the banner so the cache from a previous run drives the nag.
+    maybe_refresh_update_cache()
+    first_launch_notice_if_needed()
+    show_banner(
+        account,
+        latest_version=get_cached_latest_version(),
+        show_greeting=True,
+        animate_duration=_handoff_duration(provider),
+    )
     result = subprocess.run(cmd, env=env)
     _print_launch_message()
     sys.exit(result.returncode)
@@ -1994,9 +2480,17 @@ def launch_shell(account: str = "default"):
         env["PS1"] = f"({label}) {env['PS1']}"
     elif shell_name == "zsh":
         env["PROMPT"] = f"({label}) {env.get('PROMPT', '%n@%m %~ %# ')}"
-    show_banner(account)
-    print(_c(36, f"Entering altergo shell [{account}] (HOME={account_home})"))
-    print(_c(2, "Run 'exit' or Ctrl-D to return to your primary account.\n"))
+    maybe_refresh_update_cache()
+    first_launch_notice_if_needed()
+    # Shell starts effectively instantly, so no twinkle animation — but
+    # keep the greeting + update nag for consistency with other launch paths.
+    show_banner(
+        account,
+        latest_version=get_cached_latest_version(),
+        show_greeting=True,
+    )
+    print(_c(C("command"), f"Entering altergo shell [{account}] (HOME={account_home})"))
+    print(_c(C("dim"), "Run 'exit' or Ctrl-D to return to your primary account.\n"))
     result = subprocess.run([shell], env=env)
     _print_launch_message()
     sys.exit(result.returncode)
@@ -2021,7 +2515,7 @@ def launch_command(account: str = "default", cmd_args=None):
 
 
 _KNOWN_COMMANDS = frozenset(
-    ["shell", "--resume", "--list", "--setup", "--teardown", "--settings", "--version", "--use", "--launch", "--theme", "-h", "--help", "--"]
+    ["shell", "--resume", "--list", "--setup", "--teardown", "--settings", "--version", "--use", "--launch", "--theme", "--update-check", "-h", "--help", "--"]
 )
 
 
@@ -2177,8 +2671,9 @@ def build_launcher_menu() -> list:
         primary = providers_for_acct[0] if providers_for_acct else "claude"
         provider_accounts.setdefault(primary, []).append(acct)
 
-    # Resolve most-recent session age per account (best-effort)
-    all_sessions = get_sessions()
+    # Resolve most-recent session age per account (best-effort) — wrapped
+    # in a spinner because JSONL scanning can be 1–2s for heavy users.
+    all_sessions = _status_wrap("Scanning sessions…", get_sessions)
     acct_ages: dict = {}
     for s in all_sessions:
         # Sessions live under MAIN_CLAUDE/projects — not per-account, so use
@@ -2457,6 +2952,45 @@ def main():
         interactive_launcher()
         sys.exit(0)
 
+    if args and args[0] == "--update-check":
+        # `altergo --update-check`          → show current state + last known
+        # `altergo --update-check on|off`   → persist
+        show_banner()
+        if len(args) == 1:
+            enabled = load_update_check_enabled()
+            state = _c(C("success"), "on") if enabled else _c(C("warn"), "off")
+            print(f"  update check: {state}")
+            cache = _read_update_cache()
+            if cache:
+                last = cache.get("last_check", 0)
+                if last:
+                    ago = int(time.time() - last)
+                    print(_c(C("dim"),
+                              f"  last checked: {ago // 60} min ago"))
+                latest = _sanitize_version(cache.get("latest_version"))
+                if latest:
+                    marker = _c(C("warn"), "newer") if _is_newer(latest, __version__) else _c(C("success"), "current")
+                    print(_c(C("dim"), f"  latest known: v{latest}  ({marker})")
+                          if latest else "")
+            print()
+            print(_c(C("dim"),
+                      "  Toggle with: altergo --update-check on|off"))
+            sys.exit(0)
+        choice = args[1].lower()
+        if choice in ("on", "true", "1", "yes"):
+            save_update_check_enabled(True)
+            print(_c(C("success"), "  update check enabled"))
+        elif choice in ("off", "false", "0", "no"):
+            save_update_check_enabled(False)
+            print(_c(C("warn"), "  update check disabled"))
+        else:
+            print(
+                f"altergo: --update-check takes 'on' or 'off', got '{args[1]}'",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        sys.exit(0)
+
     if args and args[0] == "--theme":
         # `altergo --theme`         → print current + catalog
         # `altergo --theme <name>`  → set persistently
@@ -2490,8 +3024,8 @@ def main():
         sys.exit(0)
 
     if args and args[0] == "--list":
-        sessions = get_sessions()
         show_banner()
+        sessions = _status_wrap("Scanning sessions…", get_sessions)
         if not sessions:
             print("  No sessions found.")
             sys.exit(0)
@@ -2546,7 +3080,7 @@ def main():
                     file=sys.stderr,
                 )
                 sys.exit(1)
-        sessions = get_sessions()
+        sessions = _status_wrap("Scanning sessions…", get_sessions)
         selected = interactive_picker(sessions)
         if selected:
             launch_claude(resume_account, ["--resume", selected["id"]])

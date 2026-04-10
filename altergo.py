@@ -877,6 +877,90 @@ def save_persisted_theme(name: str) -> None:
     os.replace(str(tmp), str(SETTINGS_FILE))
 
 
+# ── Random theme helpers ──────────────────────────────────────────────────────
+
+def _patch_settings(updates: dict) -> None:
+    """Atomically merge *updates* into SETTINGS_FILE, preserving all other keys."""
+    SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    data: dict = {}
+    if SETTINGS_FILE.exists():
+        try:
+            data = json.loads(SETTINGS_FILE.read_text())
+        except Exception:
+            data = {}
+    data.update(updates)
+    tmp = SETTINGS_FILE.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(data, indent=2))
+    os.replace(str(tmp), str(SETTINGS_FILE))
+
+
+def load_random_theme_settings() -> dict:
+    """Return random_theme_enabled, random_theme_frequency, random_theme_counter."""
+    defaults: dict = {
+        "random_theme_enabled": False,
+        "random_theme_frequency": 3,
+        "random_theme_counter": 0,
+    }
+    if not SETTINGS_FILE.exists():
+        return defaults
+    try:
+        data = json.loads(SETTINGS_FILE.read_text())
+        enabled = data.get("random_theme_enabled")
+        freq    = data.get("random_theme_frequency")
+        ctr     = data.get("random_theme_counter")
+        return {
+            "random_theme_enabled":   enabled if isinstance(enabled, bool) else False,
+            "random_theme_frequency": freq    if isinstance(freq, int) and 1 <= freq <= 5 else 3,
+            "random_theme_counter":   ctr     if isinstance(ctr, int) and ctr >= 0 else 0,
+        }
+    except Exception:
+        return defaults
+
+
+def _random_theme_counter_range(freq: int) -> tuple:
+    """Map frequency slot (1-5) to (min_sessions, max_sessions) range."""
+    if freq <= 2:
+        return (1, 5)
+    elif freq == 3:
+        return (5, 10)
+    else:
+        return (10, 20)
+
+
+def maybe_rotate_random_theme() -> None:
+    """Decrement the random-theme counter; rotate theme when it hits zero.
+
+    Called once per session start, after load_persisted_theme() seeds
+    _CURRENT_THEME. No-op if random_theme_enabled is False.
+    """
+    import random as _random
+    rts = load_random_theme_settings()
+    if not rts["random_theme_enabled"]:
+        return
+
+    freq    = rts["random_theme_frequency"]
+    counter = rts["random_theme_counter"]
+
+    # Counter of 0 means "not yet initialized" — seed it and return.
+    if counter <= 0:
+        lo, hi = _random_theme_counter_range(freq)
+        _patch_settings({"random_theme_counter": _random.randint(lo, hi)})
+        return
+
+    counter -= 1
+    if counter > 0:
+        _patch_settings({"random_theme_counter": counter})
+        return
+
+    # Counter hit zero — pick a new theme (avoid repeating current) and reset.
+    current = get_current_theme()
+    choices = [t for t in THEMES if t != current]
+    new_theme = _random.choice(choices) if choices else current
+    lo, hi = _random_theme_counter_range(freq)
+    set_current_theme(new_theme)
+    _patch_settings({"theme": new_theme, "random_theme_counter": _random.randint(lo, hi)})
+
+
 # --- Launch-handoff animation duration (per-provider) ---
 #
 # Capped by panel decision (option A) at 0.7s max so the animation never
@@ -2708,6 +2792,9 @@ def _draw_settings(stdscr):
     theme_names = list(THEMES.keys())
     current_theme_idx = theme_names.index(get_current_theme()) if get_current_theme() in theme_names else 0
     launch_anim = _load_bool_setting("launch_animation")
+    _rts = load_random_theme_settings()
+    random_theme_on   = _rts["random_theme_enabled"]
+    random_theme_freq = _rts["random_theme_frequency"]   # 1–5
 
     # Page 1: Behavior
     update_check = load_update_check_enabled()
@@ -2734,9 +2821,9 @@ def _draw_settings(stdscr):
     n_pages = len(_SETTINGS_PAGES)
 
     # Per-page cursor positions
-    # Page 0: rows = [theme_0..theme_N-1, launch_anim]  → cursor 0..N
+    # Page 0: rows = [theme_0..theme_N-1, launch_anim, random_toggle, freq_slider] → cursor 0..N+2
     page0_cursor = current_theme_idx
-    page0_n = len(theme_names) + 1   # themes + launch_anim toggle
+    page0_n = len(theme_names) + 3   # themes + launch_anim + random toggle + freq slider
 
     # Page 1: rows = [update_check, show_greeting, show_goodbye]
     page1_cursor = 0
@@ -2864,6 +2951,106 @@ def _draw_settings(stdscr):
             lx = 3 + len(label)
             if lx < max_x - 4:
                 _safe_addnstr(stdscr, row, lx, hint[:max_x - lx - 1], max_x - lx - 1, attrs_local["dim"])
+            row += 1
+
+        row += 1  # blank line before Randomize section
+
+        # Section header: Randomize
+        if row < max_y - 3:
+            section3 = "Randomize " + "\u2500" * max(0, 30)
+            _safe_addnstr(stdscr, row, 2, section3[:max_x - 3], max_x - 3,
+                          attrs_local["accent"] | curses.A_BOLD)
+            row += 1
+
+        # ── Random theme toggle ───────────────────────────────────────────────
+        rand_toggle_idx = len(theme_names) + 1
+        if row < max_y - 3:
+            is_focused = (page0_cursor == rand_toggle_idx)
+            prefix = "\u25b8 " if is_focused else "  "
+            prefix_attr = attrs_local["accent"] | curses.A_BOLD if is_focused else curses.A_NORMAL
+            _safe_addnstr(stdscr, row, 0, prefix, 2, prefix_attr)
+
+            if random_theme_on:
+                dot = "\u25c9"   # ◉
+                dot_attr = attrs_local["accent"] | curses.A_BOLD
+            else:
+                dot = "\u25cb"   # ○
+                dot_attr = attrs_local["dim"]
+            _safe_addnstr(stdscr, row, 2, dot, 1, dot_attr)
+            label2 = "  Random theme       "
+            _safe_addnstr(stdscr, row, 3, label2[:max_x - 4], max_x - 4, curses.A_NORMAL)
+            hint2 = "Pick a new theme automatically every few sessions"
+            lx2 = 3 + len(label2)
+            if lx2 < max_x - 4:
+                _safe_addnstr(stdscr, row, lx2, hint2[:max_x - lx2 - 1], max_x - lx2 - 1,
+                              attrs_local["dim"])
+            row += 1
+
+        # ── Frequency slider ─────────────────────────────────────────────────
+        freq_slider_idx = len(theme_names) + 2
+        if row < max_y - 3:
+            is_focused = (page0_cursor == freq_slider_idx)
+            # 20-char track: █ filled, ◆ thumb, ░ empty
+            TRACK_LEN = 20
+            thumb_pos = int((random_theme_freq - 1) / 4 * (TRACK_LEN - 1))
+            if random_theme_on:
+                track = ""
+                for i in range(TRACK_LEN):
+                    if i < thumb_pos:
+                        track += "\u2588"   # █
+                    elif i == thumb_pos:
+                        track += "\u25c6"   # ◆
+                    else:
+                        track += "\u2591"   # ░
+                slider_attr = (attrs_local["accent"] | curses.A_BOLD) if is_focused else curses.A_NORMAL
+                left_label  = "often "
+                right_label = " rarely"
+                label_attr  = attrs_local["dim"]
+                prefix_sl   = "\u25b8 " if is_focused else "  "
+                prefix_sl_attr = (attrs_local["accent"] | curses.A_BOLD) if is_focused else curses.A_NORMAL
+            else:
+                track       = "\u2592" * (TRACK_LEN - 1) + "\u00b7"   # ▒▒▒▒▒·
+                slider_attr = attrs_local["dim"]
+                left_label  = "----- "
+                right_label = " -----"
+                label_attr  = attrs_local["dim"]
+                prefix_sl   = "  "
+                prefix_sl_attr = attrs_local["dim"]
+
+            cx = 0
+            _safe_addnstr(stdscr, row, cx, prefix_sl, 2, prefix_sl_attr)
+            cx = 2
+            _safe_addnstr(stdscr, row, cx, left_label, len(left_label), label_attr)
+            cx += len(left_label)
+            _safe_addnstr(stdscr, row, cx, "[", 1, attrs_local["dim"])
+            cx += 1
+            _safe_addnstr(stdscr, row, cx, track, TRACK_LEN, slider_attr)
+            cx += TRACK_LEN
+            _safe_addnstr(stdscr, row, cx, "]", 1, attrs_local["dim"])
+            cx += 1
+            _safe_addnstr(stdscr, row, cx, right_label, len(right_label), label_attr)
+            row += 1
+
+        # Explanation lines (shown when random theme is on)
+        if random_theme_on and row < max_y - 4:
+            _freq_descriptions = {
+                1: ("Changes nearly every session",    "Expect a new look very frequently"),
+                2: ("Changes every few sessions",      "Plenty of variety"),
+                3: ("Changes occasionally",            "Balanced \u2014 noticeable but not constant"),
+                4: ("Changes infrequently",            "Mostly consistent, occasional surprise"),
+                5: ("Changes rarely",                  "Stable look with rare surprises"),
+            }
+            line1, line2 = _freq_descriptions.get(random_theme_freq, _freq_descriptions[3])
+            _safe_addnstr(stdscr, row, 4, ("\u25c6 " + line1)[:max_x - 5], max_x - 5,
+                          attrs_local["dim"])
+            row += 1
+            if row < max_y - 3:
+                _safe_addnstr(stdscr, row, 4, ("\u00b7 " + line2)[:max_x - 5], max_x - 5,
+                              attrs_local["dim"])
+        elif not random_theme_on and row < max_y - 3:
+            _safe_addnstr(stdscr, row, 4,
+                          "\u00b7 Enable \u201cRandom theme\u201d to configure frequency"[:max_x - 5],
+                          max_x - 5, attrs_local["dim"])
 
     # ── Helper: draw page 1 (Behavior) ───────────────────────────────────────
     def _draw_page1(max_y, max_x):
@@ -2964,12 +3151,18 @@ def _draw_settings(stdscr):
         footer_row = max_y - 2
 
         if current_page == 0:
-            # Show theme description for the focused theme
+            # Show contextual hint for the focused row
+            _rand_toggle_idx = len(theme_names) + 1
+            _freq_slider_idx = len(theme_names) + 2
             if page0_cursor < len(theme_names):
                 tid = theme_names[page0_cursor]
                 hint = "  " + THEMES[tid]["description"]
-            else:
+            elif page0_cursor == len(theme_names):
                 hint = "  Spin the star animation while the provider binary starts up"
+            elif page0_cursor == _rand_toggle_idx:
+                hint = "  Picks a different theme automatically every few sessions"
+            else:
+                hint = "  Use \u2190 \u2192 to set how often the theme rotates"
             _safe_addnstr(stdscr, footer_row, 0, hint[:max_x - 1], max_x - 1, attrs["dim"])
 
         elif current_page == 1:
@@ -2990,7 +3183,13 @@ def _draw_settings(stdscr):
                 _safe_addnstr(stdscr, footer_row, 0, warn_line[:max_x - 1], max_x - 1,
                               curses.color_pair(7) | curses.A_DIM)
 
-        nav = "  \u2191\u2193/jk navigate  Space toggle  \u2190\u2192/hl/Tab page  s save  q/Esc cancel"
+        _on_freq_slider = (current_page == 0
+                           and page0_cursor == len(theme_names) + 2
+                           and random_theme_on)
+        if _on_freq_slider:
+            nav = "  \u2191\u2193/jk navigate  \u2190\u2192/hl adjust  Space toggle  Tab page  s save  q/Esc cancel"
+        else:
+            nav = "  \u2191\u2193/jk navigate  Space toggle  \u2190\u2192/hl/Tab page  s save  q/Esc cancel"
         _safe_addnstr(stdscr, max_y - 1, 0, nav[:max_x - 1], max_x - 1, attrs["dim"])
 
     # ── Main event loop ───────────────────────────────────────────────────────
@@ -3032,10 +3231,11 @@ def _draw_settings(stdscr):
         key = stdscr.getch()
 
         # ── Page navigation ──────────────────────────────────────────────────
-        if key in (curses.KEY_LEFT, ord("h")):
+        # Page 0 owns ←/→ for the freq slider; other pages use them for tab switching.
+        if key in (curses.KEY_LEFT, ord("h")) and current_page != 0:
             current_page = (current_page - 1) % n_pages
             continue
-        elif key in (curses.KEY_RIGHT, ord("l")):
+        elif key in (curses.KEY_RIGHT, ord("l")) and current_page != 0:
             current_page = (current_page + 1) % n_pages
             continue
         elif key == ord("\t"):   # Tab → next page
@@ -3059,6 +3259,8 @@ def _draw_settings(stdscr):
                 "update_check": update_check,
                 "show_greeting": show_greeting,
                 "show_goodbye": show_goodbye,
+                "random_theme_enabled": random_theme_on,
+                "random_theme_frequency": random_theme_freq,
                 "shared": {k: v for k, v in cred_overrides.items()
                            if cred_defaults.get(k) != v},
             }
@@ -3068,13 +3270,37 @@ def _draw_settings(stdscr):
 
         # ── Per-page navigation & toggling ──────────────────────────────────
         elif current_page == 0:
+            _rand_idx = len(theme_names) + 1
+            _freq_idx = len(theme_names) + 2
+
             if key in (curses.KEY_UP, ord("k")):
-                page0_cursor = max(0, page0_cursor - 1)
+                new_cur = page0_cursor - 1
+                # Skip freq slider when random theme is off
+                if new_cur == _freq_idx and not random_theme_on:
+                    new_cur -= 1
+                page0_cursor = max(0, new_cur)
             elif key in (curses.KEY_DOWN, ord("j")):
-                page0_cursor = min(page0_n - 1, page0_cursor + 1)
+                new_cur = page0_cursor + 1
+                # Skip freq slider when random theme is off
+                if new_cur == _freq_idx and not random_theme_on:
+                    new_cur += 1
+                page0_cursor = min(page0_n - 1, new_cur)
             elif key == ord(" "):
-                if page0_cursor >= len(theme_names):
+                if page0_cursor == len(theme_names):
                     launch_anim = not launch_anim
+                elif page0_cursor == _rand_idx:
+                    random_theme_on = not random_theme_on
+            elif key in (curses.KEY_LEFT, ord("h")):
+                if page0_cursor == _freq_idx and random_theme_on:
+                    random_theme_freq = max(1, random_theme_freq - 1)
+                else:
+                    current_page = (current_page - 1) % n_pages
+            elif key in (curses.KEY_RIGHT, ord("l")):
+                if page0_cursor == _freq_idx and random_theme_on:
+                    random_theme_freq = min(5, random_theme_freq + 1)
+                else:
+                    current_page = (current_page + 1) % n_pages
+
             # Theme selection follows cursor — live preview IS the selection
             if page0_cursor < len(theme_names) and current_theme_idx != page0_cursor:
                 current_theme_idx = page0_cursor
@@ -3134,6 +3360,9 @@ def interactive_settings():
     data["update_check"] = result.get("update_check", True)
     data["show_greeting"] = result.get("show_greeting", True)
     data["show_goodbye"] = result.get("show_goodbye", True)
+    data["random_theme_enabled"]   = result.get("random_theme_enabled", False)
+    data["random_theme_frequency"] = result.get("random_theme_frequency", 3)
+    # random_theme_counter is managed by maybe_rotate_random_theme — do not touch it here
     data["version"] = 1
     cred_defaults = {e["id"]: e["default_on"] for e in CATALOG}
     data["shared"] = {k: v for k, v in shared_overrides.items()
@@ -3831,6 +4060,7 @@ def main():
     # help output, and curses screens all share one palette from the first
     # character onward.
     set_current_theme(load_persisted_theme())
+    maybe_rotate_random_theme()
     # Auto-migrate legacy layout before any other processing
     migrate_legacy()
     # Repair any accounts that still have real dirs instead of symlinks

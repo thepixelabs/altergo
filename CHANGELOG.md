@@ -1,6 +1,18 @@
 # CHANGELOG
 
 
+## v0.11.0 (2026-04-10)
+
+### Features
+
+- Show altergo logo with account name above each launch
+  ([`ae99d63`](https://github.com/thepixelabs/altergo/commit/ae99d63917a9152e55e7dc0e2b263ccde1a09ee0))
+
+Render the gradient figlet banner before handing off to the provider CLI or account shell, with the
+  active account name centered directly beneath the logo and framed by ASCII stars in the same blue
+  palette. Makes the current identity visible at a glance on every session start.
+
+
 ## v0.10.1 (2026-04-09)
 
 ### Bug Fixes

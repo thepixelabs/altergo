@@ -1,17 +1,39 @@
 # CHANGELOG
 
 
+## v0.17.1 (2026-04-10)
+
+### Bug Fixes
+
+- Suppress noisy output when applying settings on quit
+  ([`b8d69f1`](https://github.com/thepixelabs/altergo/commit/b8d69f1bc2b937e8e1d1a2923bbff8cc5e678341))
+
+### Documentation
+
+- Add settings TUI guide, update architecture for v0.16
+  ([`e775199`](https://github.com/thepixelabs/altergo/commit/e775199207c915a61a22c6cc9ebedd19fde8da22))
+
+- New docs/settings.md covering the three-page settings TUI - Update docs/architecture.md with
+  current code structure, settings schema, and dependency list - Update version references from
+  v0.5.0 to v0.16.0+
+
+
 ## v0.17.0 (2026-04-10)
 
 ### Features
 
 - Multi-page settings TUI with live theme preview
+  ([`c5ed3c5`](https://github.com/thepixelabs/altergo/commit/c5ed3c56107829b8c932e6df5e0a44c8d7b4791f))
 
-  - `altergo --settings` now opens a 3-page TUI: Appearance (theme picker with live preview and gradient swatches), Behavior (greeting, goodbye, update check toggles), and Credentials (existing shared credentials)
-  - Theme selection includes live color preview — the entire TUI recolors as you browse themes
-  - New toggleable preferences: greeting messages, goodbye messages, launch animation
-  - Tab/arrow-key page navigation with vim keybindings throughout
-  - Single atomic settings save replaces multiple individual writes
+Replace the single-page credentials settings screen with a three-page TUI accessed via altergo
+  --settings:
+
+- Appearance: theme picker with live color preview, gradient swatches, and launch animation toggle -
+  Behavior: toggles for greeting messages, goodbye messages, and update checker - Credentials:
+  shared CLI credentials (upgraded visual style)
+
+Navigation via arrow keys, h/l, Tab between pages. Themes auto-select on cursor movement with
+  instant color recoloring. All settings saved in a single atomic write to .altergo.json.
 
 
 ## v0.16.1 (2026-04-10)

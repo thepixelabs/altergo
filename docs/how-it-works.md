@@ -1,6 +1,6 @@
 # How altergo works
 
-**Applies to:** altergo v0.5.0  
+**Applies to:** altergo v0.16.0+  
 **Audience:** Engineers who want to understand the design in depth — not just what altergo does, but why it does it that way.
 
 The [README](../README.md) covers installation and basic usage. This document covers the mechanics, the tradeoffs, and the reasoning behind every design decision.

@@ -1,6 +1,20 @@
 # CHANGELOG
 
 
+## v0.16.0 (2026-04-10)
+
+### Features
+
+- Full-text conversation search with project filtering and quoted phrases
+  ([`c4b4a95`](https://github.com/thepixelabs/altergo/commit/c4b4a95e84473a6b560bbaf6833f65e243a7c62a))
+
+- Add `altergo --search` for searching across all session conversation history - Three-phase TUI:
+  project filter → search input → scrollable results - Case-insensitive matching, "quoted phrases"
+  for exact matches, AND logic - Results sorted newest-to-oldest with snippet previews and role
+  indicators - Animated progress bar with braille spinner during scanning - Add `/` search hint to
+  help text navigation section
+
+
 ## v0.15.1 (2026-04-10)
 
 ### Bug Fixes

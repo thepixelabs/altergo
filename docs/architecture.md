@@ -1,6 +1,6 @@
 # Architecture reference
 
-**Applies to:** altergo v0.5.0  
+**Applies to:** altergo v0.16.0+  
 **Audience:** Engineers maintaining altergo, debugging symlink issues, or auditing what altergo touches on disk.
 
 For a prose explanation of why the architecture is designed this way, see [how-it-works.md](how-it-works.md).
@@ -11,13 +11,18 @@ For a prose explanation of why the architecture is designed this way, see [how-i
 
 ```
 altergo/
-    altergo.py              ← Entire implementation (single file, ~1068 lines)
-    pyproject.toml          ← Package metadata, entry point, ruff config
+    altergo.py              ← Main implementation (single file, ~3700 lines)
+    altergo_greetings.py    ← Greeting messages, time-of-day copy, theme spinners
+    pyproject.toml          ← Package metadata, entry point, dependencies
     tests/
-        test_smoke.py       ← Import, version, --version, --help, account, migration, and symlink tests
+        test_smoke.py       ← Core functionality tests
+        test_integration.py ← Integration tests for setup, teardown, launch
+        test_new_features.py ← Tests for newer features
+        conftest.py         ← Shared test fixtures
     docs/
         how-it-works.md     ← Technical deep dive
         architecture.md     ← This file
+        settings.md         ← Settings TUI documentation
         migration.md        ← Migration guides
         index.html          ← Project website (deployed via GitHub Pages)
         ...
@@ -30,7 +35,7 @@ altergo/
             homebrew-bump.yml ← Homebrew formula bump on release
 ```
 
-altergo has zero runtime dependencies. Everything it uses — `curses`, `json`, `os`, `pwd`, `re`, `shutil`, `sys`, `pathlib`, `datetime` — is Python standard library.
+altergo depends on `rich`, `pyfiglet`, and `rich-pyfiglet` for the banner and TUI chrome. Everything else — `curses`, `json`, `os`, `pwd`, `re`, `shutil`, `sys`, `pathlib`, `datetime`, `threading` — is Python standard library.
 
 ---
 
@@ -38,26 +43,27 @@ altergo has zero runtime dependencies. Everything it uses — `curses`, `json`, 
 
 The entire program is one file. Here is a map of its logical sections:
 
-| Line range | Section | Purpose |
+| Section | Key functions | Purpose |
 |---|---|---|
-| 1–3 | Module docstring | One-line description |
-| 4 | `__version__` | Semver string, source of truth for version |
-| 6–14 | Imports | Standard library only |
-| 19–23 | `_c()` | ANSI color helper — no-ops when stdout is not a TTY |
-| 26–30 | `_link()` | OSC 8 terminal hyperlink — no-ops when stdout is not a TTY |
-| 33–93 | `show_help()` | Colored, hyperlinked help output |
-| 98–127 | Config constants | `MAIN_HOME`, `MAIN_CLAUDE`, `ACCOUNTS_DIR`, `_RESERVED_NAMES`, `SETTINGS_FILE` |
-| 132–144 | Account helpers | `resolve_account()`, `list_accounts()`, `validate_account_name()` |
-| 161–187 | Migration | `detect_legacy()`, `migrate_legacy()` |
-| 192–310 | Symlink catalogs | `SYMLINK_DIRS`, `SYMLINK_FILES`, `CATALOG` |
-| 314–391 | Settings helpers | `load_settings()`, `save_settings()`, `is_enabled()`, `_ensure_nested_parent()`, `_apply_entry()` |
-| 397–505 | Setup / Teardown | `do_setup()`, `do_teardown()` |
-| 511–587 | Session discovery | `get_sessions()`, `get_session_preview()`, `format_project_name()` |
-| 590–706 | Interactive picker | `interactive_picker()`, `_draw_picker()` |
-| 709–852 | Settings TUI | `interactive_settings()`, `_draw_settings()` |
-| 855–947 | Launch | `_build_alt_env()`, `_find_claude()`, `launch_claude()`, `launch_shell()`, `launch_command()` |
-| 950–965 | Disambiguation | `_KNOWN_COMMANDS`, `_looks_like_account()` |
-| 968–1067 | `main()` | Argument dispatch — routes to the appropriate function |
+| Themes | `THEMES`, `C()`, `_gradient_color()` | 6-theme color system with gradient support |
+| Banner | `show_banner()` | Rich-rendered figlet logo, version, greeting |
+| Help | `show_help()` | Colored, hyperlinked help output |
+| Config | `MAIN_HOME`, `ACCOUNTS_DIR`, `SETTINGS_FILE` | Path constants |
+| Account helpers | `resolve_account()`, `list_accounts()` | Account directory resolution |
+| Migration | `detect_legacy()`, `migrate_legacy()` | Auto-migration from v0.4.x layout |
+| Providers | `PROVIDERS`, `CATALOG` | Multi-provider support, credential sharing catalog |
+| Settings helpers | `load_settings()`, `save_settings()`, `_load_bool_setting()` | Settings persistence |
+| Preferences | `_load_bool_setting()` | Boolean settings: greeting, goodbye, animation |
+| Update checker | `load_update_check_enabled()`, PyPI cache | Background version check |
+| Setup / Teardown | `do_setup()`, `do_teardown()` | Account creation and removal |
+| Session discovery | `get_sessions()`, `get_session_preview()` | JSONL session scanning |
+| Session picker | `_draw_picker()` | Curses session resume TUI |
+| Search | `_draw_search()` | Full-text conversation search |
+| Settings TUI | `_draw_settings()`, `interactive_settings()` | Multi-page settings (Appearance, Behavior, Credentials) |
+| Launcher | `_draw_launcher()`, `interactive_launcher()` | Provider + account picker |
+| Onboarding | `_first_run_onboarding()` | First-run account creation flow |
+| Launch | `launch_claude()`, `launch_shell()`, `launch_command()` | Provider binary execution |
+| `main()` | `main()` | Argument dispatch |
 
 ---
 
@@ -133,6 +139,26 @@ All altergo accounts live under `~/.altergo/accounts/`. The `default` account is
 ### Settings file placement
 
 `~/.altergo/.altergo.json` sits at the `~/.altergo/` level, above `accounts/`. It is global — one file shared across all accounts. This is intentional: credential-sharing preferences (AWS, Docker, etc.) apply to the relationship between the main home and the alt account, not to a specific account. See [how-it-works.md](how-it-works.md) for the rationale.
+
+As of v0.16, the settings file stores theme, preference toggles, and credential overrides:
+
+```json
+{
+  "version": 1,
+  "theme": "ocean",
+  "update_check": true,
+  "show_greeting": true,
+  "show_goodbye": true,
+  "launch_animation": true,
+  "active_account": "work",
+  "shared": {
+    "ssh": true,
+    "gitconfig": false
+  }
+}
+```
+
+All boolean keys default to `true` when absent. The `shared` dict uses a delta pattern — only non-default values are stored. See [settings.md](settings.md) for the full settings TUI documentation.
 
 ---
 

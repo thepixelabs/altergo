@@ -31,15 +31,143 @@ def _link(url, text):
     return f"\033]8;;{url}\033\\{text}\033]8;;\033\\"
 
 
-# Color tokens — standardized palette used across help, picker, and launcher
-_C_COMMAND = "38;5;39"       # command text (blue)
-_C_ARG     = "38;5;87"       # <placeholder> args (electric cyan)
-_C_HEADER  = "1;38;5;39"     # section headers (bold blue)
-_C_VERSION = "2;38;5;244"    # version / dim text
-_C_DIM     = "2"             # secondary descriptions
-_C_BRAND   = "38;5;105"      # pixelabs wordmark (indigo)
-_C_SUCCESS = "38;5;76"       # checkmarks / success
-_C_WARN    = "38;5;220"      # warnings
+# --- Themes ---
+#
+# A theme is a named palette that maps *logical roles* (command, arg, header,
+# success, warn, brand, banner gradient, curses pairs) to concrete colors.
+# All user-facing colors route through ``C(role)`` (ANSI), ``theme_banner()``
+# (rich gradient) and ``_theme_curses()`` (curses pairs) so switching themes
+# at runtime updates every surface uniformly.
+#
+# New themes just need an entry in THEMES. Readability is the hard rule —
+# even the "crazy" rainbow theme must remain legible on dark *and* light
+# terminals, which is why dim/version stay neutral and accents avoid pure
+# yellow-on-white.
+
+THEMES = {
+    "ocean": {
+        "display_name": "Ocean",
+        "description":  "Calm cyan & indigo — the original altergo palette",
+        "ansi": {
+            "command": "38;5;39",     # blue
+            "arg":     "38;5;87",     # electric cyan
+            "header":  "1;38;5;39",   # bold blue
+            "brand":   "38;5;105",    # indigo
+            "success": "38;5;76",     # green
+            "warn":    "38;5;220",    # amber
+        },
+        "curses": {"accent": 51, "project": 105, "amber": 220},
+        "banner": ["#00d7ff", "#005fd7"],
+    },
+    "forest": {
+        "display_name": "Forest",
+        "description":  "Calming moss & sage — grounded green tones",
+        "ansi": {
+            "command": "38;5;78",     # mint
+            "arg":     "38;5;121",    # sage
+            "header":  "1;38;5;78",
+            "brand":   "38;5;108",    # muted jade
+            "success": "38;5;84",
+            "warn":    "38;5;222",
+        },
+        "curses": {"accent": 78, "project": 108, "amber": 222},
+        "banner": ["#5fff87", "#005f5f"],
+    },
+    "lavender": {
+        "display_name": "Lavender",
+        "description":  "Soft violet & periwinkle — gentle on the eyes",
+        "ansi": {
+            "command": "38;5;141",    # soft purple
+            "arg":     "38;5;183",    # pale lavender
+            "header":  "1;38;5;141",
+            "brand":   "38;5;105",
+            "success": "38;5;120",
+            "warn":    "38;5;222",
+        },
+        "curses": {"accent": 141, "project": 105, "amber": 222},
+        "banner": ["#d7afff", "#5f5fff"],
+    },
+    "sunset": {
+        "display_name": "Sunset",
+        "description":  "Warm rose & ember — dusk palette",
+        "ansi": {
+            "command": "38;5;209",    # coral
+            "arg":     "38;5;215",    # peach
+            "header":  "1;38;5;209",
+            "brand":   "38;5;205",    # rose
+            "success": "38;5;114",
+            "warn":    "38;5;220",
+        },
+        "curses": {"accent": 209, "project": 205, "amber": 220},
+        "banner": ["#ffaf5f", "#ff5f87"],
+    },
+    "mono": {
+        "display_name": "Mono",
+        "description":  "Grayscale — minimal, distraction-free",
+        "ansi": {
+            "command": "38;5;253",
+            "arg":     "38;5;255",
+            "header":  "1;38;5;255",
+            "brand":   "38;5;245",
+            "success": "38;5;250",
+            "warn":    "38;5;249",
+        },
+        "curses": {"accent": 253, "project": 245, "amber": 249},
+        "banner": ["#ffffff", "#808080"],
+    },
+    "rainbow": {
+        "display_name": "Rainbow",
+        "description":  "Every color, still readable — enables chaos mode",
+        "ansi": {
+            "command": "38;5;201",    # hot magenta
+            "arg":     "38;5;51",     # cyan
+            "header":  "1;38;5;226",  # yellow (bold, dark-term safe)
+            "brand":   "38;5;165",    # violet
+            "success": "38;5;46",     # lime
+            "warn":    "38;5;214",    # orange
+        },
+        "curses": {"accent": 201, "project": 51, "amber": 214},
+        # Multi-stop gradient — RichFiglet accepts N colors and interpolates.
+        "banner": ["#ff005f", "#ff8700", "#ffff00", "#00ff5f", "#00d7ff", "#af5fff"],
+    },
+}
+
+# Roles whose styling is intentionally theme-invariant — dim text should
+# always read as dim, and the version blurb is purposely low-contrast.
+_STATIC_ANSI = {
+    "dim":     "2",
+    "version": "2;38;5;244",
+}
+
+_DEFAULT_THEME = "ocean"
+
+# Mutable current theme id — populated from SETTINGS_FILE at startup and
+# mutated in-place when the user cycles themes in the launcher.
+_CURRENT_THEME = _DEFAULT_THEME
+
+
+def get_current_theme() -> str:
+    """Return the id of the currently active theme."""
+    return _CURRENT_THEME if _CURRENT_THEME in THEMES else _DEFAULT_THEME
+
+
+def set_current_theme(name: str) -> None:
+    """Update the in-process active theme (no disk write)."""
+    global _CURRENT_THEME
+    if name in THEMES:
+        _CURRENT_THEME = name
+
+
+def C(role: str) -> str:
+    """Return the ANSI code for a logical role under the active theme.
+
+    Falls back to the ocean theme for unknown themes and to an empty
+    string for unknown roles so callers never crash on a typo.
+    """
+    if role in _STATIC_ANSI:
+        return _STATIC_ANSI[role]
+    theme = THEMES.get(get_current_theme(), THEMES[_DEFAULT_THEME])
+    return theme["ansi"].get(role, "")
 
 
 def show_banner(account: str | None = None):
@@ -60,7 +188,9 @@ def show_banner(account: str | None = None):
         from rich.text import Text
         from rich.align import Align
         console = Console()
-        figlet = RichFiglet("altergo", font="smslant", colors=["#00d7ff", "#005fd7"], horizontal=True)
+        theme = THEMES.get(get_current_theme(), THEMES[_DEFAULT_THEME])
+        grad = theme["banner"]
+        figlet = RichFiglet("altergo", font="smslant", colors=grad, horizontal=True)
         if account:
             # Measure the logo so the account line sits centered directly
             # beneath it — no blank gap, flush against the figlet.
@@ -70,10 +200,12 @@ def show_banner(account: str | None = None):
             logo_right = max((len(l.rstrip()) for l in logo_lines), default=32)
             logo_width = logo_right - logo_left
 
-            # ASCII stars: '*', '.' — no unicode. All blue to match the logo.
-            DIM   = "#005fd7"  # deep blue — matches logo bottom
-            MID   = "#00afff"  # mid blue
-            BRIGHT = "bold #00d7ff"  # electric cyan — matches logo top
+            # Star palette is pulled from the banner gradient so the account
+            # line always matches the logo, whatever the theme.
+            # DIM=darkest stop, BRIGHT=lightest stop, MID=middle interpolation.
+            DIM    = grad[-1]
+            BRIGHT = f"bold {grad[0]}"
+            MID    = grad[len(grad) // 2] if len(grad) > 2 else grad[0]
             name_line = Text()
             name_line.append(".",     style=DIM)
             name_line.append("  ",    style=MID)
@@ -106,21 +238,21 @@ def show_help():
     """Print --help output with color and OSC 8 hyperlinks when on a TTY."""
 
     def h(t):
-        return _c(_C_HEADER, t)   # bold blue — section headers
+        return _c(C("header"), t)   # section headers
 
     def kw(t):
-        return _c(_C_COMMAND, t)  # blue — commands / keys
+        return _c(C("command"), t)  # commands / keys
 
     def arg(t):
-        return _c(_C_ARG, t)      # electric cyan — <placeholders>
+        return _c(C("arg"), t)      # <placeholders>
 
     def dim(t):
-        return _c(_C_DIM, t)      # dim — secondary text
+        return _c(C("dim"), t)      # dim — secondary text
 
     def sep():
-        return _c(_C_DIM, "  " + "─" * 58)
+        return _c(C("dim"), "  " + "─" * 58)
 
-    pixelabs = _link("https://pixelabs.net", _c(_C_BRAND, "pixelabs.net"))
+    pixelabs = _link("https://pixelabs.net", _c(C("brand"), "pixelabs.net"))
     claude_url = _link("https://claude.ai/code", "Claude Code")
 
     show_banner()
@@ -152,6 +284,12 @@ def show_help():
         f"  {kw('altergo --list')}                        {dim('List recent sessions')}",
         "",
         sep(),
+        h("  Customization"),
+        f"  {kw('altergo --theme')}                       {dim('List themes and show the active one')}",
+        f"  {kw('altergo --theme')} {arg('<name>')}                {dim('Set color theme: ' + ', '.join(THEMES.keys()))}",
+        f"  {dim('  (or press')} {kw('t')} {dim('in the launcher to cycle themes live)')}",
+        "",
+        sep(),
         h("  Advanced"),
         f"  {kw('altergo')} {arg('<name>')} {kw('shell')}                {dim('Shell inside account HOME')}",
         f"  {kw('altergo')} {arg('<name>')} {kw('--')} {arg('<cmd> [args]')}    {dim('Run command in account context')}",
@@ -175,7 +313,8 @@ def show_help():
         h("  Navigation  (launcher + session picker)"),
         f"  {kw('↑↓/jk')}  {dim('Move')}          {kw('←→/hl')}  {dim('Account (launcher)')}",
         f"  {kw('Enter')}   {dim('Launch')}         {kw('s')}       {dim('Shell mode (launcher)')}",
-        f"  {kw('d')}       {dim('Set active (launcher)')}  {kw('p/Tab')}  {dim('Preview (session picker)')}",
+        f"  {kw('d')}       {dim('Set active (launcher)')}  {kw('t')}       {dim('Cycle theme (launcher)')}",
+        f"  {kw('p/Tab')}   {dim('Preview (session picker)')}",
         f"  {kw('PgUp/PgDn')}  {dim('Page scroll')}  {kw('g/G')}   {dim('Top/bottom (session picker)')}",
         f"  {kw('q/Esc')}   {dim('Quit')}",
         "",
@@ -521,6 +660,41 @@ def save_settings(overrides):
     os.replace(str(tmp), str(SETTINGS_FILE))
 
 
+def load_persisted_theme() -> str:
+    """Read the persisted theme name from SETTINGS_FILE.
+
+    Returns the default theme id if the file is missing, malformed, or names
+    a theme that no longer exists in THEMES (e.g. after a downgrade).
+    """
+    if not SETTINGS_FILE.exists():
+        return _DEFAULT_THEME
+    try:
+        data = json.loads(SETTINGS_FILE.read_text())
+        name = data.get("theme")
+        if isinstance(name, str) and name in THEMES:
+            return name
+    except Exception:
+        pass
+    return _DEFAULT_THEME
+
+
+def save_persisted_theme(name: str) -> None:
+    """Persist the chosen theme name to SETTINGS_FILE without clobbering siblings."""
+    if name not in THEMES:
+        return
+    SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    data = {}
+    if SETTINGS_FILE.exists():
+        try:
+            data = json.loads(SETTINGS_FILE.read_text())
+        except Exception:
+            data = {}
+    data["theme"] = name
+    tmp = SETTINGS_FILE.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(data, indent=2))
+    os.replace(str(tmp), str(SETTINGS_FILE))
+
+
 def get_active_account() -> str | None:
     """Return the persisted active account name, or None if not set / no longer valid."""
     if not SETTINGS_FILE.exists():
@@ -697,9 +871,10 @@ def do_setup(account: str = "default", providers: list[str] | None = None):
     if providers is None:
         providers = ["claude"]
     account_home, account_claude = resolve_account(account)
+    show_banner(account)
     header = f"altergo v{__version__} · " + _link("https://pixelabs.net", "pixelabs.net")
-    print(_c(2, header))
-    print(_c(1, _c(36, f"=== Altergo — Setup ({account}) ===")))
+    print(_c(C("dim"), header))
+    print(_c(C("header"), f"=== Altergo — Setup ({account}) ==="))
     print()
 
     # Load existing metadata for created timestamp preservation
@@ -1125,20 +1300,32 @@ def _picker_attrs():
 
     attrs = {}
     if has_color:
-        # Brand: cyan + indigo. Prefer 256-color brights when available.
-        cyan = 51 if curses.COLORS >= 256 else curses.COLOR_CYAN
-        indigo = 105 if curses.COLORS >= 256 else curses.COLOR_BLUE
-        gray = 244 if curses.COLORS >= 256 else curses.COLOR_WHITE
-        white = 231 if curses.COLORS >= 256 else curses.COLOR_WHITE
+        # Palette comes from the active theme. Each theme pre-declares the
+        # three accent ids it wants for 256-color terminals; we degrade to
+        # the nearest ANSI-16 color on poor terminals so the picker stays
+        # usable on tmux/ssh sessions with low color depth.
+        theme = THEMES.get(get_current_theme(), THEMES[_DEFAULT_THEME])
+        tc = theme["curses"]
+        if curses.COLORS >= 256:
+            accent = tc["accent"]
+            project = tc["project"]
+            amber = tc["amber"]
+            gray = 244
+            white = 231
+        else:
+            accent = curses.COLOR_CYAN
+            project = curses.COLOR_BLUE
+            amber = curses.COLOR_YELLOW
+            gray = curses.COLOR_WHITE
+            white = curses.COLOR_WHITE
         try:
-            curses.init_pair(1, curses.COLOR_BLACK, cyan)  # selected row
-            curses.init_pair(2, cyan, -1)  # header / accent / shine mid
-            curses.init_pair(3, indigo, -1)  # project col / brand
+            curses.init_pair(1, curses.COLOR_BLACK, accent)  # selected row
+            curses.init_pair(2, accent, -1)  # header / accent / shine mid
+            curses.init_pair(3, project, -1)  # project col / brand
             curses.init_pair(4, gray, -1)  # time col
-            curses.init_pair(5, cyan, -1)  # preview pane border
+            curses.init_pair(5, accent, -1)  # preview pane border
             curses.init_pair(6, white, -1)  # shine peak
-            amber = 220 if curses.COLORS >= 256 else curses.COLOR_YELLOW
-            curses.init_pair(7, amber, -1)  # size warning (>10MB)
+            curses.init_pair(7, amber, -1)  # size warning / theme hint
         except curses.error:
             has_color = False
 
@@ -1505,13 +1692,14 @@ def _draw_preview(stdscr, attrs, session, preview):
 
 def interactive_settings():
     """Open the settings TUI, save on confirm, and apply changes immediately."""
+    show_banner()
     overrides = curses.wrapper(_draw_settings, CATALOG, load_settings())
     if overrides is None:
         print("Cancelled.")
         return
     save_settings(overrides)
     print()
-    print(_c(1, _c(36, "=== Applying settings ===")))
+    print(_c(C("header"), "=== Applying settings ==="))
     print()
     for acct_name in list_accounts() or ["default"]:
         acct_home, _ = resolve_account(acct_name)
@@ -1519,7 +1707,7 @@ def interactive_settings():
             for entry in CATALOG:
                 _apply_entry(entry, overrides, acct_home)
     print()
-    print(_c(32, "Settings saved and applied."))
+    print(_c(C("success"), "Settings saved and applied."))
 
 
 def _draw_settings(stdscr, catalog, overrides):
@@ -1813,7 +2001,7 @@ def launch_command(account: str = "default", cmd_args=None):
 
 
 _KNOWN_COMMANDS = frozenset(
-    ["shell", "--resume", "--list", "--setup", "--teardown", "--settings", "--version", "--use", "--launch", "-h", "--help", "--"]
+    ["shell", "--resume", "--list", "--setup", "--teardown", "--settings", "--version", "--use", "--launch", "--theme", "-h", "--help", "--"]
 )
 
 
@@ -1940,7 +2128,7 @@ def _print_launch_message():
         return
     import random
     msg = random.choice(_GOODBYE)
-    print(f"\n  {_c(_C_COMMAND, 'altergo')}  {_c(_C_DIM, msg)}\n", file=sys.stderr)
+    print(f"\n  {_c(C('command'), 'altergo')}  {_c(C('dim'), msg)}\n", file=sys.stderr)
 
 
 # --- Interactive provider+account launcher ---
@@ -2078,7 +2266,8 @@ def _draw_launcher(stdscr, menu):
             _safe_addnstr(stdscr, 0, max(0, max_x - len(active_hint) - 1), active_hint, len(active_hint), attrs["accent"])
 
         # Nav footer
-        nav = " ↑↓/jk provider  ·  ←→/hl account  ·  Enter launch  ·  s shell  ·  d set active  ·  q quit"
+        theme_hint = f" · theme: {THEMES[get_current_theme()]['display_name']} (t)"
+        nav = " ↑↓/jk provider · ←→/hl account · Enter launch · s shell · d set active · q quit" + theme_hint
         _draw_animated_nav(stdscr, max_y - 1, nav, max_x - 1, phase, attrs)
 
         stdscr.refresh()
@@ -2117,6 +2306,21 @@ def _draw_launcher(stdscr, menu):
                 _safe_addnstr(stdscr, max_y - 1, 0, confirm[:max_x - 1].ljust(max_x - 1), max_x - 1, attrs["accent"])
                 stdscr.refresh()
                 curses.napms(800)
+        elif key == ord("t"):
+            # Cycle to the next theme, re-initialize curses color pairs so
+            # the current draw picks up the new palette, and persist the
+            # choice immediately — feels more responsive than committing
+            # on exit, and a crashed session still remembers the pick.
+            theme_ids = list(THEMES.keys())
+            cur = get_current_theme()
+            nxt = theme_ids[(theme_ids.index(cur) + 1) % len(theme_ids)] if cur in theme_ids else theme_ids[0]
+            set_current_theme(nxt)
+            save_persisted_theme(nxt)
+            attrs = _picker_attrs()
+            confirm = f" ✓ theme: {THEMES[nxt]['display_name']} — {THEMES[nxt]['description']} "
+            _safe_addnstr(stdscr, max_y - 1, 0, confirm[:max_x - 1].ljust(max_x - 1), max_x - 1, attrs["accent"])
+            stdscr.refresh()
+            curses.napms(700)
         elif key in (ord("q"), 27):
             return None, False
         elif key == curses.KEY_RESIZE:
@@ -2143,6 +2347,10 @@ def interactive_launcher():
 
 
 def main():
+    # Load the user's persisted theme before anything prints so the banner,
+    # help output, and curses screens all share one palette from the first
+    # character onward.
+    set_current_theme(load_persisted_theme())
     # Auto-migrate legacy layout before any other processing
     migrate_legacy()
     # Repair any accounts that still have real dirs instead of symlinks
@@ -2229,19 +2437,56 @@ def main():
         interactive_launcher()
         sys.exit(0)
 
+    if args and args[0] == "--theme":
+        # `altergo --theme`         → print current + catalog
+        # `altergo --theme <name>`  → set persistently
+        if len(args) == 1:
+            show_banner()
+            cur = get_current_theme()
+            print(f"  current: {_c(C('command'), THEMES[cur]['display_name'])}  ({cur})")
+            print()
+            print(_c(C("header"), "  Available themes"))
+            for tid, t in THEMES.items():
+                marker = _c(C("success"), "●") if tid == cur else " "
+                name = _c(C("command"), t["display_name"].ljust(10))
+                print(f"  {marker} {name}  {_c(C('dim'), t['description'])}")
+            print()
+            print(_c(C("dim"), "  Set with: altergo --theme <name>   ·   or press 't' in the launcher"))
+            sys.exit(0)
+        name = args[1]
+        if name not in THEMES:
+            print(
+                f"altergo: unknown theme '{name}'. Known: {', '.join(THEMES.keys())}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        set_current_theme(name)
+        save_persisted_theme(name)
+        show_banner()
+        print(
+            f"  theme set to {_c(C('command'), THEMES[name]['display_name'])}  "
+            f"{_c(C('dim'), '— ' + THEMES[name]['description'])}"
+        )
+        sys.exit(0)
+
     if args and args[0] == "--list":
         sessions = get_sessions()
+        show_banner()
         if not sessions:
-            print("No sessions found.")
+            print("  No sessions found.")
             sys.exit(0)
         header_row = f"{'Project':<20} {'Modified':<18} {'Size':>6}  Session ID"
-        print(_c(2, header_row))
-        print(_c(2, "-" * 80))
+        print(_c(C("dim"), header_row))
+        print(_c(C("dim"), "-" * 80))
         for s in sessions[:30]:
             project = format_project_name(s["project"])
             modified = s["modified"].strftime("%Y-%m-%d %H:%M")
             size = f"{s['size_mb']:.1f}MB"
-            print(f"{_c(36, f'{project:<20}')} {_c(2, f'{modified:<18}')} {_c(33, f'{size:>6}')}  {s['id']}")
+            print(
+                f"{_c(C('command'), f'{project:<20}')} "
+                f"{_c(C('dim'), f'{modified:<18}')} "
+                f"{_c(C('warn'), f'{size:>6}')}  {s['id']}"
+            )
         sys.exit(0)
 
     if args and args[0] == "--use":
@@ -2257,8 +2502,8 @@ def main():
             )
             sys.exit(1)
         set_active_account(use_name)
-        print(f"altergo: active account set to {_c(_C_COMMAND, use_name)}")
-        print(_c(_C_DIM, f"  Bare 'altergo' will now launch '{use_name}' by default."))
+        print(f"altergo: active account set to {_c(C('command'), use_name)}")
+        print(_c(C('dim'), f"  Bare 'altergo' will now launch '{use_name}' by default."))
         sys.exit(0)
 
     # --resume with no ID → open interactive picker
@@ -2310,8 +2555,8 @@ def main():
         _active = get_active_account()
         if _active:
             account = _active
-            if sys.stderr.isatty():
-                print(f"  {_c(_C_DIM, 'account:')} {_c(_C_COMMAND, account)}", file=sys.stderr)
+            # The banner printed by launch_claude/launch_shell already shows
+            # the account name beneath the logo, so no extra prefix line.
         elif len(_all_accounts) == 1:
             account = _all_accounts[0]
         elif len(_all_accounts) > 1 and sys.stdout.isatty():

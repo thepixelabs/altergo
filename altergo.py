@@ -179,6 +179,24 @@ def _gradient_color(stops: list, t: float) -> str:
     return f"#{r:02x}{g:02x}{b:02x}"
 
 
+def _gradient_ansi(text: str, stops: list, *, bold: bool = False) -> str:
+    """Render *text* with a per-character True Color ANSI gradient.
+
+    Uses 24-bit escape sequences (``\\033[38;2;R;G;Bm``).  Falls back to
+    plain text on non-TTY so piped output stays readable.
+    """
+    if not sys.stdout.isatty() or not stops:
+        return text
+    n = len(text)
+    attrs = "1;" if bold else ""
+    parts = []
+    for i, ch in enumerate(text):
+        col = _gradient_color(stops, i / max(n - 1, 1))
+        r, g, b = int(col[1:3], 16), int(col[3:5], 16), int(col[5:7], 16)
+        parts.append(f"\033[{attrs}38;2;{r};{g};{b}m{ch}")
+    return "".join(parts) + "\033[0m"
+
+
 def C(role: str) -> str:
     """Return the ANSI code for a logical role under the active theme.
 
@@ -415,93 +433,72 @@ def show_banner(
 
 def show_help():
     """Print --help output with color and OSC 8 hyperlinks when on a TTY."""
+    grad = THEMES.get(get_current_theme(), THEMES[_DEFAULT_THEME])["banner"]
 
     def h(t):
-        return _c(C("header"), t)   # section headers
+        return "  " + _gradient_ansi(t, grad, bold=True)
 
     def kw(t):
-        return _c(C("command"), t)  # commands / keys
+        return _c(C("command"), t)
 
     def arg(t):
-        return _c(C("arg"), t)      # <placeholders>
+        return _c(C("arg"), t)
 
     def dim(t):
-        return _c(C("dim"), t)      # dim — secondary text
+        return _c(C("dim"), t)
 
     def sep():
-        return _c(C("dim"), "  " + "─" * 58)
+        return _c(C("dim"), "  " + "─" * 52)
 
     pixelabs = _link("https://pixelabs.net", _c(C("brand"), "pixelabs.net"))
-    claude_url = _link("https://claude.ai/code", "Claude Code")
 
     show_banner()
     print(f"  {dim('Because one personality was not causing enough bugs.')}")
-    print(f"  A session manager for {claude_url}.  A {pixelabs} project.")
+    print(f"  A {pixelabs} project.")
 
     lines = [
         "",
         sep(),
-        h("  Quick Start"),
-        f"  {kw('altergo')}                                {dim('Open launcher or launch active account')}",
-        f"  {kw('altergo')} {arg('<name>')}                        {dim('Launch a specific account directly')}",
-        f"  {kw('altergo --setup')}                       {dim('Create your first account')}",
-        f"  {kw('altergo --use')} {arg('<name>')}                  {dim('Set which account bare altergo launches')}",
+        h("Launch"),
+        f"  {kw('altergo')}                             {dim('Open launcher or start active account')}",
+        f"  {kw('altergo')} {arg('<name>')}                     {dim('Launch a specific account')}",
+        f"  {kw('altergo')} {arg('<name>')} {arg('<provider>')}           {dim('Launch with a specific provider')}",
         "",
         sep(),
-        h("  Account Management"),
-        f"  {kw('altergo --setup --name')} {arg('<name>')}         {dim('Create or reconfigure an account')}",
-        f"  {kw('altergo --setup --provider')} {arg('<p>[,<p>]')}  {dim('Specify providers: claude, gemini, codex, copilot')}",
-        f"  {kw('altergo --use')} {arg('<name>')}                  {dim('Set active account for bare altergo')}",
-        f"  {kw('altergo --teardown --name')} {arg('<name>')}      {dim('Remove symlinks for an account')}",
-        f"  {kw('altergo --settings')}                    {dim('Configure shared credentials (TUI)')}",
-        f"  {kw('altergo --launch')}                      {dim('Open provider/account launcher (TUI)')}",
+        h("Accounts"),
+        f"  {kw('altergo --setup')}                    {dim('Create or reconfigure an account')}",
+        f"  {kw('altergo --setup --name')} {arg('<name>')}      {dim('Name the account')}",
+        f"  {kw('altergo --setup --provider')} {arg('<p,…>')}   {dim('claude, gemini, codex, copilot')}",
+        f"  {kw('altergo --use')} {arg('<name>')}               {dim('Set default account')}",
+        f"  {kw('altergo --teardown')} {arg('[--name <n>]')}    {dim('Remove account symlinks')}",
+        f"  {kw('altergo --settings')}                 {dim('Manage shared credentials (TUI)')}",
         "",
         sep(),
-        h("  Session Management"),
-        f"  {kw('altergo --resume')}                      {dim('Pick a session interactively')}",
-        f"  {kw('altergo --resume')} {arg('<id>')}                {dim('Resume a specific session by ID')}",
-        f"  {kw('altergo --search')}                      {dim('Search all conversation history')}",
-        f"  {kw('altergo --list')}                        {dim('List recent sessions')}",
+        h("Sessions"),
+        f"  {kw('altergo --resume')}                   {dim('Pick session interactively')}",
+        f"  {kw('altergo --resume')} {arg('<id>')}             {dim('Resume by session ID')}",
+        f"  {kw('altergo --search')}                   {dim('Search conversation history')}",
+        f"  {kw('altergo --list')}                     {dim('List recent sessions')}",
         "",
         sep(),
-        h("  Customization"),
-        f"  {kw('altergo --theme')}                       {dim('List themes and show the active one')}",
-        f"  {kw('altergo --theme')} {arg('<name>')}                {dim('Set color theme: ' + ', '.join(THEMES.keys()))}",
-        f"  {dim('  (or press')} {kw('t')} {dim('in the launcher to cycle themes live)')}",
-        f"  {kw('altergo --update-check')}                {dim('Show update-check state and last known version')}",
-        f"  {kw('altergo --update-check')} {arg('on|off')}         {dim('Enable or disable the PyPI version checker')}",
+        h("Customization"),
+        f"  {kw('altergo --theme')}                    {dim('Show active theme')}",
+        f"  {kw('altergo --theme')} {arg('<name>')}            {dim(', '.join(THEMES.keys()))}",
+        f"  {kw('altergo --update-check')} {arg('on|off')}     {dim('Enable or disable update checker')}",
         "",
         sep(),
-        h("  Advanced"),
-        f"  {kw('altergo')} {arg('<name>')} {kw('shell')}                {dim('Shell inside account HOME')}",
-        f"  {kw('altergo')} {arg('<name>')} {kw('--')} {arg('<cmd> [args]')}    {dim('Run command in account context')}",
-        f"  {kw('altergo --teardown')}                    {dim('Remove symlinks (active account)')}",
-        f"  {kw('altergo --version')}                     {dim('Show version')}",
-        f"  {kw('altergo -h, --help')}                    {dim('Show this help')}",
+        h("Advanced"),
+        f"  {kw('altergo')} {arg('<name>')} {kw('shell')}             {dim('Shell inside account HOME')}",
+        f"  {kw('altergo')} {arg('<name>')} {kw('--')} {arg('<cmd>')}         {dim('Run command in account context')}",
         "",
         sep(),
-        h("  Examples"),
-        f"  {kw('altergo')}                                {dim('Open launcher — pick account interactively')}",
-        f"  {kw('altergo work')}                          {dim('Direct launch, work account')}",
-        f"  {kw('altergo --use work')}                    {dim('Set work as active for bare altergo')}",
-        f"  {kw('altergo --setup --name personal')}       {dim('Create personal account')}",
-        f"  {kw('altergo --setup --provider claude,codex')}  {dim('Setup with multiple providers')}",
-        f"  {kw('altergo work -- gh auth login')}         {dim('Authenticate gh in work context')}",
-        f"  {kw('altergo work shell')}                    {dim('Enter work-account shell')}",
-        f"  {kw('altergo --resume')}                      {dim('Open session picker')}",
-        f"  {kw('altergo --dangerously-skip-permissions')}  {dim('Pass any claude flag through')}",
+        h("Navigation"),
+        f"  {kw('↑↓')} {kw('jk')}    {dim('move')}    {kw('←→')} {kw('hl')}  {dim('switch account')}    {kw('Enter')}  {dim('launch')}",
+        f"  {kw('t')}       {dim('cycle theme')}   {kw('s')}      {dim('shell mode')}       {kw('d')}      {dim('set default')}",
+        f"  {kw('p')} {kw('Tab')}    {dim('preview')}   {kw('/')}      {dim('search')}           {kw('g')} {kw('G')}   {dim('top / bottom')}",
+        f"  {kw('q')} {kw('Esc')}    {dim('quit')}",
         "",
-        sep(),
-        h("  Navigation  (launcher + session picker)"),
-        f"  {kw('↑↓/jk')}  {dim('Move')}          {kw('←→/hl')}  {dim('Account (launcher)')}",
-        f"  {kw('Enter')}   {dim('Launch')}         {kw('s')}       {dim('Shell mode (launcher)')}",
-        f"  {kw('d')}       {dim('Set active (launcher)')}  {kw('t')}       {dim('Cycle theme (launcher)')}",
-        f"  {kw('p/Tab')}   {dim('Preview (picker)')}  {kw('/')}       {dim('Search (picker)')}",
-        f"  {kw('PgUp/PgDn')}  {dim('Page scroll')}  {kw('g/G')}   {dim('Top/bottom (session picker)')}",
-        f"  {kw('q/Esc')}   {dim('Quit')}",
-        "",
-        dim("  altergo is an independent open-source project by pixelabs · not affiliated with Anthropic PBC"),
-        dim("  Claude and Claude Code are trademarks of Anthropic PBC"),
+        dim("  altergo · open-source by pixelabs · not affiliated with Anthropic PBC"),
         "",
     ]
     print("\n".join(lines))
@@ -3457,8 +3454,8 @@ def launch_claude(account: str = "default", args=None, provider: str | None = No
     """Launch a provider CLI with account HOME, passing args through unchanged.
 
     If provider is None, reads account.json to determine which provider to use.
-    Single-provider accounts auto-select; multi-provider accounts require an
-    explicit --provider flag (handled by SE2 in main()).
+    Single-provider accounts auto-select; multi-provider accounts require a
+    positional provider argument (e.g. altergo work gemini).
     """
     _sweep_existing_accounts()
 
@@ -3478,7 +3475,7 @@ def launch_claude(account: str = "default", args=None, provider: str | None = No
             names = ", ".join(prov_list)
             print(
                 f"altergo: account '{account}' has multiple providers ({names}).\n"
-                f"  Pass --provider <name> to select one.",
+                f"  Specify one: altergo {account} <provider>",
                 file=sys.stderr,
             )
             sys.exit(1)
@@ -3692,9 +3689,6 @@ _GOODBYE = [
     ("💾", "Commit early, commit often. You know the drill."),
 ]
 
-_GOODBYE_GRADIENT = ["#af5fff", "#5f87ff", "#00d7ff", "#00d787"]
-
-
 def _print_launch_message():
     """Print a witty handoff line to stderr before handing off to an AI session."""
     if not sys.stderr.isatty():
@@ -3703,8 +3697,7 @@ def _print_launch_message():
         return
     import random
     emoji, msg = random.choice(_GOODBYE)
-    # Build a smooth per-character gradient across the message text.
-    grad = _GOODBYE_GRADIENT
+    grad = THEMES.get(get_current_theme(), THEMES[_DEFAULT_THEME])["banner"]
     parts = []
     n = len(msg)
     for i, ch in enumerate(msg):
@@ -4361,18 +4354,13 @@ def main():
     # altergo --resume x         → claude --resume x
     # altergo --dangerously-...  → claude --dangerously-...
 
-    # Extract --provider flag if present (consumed by altergo, not passed to claude)
+    # Extract positional provider name if present (consumed by altergo, not passed to provider CLI)
+    # Syntax: altergo <account> <provider> [args...]
     provider = None
-    filtered_args = []
-    i = 0
-    while i < len(args):
-        if args[i] == "--provider" and i + 1 < len(args):
-            provider = args[i + 1]
-            i += 2
-        else:
-            filtered_args.append(args[i])
-            i += 1
-    launch_claude(account, filtered_args, provider=provider)
+    if args and args[0] in PROVIDERS:
+        provider = args[0]
+        args = args[1:]
+    launch_claude(account, args, provider=provider)
 
 
 if __name__ == "__main__":

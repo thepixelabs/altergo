@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.15.1 (2026-04-10)
+
+### Bug Fixes
+
+- Smooth gradient on greeting/goodbye messages, add picker search
+  ([`6a535a5`](https://github.com/thepixelabs/altergo/commit/6a535a5baa36493e45fcc915b6b163d67e543584))
+
+- Replace chunked two-color fade with per-character interpolated gradient on greeting text, goodbye
+  messages, and onboarding logo - Goodbye messages now show emoji + purple-blue-cyan-green gradient
+  instead of dim text with "altergo" prefix - Add vim-style / search to the resume session picker
+  with live filtering
+
+
 ## v0.15.0 (2026-04-10)
 
 ### Features

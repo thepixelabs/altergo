@@ -1,6 +1,21 @@
 # CHANGELOG
 
 
+## v0.18.0 (2026-04-10)
+
+### Features
+
+- Random theme rotation, settings UX polish
+  ([`34c4889`](https://github.com/thepixelabs/altergo/commit/34c48892a3d52a998f5de36465daf94d41c94d92))
+
+- Add random theme toggle with frequency slider (often↔rarely) to Appearance settings page — rotates
+  theme automatically every N sessions - Fix theme auto-select: cursor movement now updates
+  selection marker (◆) so save always reflects what the user sees - Consolidate 6 redundant
+  load/save helpers into generic _load_bool_setting - Single atomic write in interactive_settings
+  instead of 5+ separate saves - Gradient accent fade on settings separator line - Expanded footer
+  nav hints with vim keybindings
+
+
 ## v0.17.1 (2026-04-10)
 
 ### Bug Fixes

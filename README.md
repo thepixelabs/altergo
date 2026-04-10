@@ -122,7 +122,7 @@ That is the full workflow. The first time you run `altergo work`, Claude authent
 | **Named accounts, unlimited** | `work`, `personal`, `client-a`, or any name. Each gets its own Claude credentials. |
 | **One command to switch** | `altergo work` launches Claude with the right credentials. No flags, no config editing. |
 | **Credential isolation** | Only Claude's OAuth token is isolated per account. AWS, GCP, Docker, kubectl, and GitHub CLI stay shared by default. |
-| **Configurable sharing** | `altergo --settings` opens a curses TUI — space to toggle which CLI tools share credentials, `s` to save. |
+| **Configurable sharing** | `altergo --settings` opens a multi-page TUI — configure appearance (theme, launch animation), behavior (greeting/goodbye messages, update checks), and which CLI tool credentials are shared. |
 | **Interactive session picker** | Full-screen TUI with arrow keys, `j`/`k` vim bindings, page up/down, and a preview of each session's final message. |
 | **Session preview** | See project name, last modified time, size, and last message before you resume. |
 | **Zero dependencies** | Ships as a single Python file. Standard library only. |
@@ -143,7 +143,7 @@ That is the full workflow. The first time you run `altergo work`, Claude authent
 | `altergo --setup --name <n>` | Create a named account, wire symlinks automatically |
 | `altergo --teardown` | Remove symlinks (account directory and credentials untouched) |
 | `altergo --teardown --name <n>` | Remove a specific named account's symlinks |
-| `altergo --settings` | Configure which CLI tool credentials are shared (interactive TUI) |
+| `altergo --settings` | Multi-page settings TUI: appearance, behavior, and credentials |
 | `altergo <name> shell` | Interactive shell inside the named account HOME |
 | `altergo <name> -- <cmd>` | Run one command with HOME set to the named account directory |
 | `altergo --version` | Show version number |
@@ -159,6 +159,16 @@ That is the full workflow. The first time you run `altergo work`, Claude authent
 | `g` / `G` | Jump to top / bottom |
 | `Enter` | Resume session |
 | `q` / `Esc` | Quit |
+
+### Keyboard shortcuts (settings TUI)
+
+| Key | Action |
+|---|---|
+| `←` / `→` / `h` / `l` / `Tab` | Switch pages |
+| `↑` / `↓` / `j` / `k` | Navigate within page |
+| `Space` | Toggle setting |
+| `s` | Save and exit |
+| `q` / `Esc` | Cancel |
 
 ---
 

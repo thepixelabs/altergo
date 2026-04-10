@@ -1285,12 +1285,11 @@ def _apply_entry(entry, overrides, account_home):
         dst = account_home / Path(rel)
         if enabled:
             if not src.exists():
-                print(f"  {_c(2, 'skip')} ~/{rel} (not present in main home)")
                 continue
             _ensure_nested_parent(rel, account_home)
             if dst.is_symlink():
                 if dst.resolve() == src.resolve():
-                    print(f"  {_c(32, '✓')} ~/{rel} already shared")
+                    pass
                 else:
                     print(f"  {_c(33, '⚠')} ~/{rel} symlinked elsewhere — skipping")
                 continue

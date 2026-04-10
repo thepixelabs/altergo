@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.16.1 (2026-04-10)
+
+### Bug Fixes
+
+- Use star spinner for launch animation across all themes
+  ([`1f0a7cb`](https://github.com/thepixelabs/altergo/commit/1f0a7cbea024ca686b09312efc37c80e94979a80))
+
+
 ## v0.16.0 (2026-04-10)
 
 ### Features

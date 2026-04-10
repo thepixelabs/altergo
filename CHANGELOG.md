@@ -1,6 +1,21 @@
 # CHANGELOG
 
 
+## v0.19.0 (2026-04-10)
+
+### Features
+
+- Positional provider syntax, gradient help titles, theme-aware goodbye
+  ([`078ae33`](https://github.com/thepixelabs/altergo/commit/078ae330128e8b2467c3b2ee3e3307e08c81ad70))
+
+- Replace `altergo <account> --provider <name>` with positional `altergo <account> <provider>` for
+  simpler launch-time provider selection - Add _gradient_ansi() helper for True Color per-character
+  gradients in non-curses output (reuses theme banner stops) - Rewrite show_help() with gradient
+  section titles driven by active theme, simplified structure (5 sections, removed redundant
+  Examples block) - Remove hardcoded _GOODBYE_GRADIENT; goodbye message now uses active theme's
+  banner gradient like the greeting
+
+
 ## v0.18.0 (2026-04-10)
 
 ### Features
@@ -236,8 +251,8 @@ Render the gradient figlet banner before handing off to the provider CLI or acco
   checklist with installed binaries pre-checked, and wires only the selected providers'
   dotdirs/symlinks.
 
-New flags: --setup --provider <p>[,<p>] specify providers non-interactively. To select a provider
-  at launch time use positional syntax: altergo <account> <provider> (e.g. altergo work gemini)
+New flags: --setup --provider <p>[,<p>] specify providers non-interactively <account> --provider <p>
+  select provider at launch time
 
 Provider manifests (claude, gemini) drive all setup/teardown/launch logic. Accounts persist their
   provider list in account.json. Existing accounts without account.json are treated as claude-only.

@@ -1002,6 +1002,23 @@ def save_update_check_enabled(enabled: bool) -> None:
     os.replace(str(tmp), str(SETTINGS_FILE))
 
 
+def _load_bool_setting(key: str, default: bool = True) -> bool:
+    """Load a boolean setting from SETTINGS_FILE.
+
+    Generic helper for the preference toggles introduced by the multi-page
+    settings TUI (show_greeting, show_goodbye, launch_animation).  Also
+    usable for any future boolean setting.
+    """
+    if not SETTINGS_FILE.exists():
+        return default
+    try:
+        data = json.loads(SETTINGS_FILE.read_text())
+        v = data.get(key)
+        return v if isinstance(v, bool) else default
+    except Exception:
+        return default
+
+
 def _get_intro_shown() -> bool:
     if not SETTINGS_FILE.exists():
         return False
@@ -2639,15 +2656,493 @@ def _draw_search(stdscr, sessions):
 
 # --- Settings TUI ---
 
+# Page definitions — index matches page number (0-based)
+_SETTINGS_PAGES = [
+    {
+        "title": "Appearance",
+        "subtitle": "Theme and visual preferences",
+    },
+    {
+        "title": "Behavior",
+        "subtitle": "Launch and session message settings",
+    },
+    {
+        "title": "Credentials",
+        "subtitle": "Share CLI credentials between accounts",
+    },
+]
+
+# Color swatch characters for theme preview (3 blocks per theme stop)
+_SWATCH_BLOCK = "\u2588"  # █
+
+
+def _hex_to_curses_256(hex_color: str) -> int:
+    """Approximate a hex color to the nearest xterm-256 color index.
+
+    Uses the 6x6x6 color cube (indices 16–231) for best coverage. This is
+    a simple nearest-neighbor approximation — good enough for swatches.
+    """
+    r = int(hex_color[1:3], 16)
+    g = int(hex_color[3:5], 16)
+    b = int(hex_color[5:7], 16)
+    # Map each channel to the nearest 6-step cube value (0,95,135,175,215,255)
+    _steps = [0, 95, 135, 175, 215, 255]
+
+    def nearest(v):
+        return min(range(6), key=lambda i: abs(_steps[i] - v))
+
+    ri, gi, bi = nearest(r), nearest(g), nearest(b)
+    return 16 + 36 * ri + 6 * gi + bi
+
+
+def _draw_settings(stdscr):
+    """Multi-page settings TUI. Returns dict of all changes on save, None on cancel."""
+    curses.curs_set(0)
+    attrs = _picker_attrs()
+
+    # Snapshot original theme so we can restore on cancel
+    original_theme = get_current_theme()
+
+    # ── Working state for all three pages ────────────────────────────────────
+
+    # Page 0: Appearance
+    theme_names = list(THEMES.keys())
+    current_theme_idx = theme_names.index(get_current_theme()) if get_current_theme() in theme_names else 0
+    launch_anim = _load_bool_setting("launch_animation")
+
+    # Page 1: Behavior
+    update_check = load_update_check_enabled()
+    show_greeting = _load_bool_setting("show_greeting")
+    show_goodbye = _load_bool_setting("show_goodbye")
+
+    # Page 2: Credentials
+    cred_overrides = dict(load_settings())
+    cred_defaults = {e["id"]: e["default_on"] for e in CATALOG}
+
+    # Build credential rows (headers + entries)
+    cred_rows = []
+    seen_cats: list = []
+    for entry in CATALOG:
+        cat = entry["category"]
+        if cat not in seen_cats:
+            seen_cats.append(cat)
+            cred_rows.append({"type": "header", "text": cat})
+        cred_rows.append({"type": "entry", "entry": entry})
+    cred_selectable = [i for i, r in enumerate(cred_rows) if r["type"] == "entry"]
+
+    # ── Navigation state ──────────────────────────────────────────────────────
+    current_page = 0
+    n_pages = len(_SETTINGS_PAGES)
+
+    # Per-page cursor positions
+    # Page 0: rows = [theme_0..theme_N-1, launch_anim]  → cursor 0..N
+    page0_cursor = current_theme_idx
+    page0_n = len(theme_names) + 1   # themes + launch_anim toggle
+
+    # Page 1: rows = [update_check, show_greeting, show_goodbye]
+    page1_cursor = 0
+    page1_n = 3
+
+    # Page 2: credential entries (selectable positions in cred_selectable)
+    page2_cursor = 0
+    page2_scroll = 0
+
+    # ── Swatch color pairs — pairs 20+ reserved for swatches ─────────────────
+    # We allocate one pair per theme stop (up to 6 stops × 6 themes = 36 pairs)
+    # starting at pair index 20. If terminal lacks 256 colors we skip swatches.
+    swatch_pairs: dict = {}  # (theme_id, stop_idx) → curses pair number
+    _swatch_pair_base = 20
+    _pair_counter = _swatch_pair_base
+    if curses.COLORS >= 256:
+        for tid, tdata in THEMES.items():
+            for si, stop in enumerate(tdata["banner"]):
+                try:
+                    fg = _hex_to_curses_256(stop)
+                    curses.init_pair(_pair_counter, fg, -1)
+                    swatch_pairs[(tid, si)] = _pair_counter
+                    _pair_counter += 1
+                except curses.error:
+                    pass
+
+    # ── Helper: draw one tab bar line ─────────────────────────────────────────
+    def _draw_tab_bar(max_x):
+        x = 0
+        for pi, page in enumerate(_SETTINGS_PAGES):
+            tab_text = f"  {page['title']}  "
+            if pi == current_page:
+                _safe_addnstr(stdscr, 0, x, tab_text[:max_x - x], max_x - x,
+                              attrs["title"] | curses.A_REVERSE | curses.A_BOLD)
+            else:
+                _safe_addnstr(stdscr, 0, x, tab_text[:max_x - x], max_x - x,
+                              attrs["dim"])
+            x += len(tab_text)
+            if pi < n_pages - 1 and x < max_x - 1:
+                _safe_addnstr(stdscr, 0, x, "\u2502", 1, attrs["dim"])  # │
+                x += 1
+
+    # ── Helper: draw page 0 (Appearance) ─────────────────────────────────────
+    def _draw_page0(max_y, max_x, attrs_local):
+        content_start = 3
+        row = content_start
+
+        # Section header: Theme
+        section = "Theme " + "\u2500" * max(0, 34)  # ─
+        _safe_addnstr(stdscr, row, 2, section[:max_x - 3], max_x - 3,
+                      attrs_local["accent"] | curses.A_BOLD)
+        row += 1
+
+        for ti, tid in enumerate(theme_names):
+            if row >= max_y - 3:
+                break
+            tdata = THEMES[tid]
+            is_focused = (ti == page0_cursor)
+            is_selected = (ti == current_theme_idx)
+
+            # Marker glyph
+            if is_selected:
+                marker = "\u25c6"  # ◆
+                marker_attr = attrs_local["accent"] | curses.A_BOLD
+            else:
+                marker = "\u00b7"  # ·
+                marker_attr = attrs_local["dim"]
+
+            prefix = "\u25b8 " if is_focused else "  "  # ▸
+            prefix_attr = attrs_local["accent"] | curses.A_BOLD if is_focused else curses.A_NORMAL
+
+            _safe_addnstr(stdscr, row, 0, prefix, 2, prefix_attr)
+            _safe_addnstr(stdscr, row, 2, marker, 1, marker_attr)
+            _safe_addnstr(stdscr, row, 4, " ", 1, curses.A_NORMAL)
+
+            name_str = tdata["display_name"].ljust(12)
+            name_attr = attrs_local["accent"] | curses.A_BOLD if is_selected else curses.A_NORMAL
+            _safe_addnstr(stdscr, row, 5, name_str[:12], 12, name_attr)
+
+            # Color swatch: draw up to 3 stops of the banner gradient
+            sx = 18
+            stops = tdata["banner"]
+            n_swatches = min(3, len(stops))
+            for si in range(n_swatches):
+                pair_key = (tid, si)
+                if pair_key in swatch_pairs and sx < max_x - 2:
+                    _safe_addnstr(stdscr, row, sx, _SWATCH_BLOCK * 2, 2,
+                                  curses.color_pair(swatch_pairs[pair_key]))
+                    sx += 2
+
+            # Description
+            desc = "  " + tdata["description"]
+            if sx < max_x - 4:
+                _safe_addnstr(stdscr, row, sx, desc[:max_x - sx - 1], max_x - sx - 1,
+                              attrs_local["dim"])
+
+            row += 1
+
+        row += 1  # blank line before next section
+
+        # Section header: Launch
+        if row < max_y - 3:
+            section2 = "Launch " + "\u2500" * max(0, 33)
+            _safe_addnstr(stdscr, row, 2, section2[:max_x - 3], max_x - 3,
+                          attrs_local["accent"] | curses.A_BOLD)
+            row += 1
+
+        anim_row_idx = len(theme_names)
+        if row < max_y - 3:
+            is_focused = (page0_cursor == anim_row_idx)
+            prefix = "\u25b8 " if is_focused else "  "
+            prefix_attr = attrs_local["accent"] | curses.A_BOLD if is_focused else curses.A_NORMAL
+            _safe_addnstr(stdscr, row, 0, prefix, 2, prefix_attr)
+
+            if launch_anim:
+                dot = "\u25c9"   # ◉
+                dot_attr = attrs_local["accent"] | curses.A_BOLD
+            else:
+                dot = "\u25cb"   # ○
+                dot_attr = attrs_local["dim"]
+            _safe_addnstr(stdscr, row, 2, dot, 1, dot_attr)
+            label = "  Launch animation    "
+            _safe_addnstr(stdscr, row, 3, label[:max_x - 4], max_x - 4, curses.A_NORMAL)
+            hint = "Star spinner while provider warms up"
+            lx = 3 + len(label)
+            if lx < max_x - 4:
+                _safe_addnstr(stdscr, row, lx, hint[:max_x - lx - 1], max_x - lx - 1, attrs_local["dim"])
+
+    # ── Helper: draw page 1 (Behavior) ───────────────────────────────────────
+    def _draw_page1(max_y, max_x):
+        content_start = 3
+        row = content_start
+
+        section = "Launch behavior " + "\u2500" * max(0, 24)
+        _safe_addnstr(stdscr, row, 2, section[:max_x - 3], max_x - 3,
+                      attrs["accent"] | curses.A_BOLD)
+        row += 1
+
+        toggles = [
+            ("update_check",  update_check,  "Update check",      "Check PyPI for new altergo versions"),
+            ("show_greeting", show_greeting, "Greeting messages", "Time-of-day greeting on launch"),
+            ("show_goodbye",  show_goodbye,  "Goodbye messages",  "Witty message after each session"),
+        ]
+
+        for ti, (key, val, label, hint) in enumerate(toggles):
+            if row >= max_y - 3:
+                break
+            is_focused = (ti == page1_cursor)
+            prefix = "\u25b8 " if is_focused else "  "
+            prefix_attr = attrs["accent"] | curses.A_BOLD if is_focused else curses.A_NORMAL
+            _safe_addnstr(stdscr, row, 0, prefix, 2, prefix_attr)
+
+            if val:
+                dot = "\u25c9"   # ◉
+                dot_attr = attrs["accent"] | curses.A_BOLD
+            else:
+                dot = "\u25cb"   # ○
+                dot_attr = attrs["dim"]
+            _safe_addnstr(stdscr, row, 2, dot, 1, dot_attr)
+
+            label_str = "  " + label.ljust(22)
+            _safe_addnstr(stdscr, row, 3, label_str[:max_x - 4], max_x - 4, curses.A_NORMAL)
+            lx = 3 + len(label_str)
+            if lx < max_x - 4:
+                _safe_addnstr(stdscr, row, lx, hint[:max_x - lx - 1], max_x - lx - 1, attrs["dim"])
+            row += 1
+
+    # ── Helper: draw page 2 (Credentials) ────────────────────────────────────
+    def _draw_page2(max_y, max_x):
+        nonlocal page2_scroll
+        content_start = 3
+        visible_rows = max(1, max_y - 5 - content_start)
+        current_row_idx = cred_selectable[page2_cursor]
+
+        # Scroll
+        if current_row_idx < page2_scroll:
+            page2_scroll = current_row_idx
+        elif current_row_idx >= page2_scroll + visible_rows:
+            page2_scroll = current_row_idx - visible_rows + 1
+
+        for i in range(visible_rows):
+            row_idx = page2_scroll + i
+            if row_idx >= len(cred_rows):
+                break
+            screen_row = content_start + i
+            if screen_row >= max_y - 2:
+                break
+            crow = cred_rows[row_idx]
+
+            if crow["type"] == "header":
+                section = crow["text"] + "  " + "\u2500" * max(0, 36 - len(crow["text"]))
+                _safe_addnstr(stdscr, screen_row, 2, section[:max_x - 3], max_x - 3,
+                              attrs["accent"] | curses.A_BOLD)
+            else:
+                entry = crow["entry"]
+                enabled = is_enabled(entry, cred_overrides)
+                is_current = (row_idx == current_row_idx)
+                has_warn = "warning" in entry
+
+                warn_tag = " \u26a0" if has_warn else "  "
+                path_hint = ", ".join(f"~/{p}" for p in entry["paths"])
+
+                prefix = "\u25b8 " if is_current else "  "
+                prefix_attr = attrs["accent"] | curses.A_BOLD if is_current else curses.A_NORMAL
+                _safe_addnstr(stdscr, screen_row, 0, prefix, 2, prefix_attr)
+
+                if enabled:
+                    dot = "\u25c9"   # ◉
+                    dot_attr = attrs["accent"] | curses.A_BOLD
+                else:
+                    dot = "\u25cb"   # ○
+                    dot_attr = attrs["dim"]
+                _safe_addnstr(stdscr, screen_row, 2, dot, 1, dot_attr)
+
+                name_str = "  " + entry["name"].ljust(22) + warn_tag
+                _safe_addnstr(stdscr, screen_row, 3, name_str[:max_x - 4], max_x - 4,
+                              curses.A_BOLD if is_current else curses.A_NORMAL)
+                nx = 3 + len(name_str)
+                if nx < max_x - 4:
+                    _safe_addnstr(stdscr, screen_row, nx, path_hint[:max_x - nx - 1],
+                                  max_x - nx - 1, attrs["dim"])
+
+    # ── Helper: draw footer ───────────────────────────────────────────────────
+    def _draw_footer(max_y, max_x):
+        footer_row = max_y - 2
+
+        if current_page == 0:
+            # Show theme description for the focused theme
+            if page0_cursor < len(theme_names):
+                tid = theme_names[page0_cursor]
+                hint = "  " + THEMES[tid]["description"]
+            else:
+                hint = "  Spin the star animation while the provider binary starts up"
+            _safe_addnstr(stdscr, footer_row, 0, hint[:max_x - 1], max_x - 1, attrs["dim"])
+
+        elif current_page == 1:
+            hints_behavior = [
+                "  Default on. Checks PyPI daily — can be disabled for air-gapped setups",
+                "  Friendly time-of-day line shown beneath the banner on launch",
+                "  Witty one-liner printed to stderr after every session ends",
+            ]
+            if 0 <= page1_cursor < len(hints_behavior):
+                _safe_addnstr(stdscr, footer_row, 0, hints_behavior[page1_cursor][:max_x - 1],
+                              max_x - 1, attrs["dim"])
+
+        elif current_page == 2:
+            current_row_idx = cred_selectable[page2_cursor]
+            crow = cred_rows[current_row_idx]
+            if crow["type"] == "entry" and crow["entry"].get("warning"):
+                warn_line = "  \u26a0  " + crow["entry"]["warning"]
+                _safe_addnstr(stdscr, footer_row, 0, warn_line[:max_x - 1], max_x - 1,
+                              curses.color_pair(7) | curses.A_DIM)
+
+        nav = "  \u2191\u2193/jk navigate  Space toggle  \u2190\u2192/hl/Tab page  s save  q/Esc cancel"
+        _safe_addnstr(stdscr, max_y - 1, 0, nav[:max_x - 1], max_x - 1, attrs["dim"])
+
+    # ── Main event loop ───────────────────────────────────────────────────────
+    while True:
+        stdscr.erase()
+        max_y, max_x = stdscr.getmaxyx()
+
+        # Reload attrs in case theme changed (live preview)
+        attrs = _picker_attrs()
+
+        # Tab bar (row 0)
+        _draw_tab_bar(max_x)
+
+        # Page subtitle (row 1)
+        subtitle = "  " + _SETTINGS_PAGES[current_page]["subtitle"]
+        _safe_addnstr(stdscr, 1, 0, subtitle[:max_x - 1], max_x - 1, attrs["dim"])
+
+        # Separator (row 2) — accent fade: first 8 chars in theme accent, rest dim
+        sep_full = "\u2500" * (max_x - 1)
+        accent_len = min(8, max_x - 1)
+        _safe_addnstr(stdscr, 2, 0, sep_full[:accent_len], accent_len, attrs["accent"])
+        if accent_len < max_x - 1:
+            _safe_addnstr(stdscr, 2, accent_len, sep_full[accent_len:max_x - 1],
+                          max_x - 1 - accent_len, attrs["dim"])
+
+        # Page content
+        if current_page == 0:
+            _draw_page0(max_y, max_x, attrs)
+        elif current_page == 1:
+            _draw_page1(max_y, max_x)
+        elif current_page == 2:
+            _draw_page2(max_y, max_x)
+
+        # Footer
+        _draw_footer(max_y, max_x)
+
+        stdscr.refresh()
+
+        key = stdscr.getch()
+
+        # ── Page navigation ──────────────────────────────────────────────────
+        if key in (curses.KEY_LEFT, ord("h")):
+            current_page = (current_page - 1) % n_pages
+            continue
+        elif key in (curses.KEY_RIGHT, ord("l")):
+            current_page = (current_page + 1) % n_pages
+            continue
+        elif key == ord("\t"):   # Tab → next page
+            current_page = (current_page + 1) % n_pages
+            continue
+        elif key == curses.KEY_BTAB:  # Shift-Tab → prev page
+            current_page = (current_page - 1) % n_pages
+            continue
+
+        # ── Global keys ──────────────────────────────────────────────────────
+        elif key in (ord("q"), 27):  # Esc / q → cancel
+            # Restore original theme on cancel
+            set_current_theme(original_theme)
+            _picker_attrs()  # reinit color pairs for restored theme
+            return None
+
+        elif key == ord("s"):  # Save
+            return {
+                "theme": theme_names[current_theme_idx],
+                "launch_animation": launch_anim,
+                "update_check": update_check,
+                "show_greeting": show_greeting,
+                "show_goodbye": show_goodbye,
+                "shared": {k: v for k, v in cred_overrides.items()
+                           if cred_defaults.get(k) != v},
+            }
+
+        elif key == curses.KEY_RESIZE:
+            continue
+
+        # ── Per-page navigation & toggling ──────────────────────────────────
+        elif current_page == 0:
+            if key in (curses.KEY_UP, ord("k")):
+                page0_cursor = max(0, page0_cursor - 1)
+            elif key in (curses.KEY_DOWN, ord("j")):
+                page0_cursor = min(page0_n - 1, page0_cursor + 1)
+            elif key == ord(" "):
+                if page0_cursor >= len(theme_names):
+                    launch_anim = not launch_anim
+            # Theme selection follows cursor — live preview IS the selection
+            if page0_cursor < len(theme_names) and current_theme_idx != page0_cursor:
+                current_theme_idx = page0_cursor
+                set_current_theme(theme_names[current_theme_idx])
+
+        elif current_page == 1:
+            if key in (curses.KEY_UP, ord("k")):
+                page1_cursor = max(0, page1_cursor - 1)
+            elif key in (curses.KEY_DOWN, ord("j")):
+                page1_cursor = min(page1_n - 1, page1_cursor + 1)
+            elif key == ord(" "):
+                if page1_cursor == 0:
+                    update_check = not update_check
+                elif page1_cursor == 1:
+                    show_greeting = not show_greeting
+                elif page1_cursor == 2:
+                    show_goodbye = not show_goodbye
+
+        elif current_page == 2:
+            if key in (curses.KEY_UP, ord("k")):
+                page2_cursor = max(0, page2_cursor - 1)
+            elif key in (curses.KEY_DOWN, ord("j")):
+                page2_cursor = min(len(cred_selectable) - 1, page2_cursor + 1)
+            elif key == curses.KEY_PPAGE:
+                page2_cursor = max(0, page2_cursor - 5)
+            elif key == curses.KEY_NPAGE:
+                page2_cursor = min(len(cred_selectable) - 1, page2_cursor + 5)
+            elif key == ord(" "):
+                entry = cred_rows[cred_selectable[page2_cursor]]["entry"]
+                cred_overrides[entry["id"]] = not is_enabled(entry, cred_overrides)
+
 
 def interactive_settings():
-    """Open the settings TUI, save on confirm, and apply changes immediately."""
+    """Open the multi-page settings TUI, save on confirm, and apply changes."""
     show_banner()
-    overrides = curses.wrapper(_draw_settings, CATALOG, load_settings())
-    if overrides is None:
+    result = curses.wrapper(_draw_settings)
+    if result is None:
         print("Cancelled.")
         return
-    save_settings(overrides)
+
+    # ── Persist all settings in a single atomic write ──────────────────────────
+    new_theme = result.get("theme", get_current_theme())
+    if new_theme in THEMES:
+        set_current_theme(new_theme)
+
+    shared_overrides = result.get("shared", {})
+
+    SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    data = {}
+    if SETTINGS_FILE.exists():
+        try:
+            data = json.loads(SETTINGS_FILE.read_text())
+        except Exception:
+            data = {}
+    data["theme"] = new_theme
+    data["launch_animation"] = result.get("launch_animation", True)
+    data["update_check"] = result.get("update_check", True)
+    data["show_greeting"] = result.get("show_greeting", True)
+    data["show_goodbye"] = result.get("show_goodbye", True)
+    data["version"] = 1
+    cred_defaults = {e["id"]: e["default_on"] for e in CATALOG}
+    data["shared"] = {k: v for k, v in shared_overrides.items()
+                      if cred_defaults.get(k) != v}
+    tmp = SETTINGS_FILE.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(data, indent=2))
+    os.replace(str(tmp), str(SETTINGS_FILE))
+
     print()
     print(_c(C("header"), "=== Applying settings ==="))
     print()
@@ -2657,135 +3152,11 @@ def interactive_settings():
             acct_home, _ = resolve_account(acct_name)
             if acct_home.exists():
                 for entry in CATALOG:
-                    _apply_entry(entry, overrides, acct_home)
+                    _apply_entry(entry, shared_overrides, acct_home)
 
     _status_wrap("Applying shared credentials…", _apply_all)
     print()
     print(_c(C("success"), "Settings saved and applied."))
-
-
-def _draw_settings(stdscr, catalog, overrides):
-    """Settings TUI. Returns overlay {id: bool} on save, None on cancel."""
-    curses.curs_set(0)
-    curses.use_default_colors()
-    curses.init_pair(1, curses.COLOR_BLACK, curses.COLOR_CYAN)  # selected row
-    curses.init_pair(2, curses.COLOR_CYAN, -1)  # title bar
-    curses.init_pair(6, curses.COLOR_GREEN, -1)  # enabled item
-    curses.init_pair(7, curses.COLOR_YELLOW, -1)  # warning text
-
-    local = dict(overrides)  # mutable working copy
-
-    # Build flat row list: headers + entries in catalog order
-    rows = []
-    seen_cats = []
-    for entry in catalog:
-        cat = entry["category"]
-        if cat not in seen_cats:
-            seen_cats.append(cat)
-            rows.append({"type": "header", "text": cat})
-        rows.append({"type": "entry", "entry": entry})
-
-    selectable = [i for i, r in enumerate(rows) if r["type"] == "entry"]
-    defaults = {e["id"]: e["default_on"] for e in catalog}
-    sel_pos = 0
-    scroll_offset = 0
-
-    while True:
-        stdscr.clear()
-        max_y, max_x = stdscr.getmaxyx()
-
-        # Title bar
-        title = " Altergo — Shared Credentials  ·  Space toggle  ·  s save  ·  Esc cancel"
-        stdscr.attron(curses.color_pair(2) | curses.A_BOLD)
-        stdscr.addnstr(0, 0, title.ljust(max_x), max_x - 1)
-        stdscr.attroff(curses.color_pair(2) | curses.A_BOLD)
-
-        subtitle = "  Share CLI credentials between accounts. Only Claude login stays separate."
-        stdscr.attron(curses.A_DIM)
-        stdscr.addnstr(1, 0, subtitle[: max_x - 1], max_x - 1)
-        stdscr.attroff(curses.A_DIM)
-
-        visible_rows = max(1, max_y - 5)
-        current_row_idx = selectable[sel_pos]
-
-        # Scroll to keep selection visible
-        if current_row_idx < scroll_offset:
-            scroll_offset = current_row_idx
-        elif current_row_idx >= scroll_offset + visible_rows:
-            scroll_offset = current_row_idx - visible_rows + 1
-
-        for i in range(visible_rows):
-            row_idx = scroll_offset + i
-            if row_idx >= len(rows):
-                break
-            screen_row = i + 3
-            row = rows[row_idx]
-
-            if row["type"] == "header":
-                stdscr.attron(curses.A_BOLD)
-                stdscr.addnstr(screen_row, 2, row["text"][: max_x - 3], max_x - 3)
-                stdscr.attroff(curses.A_BOLD)
-            else:
-                entry = row["entry"]
-                enabled = is_enabled(entry, local)
-                is_current = row_idx == current_row_idx
-                has_warn = "warning" in entry
-
-                check = "[x]" if enabled else "[ ]"
-                warn_tag = " !" if has_warn else "  "
-                name_part = f"  {check} {entry['name']:<22}{warn_tag}"
-                path_hint = "  " + ", ".join(f"~/{p}" for p in entry["paths"])
-
-                if is_current:
-                    full = f"▸ {check} {entry['name']:<22}{warn_tag}{path_hint.strip()}"
-                    stdscr.attron(curses.color_pair(1) | curses.A_BOLD)
-                    stdscr.addnstr(screen_row, 0, full[: max_x - 1].ljust(max_x - 1), max_x - 1)
-                    stdscr.attroff(curses.color_pair(1) | curses.A_BOLD)
-                else:
-                    if enabled:
-                        stdscr.attron(curses.color_pair(6))
-                    stdscr.addnstr(screen_row, 0, name_part[: max_x - 1], max_x - 1)
-                    if enabled:
-                        stdscr.attroff(curses.color_pair(6))
-                    nc = len(name_part)
-                    if nc < max_x - 1:
-                        stdscr.attron(curses.A_DIM)
-                        stdscr.addnstr(screen_row, nc, path_hint[: max_x - nc - 1], max_x - nc - 1)
-                        stdscr.attroff(curses.A_DIM)
-
-        # Footer
-        footer_row = max_y - 2
-        current_entry = rows[current_row_idx].get("entry", {})
-        if current_entry.get("warning"):
-            stdscr.attron(curses.color_pair(7))
-            stdscr.addnstr(footer_row, 0, f"  ! {current_entry['warning']}"[: max_x - 1], max_x - 1)
-            stdscr.attroff(curses.color_pair(7))
-
-        nav = "  Space toggle  ·  ↑↓ / j k navigate  ·  s save & apply  ·  Esc cancel"
-        stdscr.attron(curses.A_DIM)
-        stdscr.addnstr(footer_row + 1, 0, nav[: max_x - 1], max_x - 1)
-        stdscr.attroff(curses.A_DIM)
-
-        stdscr.refresh()
-
-        key = stdscr.getch()
-        if key in (curses.KEY_UP, ord("k")):
-            sel_pos = max(0, sel_pos - 1)
-        elif key in (curses.KEY_DOWN, ord("j")):
-            sel_pos = min(len(selectable) - 1, sel_pos + 1)
-        elif key == curses.KEY_PPAGE:
-            sel_pos = max(0, sel_pos - visible_rows)
-        elif key == curses.KEY_NPAGE:
-            sel_pos = min(len(selectable) - 1, sel_pos + visible_rows)
-        elif key == ord(" "):
-            entry = rows[selectable[sel_pos]]["entry"]
-            local[entry["id"]] = not is_enabled(entry, local)
-        elif key == ord("s"):
-            # Only write non-default values to keep the file minimal
-            overlay = {k: v for k, v in local.items() if defaults.get(k) != v}
-            return overlay
-        elif key in (ord("q"), 27):
-            return None
 
 
 # --- Launch ---
@@ -2911,11 +3282,12 @@ def launch_claude(account: str = "default", args=None, provider: str | None = No
     # BEFORE the banner so the cache from a previous run drives the nag.
     maybe_refresh_update_cache()
     first_launch_notice_if_needed()
+    _anim = _handoff_duration(provider) if _load_bool_setting("launch_animation") else 0.0
     show_banner(
         account,
         latest_version=get_cached_latest_version(),
-        show_greeting=True,
-        animate_duration=_handoff_duration(provider),
+        show_greeting=_load_bool_setting("show_greeting"),
+        animate_duration=_anim,
     )
     result = subprocess.run(cmd, env=env)
     _print_launch_message()
@@ -2944,7 +3316,7 @@ def launch_shell(account: str = "default"):
     show_banner(
         account,
         latest_version=get_cached_latest_version(),
-        show_greeting=True,
+        show_greeting=_load_bool_setting("show_greeting"),
     )
     print(_c(C("command"), f"Entering altergo shell [{account}] (HOME={account_home})"))
     print(_c(C("dim"), "Run 'exit' or Ctrl-D to return to your primary account.\n"))
@@ -3098,6 +3470,8 @@ _GOODBYE_GRADIENT = ["#af5fff", "#5f87ff", "#00d7ff", "#00d787"]
 def _print_launch_message():
     """Print a witty handoff line to stderr before handing off to an AI session."""
     if not sys.stderr.isatty():
+        return
+    if not _load_bool_setting("show_goodbye"):
         return
     import random
     emoji, msg = random.choice(_GOODBYE)

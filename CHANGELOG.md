@@ -1,6 +1,25 @@
 # CHANGELOG
 
 
+## v0.20.0 (2026-04-10)
+
+### Features
+
+- Multi-provider rebrand, messaging cleanup, site polish
+  ([`0d5024f`](https://github.com/thepixelabs/altergo/commit/0d5024f21179df1808bd7f5155b936c2084e26e3))
+
+- Reposition from Claude-only to multi-provider (Claude Code, Gemini CLI, Codex, Copilot) - New
+  tagline: 'Switch AI identities. Keep your context.' - Replace work/personal account examples with
+  mine/acme/clientco (accounts separate logins, not conversations) - Remove misleading 'mixing work
+  and personal sessions' framing from README - Add local-first messaging: conversations saved by AI
+  tool, altergo makes them searchable/resumable - Expand DISCLAIMER to cover all 4 providers with
+  trademark acknowledgments - Reduce section padding 80px -> 56px on landing page - Fix code block
+  overflow wrapping for curl install command - Simplify Credentials & Auth docs card - Trim command
+  reference to highest-value commands - Fix link colors in Compatibility card to use site cyan - Add
+  multi-provider command examples to reference table - Update pyproject.toml description and
+  keywords for all providers
+
+
 ## v0.19.0 (2026-04-10)
 
 ### Features

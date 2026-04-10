@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "altergo"
-version = "0.19.0"
+version = "0.20.0"
 description = "Switch AI identities. Keep your context. — N-account session manager for Claude Code, Gemini CLI, Codex, and Copilot"
 readme = "README.md"
 license = "MIT"

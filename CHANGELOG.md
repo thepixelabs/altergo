@@ -1,6 +1,46 @@
 # CHANGELOG
 
 
+## v0.14.0 (2026-04-10)
+
+### Features
+
+- Opt-out version checker, hourly greetings, launch-handoff spinners
+  ([`d8d0407`](https://github.com/thepixelabs/altergo/commit/d8d04072706a9cfae44de1e2b605ba97595e3edd))
+
+Adds three features designed as a panel (CEO, product, system-architect, security, creative) and
+  implemented in a single pass:
+
+Version checker (opt-out, consent on first launch): - Daemon-threaded PyPI fetch with 3s timeout,
+  32KB response cap, and 3-redirect cap. Stdlib urllib only — no new runtime deps. -
+  Stale-while-revalidate cache at ~/.altergo/version_check.json with 24h TTL, schema versioning, and
+  chmod 0600. - Version string double-sanitized (fetch + render) against strict allowlist to block
+  ANSI-injection from crafted PyPI responses or a poisoned cache file. - Inline nag in the banner
+  version column: v0.13.0 → v0.14.0 in the theme warn color, plus a dim "upgrade: pip install -U
+  altergo" line. - altergo --update-check [on|off] toggles persistently. One-time consent notice on
+  first launch satisfies security-engineer's GDPR concerns about the opt-out default.
+
+Time-of-day greetings (altergo_greetings.py): - 80 witty lines across 8 three-hour windows, seeded
+  per-minute so a quick relaunch is stable. Lazy-imported inside launch paths only so --help /
+  --version never pay the cost. - Day-of-week nature icon rotation (🌊🌿⛰️🌳🔥🌄🌑) with ASCII fallback
+  for non-UTF-8 terminals. - Rendered only on launch paths (launch_claude / launch_shell /
+  interactive_launcher), never on --help / --list / --version so scripted/piped output stays
+  grep-able.
+
+Launch-handoff spinners (reusing Rich built-ins): - Account-line stars animate via
+  rich.spinner.Spinner inside Live for a capped 0.7s before subprocess.run, per-theme (ocean→dots,
+  forest→arc, rainbow→aesthetic, etc). Skipped for codex (too fast). - _status_wrap helper wraps the
+  slow get_sessions scan (~1.7s), do_setup symlink creation, and the --settings apply loop with a
+  themed Rich status line.
+
+Also drops the redundant hardcoded curses palette in _picker_attrs — previous commit already routed
+  colors through THEMES but the new code reads theme-agnostic helpers consistently.
+
+72 tests pass (18 new): version parser/comparator, sanitizer boundary cases, cache roundtrip and
+  schema guard, settings persistence, greeting bank counts and length caps, window tiling,
+  per-minute stability, and theme→spinner coverage.
+
+
 ## v0.13.0 (2026-04-10)
 
 ### Features

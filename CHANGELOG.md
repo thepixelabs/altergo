@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.15.0 (2026-04-10)
+
+### Features
+
+- Per-message emoji, gradient greetings, left-aligned banner, first-run onboarding
+  ([`6c9bf07`](https://github.com/thepixelabs/altergo/commit/6c9bf076ba458b241f77a72b869895f521c6b20f))
+
+
 ## v0.14.0 (2026-04-10)
 
 ### Features

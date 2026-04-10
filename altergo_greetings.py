@@ -158,12 +158,12 @@ def pick_greeting(now: datetime | None = None) -> tuple[str, str]:
 
 
 THEME_SPINNERS: dict[str, str] = {
-    "ocean":    "dots",
-    "forest":   "arc",
-    "lavender": "circle",
+    "ocean":    "star",
+    "forest":   "star",
+    "lavender": "star",
     "sunset":   "star",
-    "mono":     "line2",
-    "rainbow":  "aesthetic",
+    "mono":     "star2",
+    "rainbow":  "star",
 }
 
 

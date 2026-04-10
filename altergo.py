@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Altergo — multi-account session manager for Claude Code. Run 'altergo --help' for usage."""
+"""Altergo — multi-account session manager for AI coding assistants (Claude Code, Gemini CLI, Codex, Copilot). Run 'altergo --help' for usage."""
 
 __version__ = "0.19.0"
 
@@ -278,7 +278,7 @@ def show_banner(
     """
     if not sys.stdout.isatty():
         suffix = f"  [{account}]" if account else ""
-        print(f"  altergo {__version__}  —  Switch Claude identities. Keep your context.{suffix}")
+        print(f"  altergo {__version__}  —  Switch AI identities. Keep your context.{suffix}")
         return
     try:
         import pyfiglet
@@ -428,7 +428,7 @@ def show_banner(
             console.print(group)
     except Exception:
         suffix = f"  [{account}]" if account else ""
-        print(f"  altergo {__version__}  —  Switch Claude identities. Keep your context.{suffix}")
+        print(f"  altergo {__version__}  —  Switch AI identities. Keep your context.{suffix}")
 
 
 def show_help():
@@ -498,7 +498,7 @@ def show_help():
         f"  {kw('p')} {kw('Tab')}    {dim('preview')}   {kw('/')}      {dim('search')}           {kw('g')} {kw('G')}   {dim('top / bottom')}",
         f"  {kw('q')} {kw('Esc')}    {dim('quit')}",
         "",
-        dim("  altergo · open-source by pixelabs · not affiliated with Anthropic PBC"),
+        dim("  altergo · open-source by pixelabs · not affiliated with Anthropic, Google, OpenAI, or GitHub"),
         "",
     ]
     print("\n".join(lines))
@@ -2299,7 +2299,7 @@ def _draw_preview(stdscr, attrs, session, preview):
         else:
             wrap_w = max(20, max_x - 4)
             for role, text in msgs:
-                label = "You" if role == "user" else "Claude"
+                label = "You" if role == "user" else "Assistant"
                 role_attr = "accent" if role == "user" else "project"
                 body.append((role_attr, f"▸ {label}"))
                 # Cap each message preview to ~12 wrapped lines so the pane stays scrollable
@@ -3327,7 +3327,10 @@ def _draw_settings(stdscr):
                 page2_cursor = min(len(cred_selectable) - 1, page2_cursor + 5)
             elif key == ord(" "):
                 entry = cred_rows[cred_selectable[page2_cursor]]["entry"]
-                cred_overrides[entry["id"]] = not is_enabled(entry, cred_overrides)
+                new_val = not is_enabled(entry, cred_overrides)
+                cred_overrides[entry["id"]] = new_val
+                if new_val and entry["id"] in ("gh", "glab"):
+                    cred_overrides["gitconfig"] = True
 
 
 def interactive_settings():
@@ -3964,7 +3967,7 @@ def _first_run_onboarding():
     # ── Copy ──────────────────────────────────────────────────────────────────
     console.print()
     console.print(Text(
-        "  altergo \u2014 multiple Claude identities from one terminal.",
+        "  altergo \u2014 multiple AI identities from one terminal.",
         style="dim",
     ))
     console.print()
@@ -3980,7 +3983,7 @@ def _first_run_onboarding():
     while True:
         try:
             raw = Prompt.ask(
-                "  Account name (e.g., work, personal, side-project)"
+                "  Account name (e.g., mine, acme, clientco)"
                 " [or press Enter to run --setup]",
                 default="",
                 show_default=False,

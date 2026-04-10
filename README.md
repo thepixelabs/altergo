@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  <strong>Switch Claude identities. Keep your context.</strong>
+  <strong>Switch AI identities. Keep your context.</strong>
 </p>
 
 <p align="center">
@@ -19,17 +19,17 @@
 </p>
 
 <p align="center">
-  Named accounts — work, personal, client-A, as many as you need.<br>
-  <code>altergo work</code> and you are in. Isolates Claude. Shares everything else.
+  Named accounts — yours, your employer's, your client's, as many as you need.<br>
+  <code>altergo mine</code> and you are in. Isolates credentials. Shares everything else.
 </p>
 
 ---
 
 ## <img src="docs/icons/why.svg" width="22" align="center"> Why altergo
 
-You have more than one Claude Code subscription. Switching between them normally means juggling separate terminals, losing your session history, or manually swapping credential files. That is friction you should not have to think about.
+You use AI coding assistants — Claude Code, Gemini CLI, Codex, GitHub Copilot — across multiple accounts. Your personal login, your employer's team account, a client's seat. Switching between them normally means juggling separate terminals, losing your session history, or manually swapping credential files. That is friction you should not have to think about.
 
-altergo runs each Claude account in its own isolated HOME, so credentials never mix. Session history, settings, and tool configs are shared across all accounts via symlinks — pick up any conversation from any account, instantly.
+altergo runs each account in its own isolated HOME, so credentials never mix. Session history, settings, and tool configs are shared across all accounts via symlinks — pick up any conversation from any account, instantly.
 
 No daemon. No sync service. No config files to wrangle. One Python file.
 
@@ -47,7 +47,7 @@ No daemon. No sync service. No config files to wrangle. One Python file.
 - Log out, log in, lose your place
 - Each account has its own session history — hard to find "where was I?"
 - Tool configs (AWS, gcloud, kubectl) randomly break as you jump around
-- Mixing a work question into a personal session, then panicking
+- Accidentally billed to the wrong account with no easy way to tell
 
 </td>
 <td>
@@ -93,25 +93,25 @@ chmod +x ~/.local/bin/altergo
 brew install thepixelabs/tap/altergo
 ```
 
-**Requirements:** Python 3.10+, [Claude Code](https://claude.ai/code) CLI installed, macOS or Linux.
+**Requirements:** Python 3.10+, one or more supported AI CLI tools installed (Claude Code, Gemini CLI, Codex, or GitHub Copilot), macOS or Linux.
 
 ---
 
 ## <img src="docs/icons/quickstart.svg" width="22" align="center"> Quick start
 
 ```bash
-# Create named accounts — repeat for as many as you need
-altergo --setup --name work
-altergo --setup --name personal
+# Create named accounts — one per AI account you use
+altergo --setup --name mine
+altergo --setup --name acme
 
-# Launch Claude as that account
-altergo work
+# Launch your configured AI assistant as that account
+altergo mine
 
 # Open the interactive session picker across all accounts
 altergo --resume
 ```
 
-That is the full workflow. The first time you run `altergo work`, Claude authenticates under that account's isolated credentials. Every session you create is visible from every account.
+That is the full workflow. The first time you run `altergo mine`, your configured provider authenticates under that account's isolated credentials. Every session you create is visible from every account — accounts separate which login you use, not what you can see.
 
 ---
 
@@ -119,9 +119,9 @@ That is the full workflow. The first time you run `altergo work`, Claude authent
 
 | Feature | What it means |
 |---|---|
-| **Named accounts, unlimited** | `work`, `personal`, `client-a`, or any name. Each gets its own Claude credentials. |
-| **One command to switch** | `altergo work` launches Claude with the right credentials. No flags, no config editing. |
-| **Credential isolation** | Only Claude's OAuth token is isolated per account. AWS, GCP, Docker, kubectl, and GitHub CLI stay shared by default. |
+| **Named accounts, unlimited** | `mine`, `acme`, `clientco`, or any name. One per AI account you use. Each gets its own isolated provider credentials. |
+| **One command to switch** | `altergo work` launches your configured AI assistant with the right credentials. No flags, no config editing. |
+| **Credential isolation** | Each account's provider credentials are isolated. AWS, GCP, Docker, kubectl, and GitHub CLI stay shared by default. |
 | **Configurable sharing** | `altergo --settings` opens a multi-page TUI — configure appearance (theme, launch animation), behavior (greeting/goodbye messages, update checks), and which CLI tool credentials are shared. |
 | **Interactive session picker** | Full-screen TUI with arrow keys, `j`/`k` vim bindings, page up/down, and a preview of each session's final message. |
 | **Session preview** | See project name, last modified time, size, and last message before you resume. |
@@ -135,8 +135,8 @@ That is the full workflow. The first time you run `altergo work`, Claude authent
 
 | Command | What it does |
 |---|---|
-| `altergo <name>` | Launch Claude as the named account (e.g. `altergo work`) |
-| `altergo` | Launch Claude as the default account (backwards compatible) |
+| `altergo <name>` | Launch the configured AI assistant as the named account (e.g. `altergo work`) |
+| `altergo` | Launch the default account's AI assistant (backwards compatible) |
 | `altergo --resume` | Open the interactive TUI session picker (all accounts) |
 | `altergo --resume <id>` | Resume a specific session by ID directly |
 | `altergo --list` | Print recent sessions as a plain table |
@@ -174,7 +174,7 @@ That is the full workflow. The first time you run `altergo work`, Claude authent
 
 ## <img src="docs/icons/howitworks.svg" width="22" align="center"> How it works
 
-altergo sets `HOME=~/.altergo/accounts/<name>` for the Claude process. Each account's token lives at `~/.altergo/accounts/<name>/.claude/.credentials.json`. Everything else is shared via symlinks back to your primary `~/.claude/`.
+altergo sets `HOME=~/.altergo/accounts/<name>` for the provider process. Each account's token lives in its isolated provider directory (e.g. `.claude/.credentials.json` for Claude Code, `.gemini/oauth_creds.json` for Gemini CLI). Everything else is shared via symlinks back to the primary provider directory.
 
 ```
 ~/.claude/                        Your primary Claude Code account (untouched)
@@ -184,7 +184,7 @@ altergo sets `HOME=~/.altergo/accounts/<name>` for the Claude process. Each acco
 
 ~/.altergo/
     └── accounts/
-        ├── default/              Default alt account
+        ├── default/              Default alt account  (Claude Code provider shown)
         │   └── .claude/
         │       ├── .credentials.json   ← isolated per account
         │       ├── projects/        ──→ symlink to ~/.claude/projects/
@@ -197,9 +197,9 @@ altergo sets `HOME=~/.altergo/accounts/<name>` for the Claude process. Each acco
                 └── ...
 ```
 
-**What gets symlinked** (shared across all accounts): `projects/`, `tasks/`, `session-env/`, `file-history/`, `shell-snapshots/`, `agents/`, `plans/`, `cache/`, `settings.json`, `CLAUDE.md`, `keybindings.json`
+**What gets symlinked** (shared across all accounts, Claude Code provider): `projects/`, `tasks/`, `session-env/`, `file-history/`, `shell-snapshots/`, `agents/`, `plans/`, `cache/`, `settings.json`, `CLAUDE.md`, `keybindings.json`
 
-**What stays separate**: `.credentials.json`
+**What stays separate**: provider credentials (`.credentials.json` for Claude Code; `oauth_creds.json` for Gemini CLI; `auth.json` for Codex; `config.json` for Copilot)
 
 **CLI tool credentials** are shared or isolated per tool, configurable via `altergo --settings`. Shared by default: `.aws`, `.config/gcloud`, `.azure`, `.docker`, `.kube`, `.terraform.d`, `.config/gh`. Isolated by default: `.ssh`, `.gitconfig`, `.gnupg`, `.npmrc`, `.config/glab`.
 
@@ -223,7 +223,7 @@ Credentials set this way persist in `~/.altergo/accounts/work/` and are availabl
 
 ### macOS Keychain note
 
-Claude Code may store tokens in the system Keychain rather than a flat file. When you authenticate inside `altergo work`, the token is stored under a separate Keychain entry keyed to that account's email. The `.credentials.json` file may appear empty — this is expected. Auth still works correctly.
+When using Claude Code, tokens may be stored in the system Keychain rather than a flat file. When you authenticate inside `altergo work`, the token is stored under a separate Keychain entry keyed to that account's email. The `.credentials.json` file may appear empty — this is expected. Auth still works correctly.
 
 ---
 
@@ -245,6 +245,6 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) · [MIT License](LICENSE)
 
 ---
 
-> altergo is an independent open-source project by [Pixelabs](https://pixelabs.net) · not affiliated with Anthropic PBC
+> altergo is an independent open-source project by [Pixelabs](https://pixelabs.net) · not affiliated with Anthropic, Google, OpenAI, or GitHub
 >
-> altergo depends on the internal directory structure of Claude Code. Anthropic may change this without notice — if altergo breaks after a Claude Code update, please [open an issue](https://github.com/thepixelabs/altergo/issues). Back up `~/.claude/` before first use. Full terms in [DISCLAIMER.md](DISCLAIMER.md).
+> altergo depends on the internal directory structure of each supported provider. Any provider may change their structure without notice — if altergo breaks after an update, please [open an issue](https://github.com/thepixelabs/altergo/issues). Back up your provider data directories before first use. Full terms in [DISCLAIMER.md](DISCLAIMER.md).

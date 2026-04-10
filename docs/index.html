@@ -3,25 +3,25 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>altergo — Switch Claude identities. Keep your context.</title>
-  <meta name="description" content="Run named Claude Code accounts from one terminal — work, personal, client-A, as many as you need. Session history shared across all accounts, credentials isolated per account. Zero dependencies, interactive TUI, open source. By pixelabs." />
+  <title>altergo — Switch AI identities. Keep your context.</title>
+  <meta name="description" content="Named accounts for Claude Code, Gemini CLI, Codex, and GitHub Copilot — yours, your employer's, your client's, as many as you need. Credentials isolated per account, conversations shared across all of them. Zero dependencies, open source. By pixelabs." />
   <meta name="robots" content="index, follow" />
   <link rel="canonical" href="https://altergo.pixelabs.net/" />
 
   <!-- Open Graph -->
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://altergo.pixelabs.net/" />
-  <meta property="og:title" content="altergo — Switch Claude identities. Keep your context." />
-  <meta property="og:description" content="Named Claude Code accounts — work, personal, client-A. One command to switch. Session history shared, credentials isolated. No sync service, no drama." />
+  <meta property="og:title" content="altergo — Switch AI identities. Keep your context." />
+  <meta property="og:description" content="Named accounts — yours, your employer's, your client's. One command to switch. Credentials isolated, history shared." />
   <meta property="og:image" content="https://altergo.pixelabs.net/og-image.png" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
-  <meta property="og:image:alt" content="Altergo — interactive TUI session picker for Claude Code" />
+  <meta property="og:image:alt" content="Altergo — multi-account session manager for AI coding assistants" />
   <meta property="og:site_name" content="Altergo" />
   <meta property="og:locale" content="en_US" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="altergo — Switch Claude identities. Keep your context." />
-  <meta name="twitter:description" content="Named Claude Code accounts — work, personal, client-A. `altergo work` — that's it. History shared, credentials isolated." />
+  <meta name="twitter:title" content="altergo — Switch AI identities. Keep your context." />
+  <meta name="twitter:description" content="Named accounts — yours, your employer's, your client's. `altergo mine` — that's it. Credentials isolated, history shared." />
   <meta name="twitter:image" content="https://altergo.pixelabs.net/og-image.png" />
   <meta name="twitter:creator" content="@thepixelabs" />
 
@@ -31,7 +31,7 @@
     "@context": "https://schema.org",
     "@type": "SoftwareApplication",
     "name": "Altergo",
-    "description": "Multi-account session manager for Claude Code",
+    "description": "Multi-account session manager for AI coding assistants — Claude Code, Gemini CLI, Codex, and GitHub Copilot",
     "applicationCategory": "DeveloperApplication",
     "operatingSystem": "macOS, Linux",
     "url": "https://altergo.pixelabs.net",
@@ -878,10 +878,10 @@
        WHY SECTION
     ============================================================ */
     #why {
-      padding: 80px 0;
+      padding: 56px 0;
     }
     @media (max-width: 500px) {
-      #why, #how, #features, #docs, #install { padding-top: 40px; padding-bottom: 40px; }
+      #why, #how, #features, #docs, #install { padding-top: 28px; padding-bottom: 28px; }
     }
 
     .why-grid {
@@ -944,7 +944,7 @@
        HOW IT WORKS
     ============================================================ */
     #how {
-      padding: 80px 0;
+      padding: 56px 0;
       background: linear-gradient(180deg, transparent 0%, rgba(99, 102, 241, 0.03) 50%, transparent 100%);
     }
 
@@ -1078,7 +1078,7 @@
        FEATURES
     ============================================================ */
     #features {
-      padding: 80px 0;
+      padding: 56px 0;
     }
 
     .features-grid {
@@ -1171,7 +1171,7 @@
        DOCS
     ============================================================ */
     #docs {
-      padding: 80px 0;
+      padding: 56px 0;
     }
 
     .docs-grid {
@@ -1283,13 +1283,14 @@
       color: var(--text-1);
       line-height: 1.6;
     }
-    .docs-disclaimer a { color: var(--rose); text-decoration: underline; text-underline-offset: 3px; }
+    .docs-disclaimer a { color: var(--cyan); text-decoration: underline; text-underline-offset: 3px; }
+    .docs-note a { color: var(--cyan); text-decoration: underline; text-underline-offset: 3px; }
 
     /* ============================================================
        INSTALL
     ============================================================ */
     #install {
-      padding: 80px 0 96px;
+      padding: 56px 0 72px;
     }
 
     .install-inner {
@@ -1370,7 +1371,8 @@
       border-radius: var(--radius-sm);
       padding: 14px 16px;
       position: relative;
-      overflow: hidden;
+      overflow-x: auto;
+      overflow-y: visible;
     }
     .code-block code {
       font-family: var(--font-mono);
@@ -1379,7 +1381,6 @@
       color: var(--text-1);
       display: block;
       white-space: pre;
-      overflow-x: auto;
     }
     .code-block code .kw { color: var(--indigo-bright); }
     .code-block code .cmd { color: var(--cyan); }
@@ -1610,12 +1611,12 @@
         <div class="hero-inner">
           <div class="hero-content">
             <h1 class="hero-h1 reveal reveal-delay-1" id="hero-heading">
-              Switch Claude identities. <span class="text-gradient">Keep your context.</span>
+              Switch AI identities. <span class="text-gradient">Keep your context.</span>
             </h1>
-            <p class="hero-h1-alt reveal reveal-delay-1">Isolates Claude. Shares everything else.</p>
+            <p class="hero-h1-alt reveal reveal-delay-1">Isolates credentials. Shares everything else.</p>
 
             <p class="hero-subtitle reveal reveal-delay-2">
-              Named accounts — work, personal, client-A, as many as you need. <code style="font-family:var(--font-mono);font-size:0.9em;color:var(--cyan)">altergo work</code> and you are in. Session history is shared across all accounts. Only Claude credentials are isolated — AWS, Docker, kubectl stay shared by default.
+              Named accounts — yours, your employer's, your client's. <code style="font-family:var(--font-mono);font-size:0.9em;color:var(--cyan)">altergo mine</code> and you are in. Your AI tool already saves conversations locally — altergo makes them searchable and resumable across all your accounts. Accounts separate which login you use, not what you can see.
             </p>
 
             <div class="hero-actions reveal reveal-delay-3">
@@ -1653,7 +1654,7 @@
               <span class="meta-pill" role="listitem"><span class="pill-dot" aria-hidden="true"></span>Named accounts</span>
               <span class="meta-pill" role="listitem"><span class="pill-dot" aria-hidden="true"></span>Zero dependencies</span>
               <span class="meta-pill" role="listitem"><span class="pill-dot" aria-hidden="true"></span>macOS &amp; Linux</span>
-              <span class="meta-pill" role="listitem"><span class="pill-dot" aria-hidden="true"></span>Interactive TUI</span>
+              <span class="meta-pill" role="listitem"><span class="pill-dot" aria-hidden="true"></span>Local-first · no cloud</span>
             </div>
           </div>
 
@@ -1685,7 +1686,7 @@
         <div class="reveal">
           <span class="section-label" aria-hidden="true">Why altergo</span>
           <h2 class="section-title" id="why-heading">Many accounts, one brain.</h2>
-          <p class="section-subtitle">Session history is shared across all named accounts. Credentials stay isolated per account. altergo keeps everything coherent — no sync service, no config files to babysit.</p>
+          <p class="section-subtitle">Your AI tool already saves every conversation locally. altergo reads those files directly — no cloud sync, no re-upload, nothing leaves your machine. It just makes them searchable and resumable across all your named accounts.</p>
         </div>
 
         <div class="why-grid" role="list" aria-label="Key benefits">
@@ -1702,7 +1703,7 @@
               </svg>
             </div>
             <h3>Many accounts, one brain</h3>
-            <p>Share session history seamlessly across all your named Claude Code accounts — work, personal, client-A. All your context, visible from any account, always.</p>
+            <p>Your conversations already live on disk. altergo symlinks those local files so every account sees the same history. Accounts separate which login you use — not what you can see.</p>
           </div>
           <div class="why-card reveal reveal-delay-2" role="listitem">
             <div class="why-icon why-icon-cyan" aria-hidden="true">
@@ -1750,7 +1751,7 @@
         <div class="reveal">
           <span class="section-label" aria-hidden="true">How it works</span>
           <h2 class="section-title" id="how-heading">Three commands to go.</h2>
-          <p class="section-subtitle">From install to switching named accounts in under a minute. No daemon, no background process, no cloud sync.</p>
+          <p class="section-subtitle">Your conversations are already on your machine. altergo just wires up the access — no daemon, no background process, no cloud sync.</p>
           <p class="section-subtitle" style="font-family: var(--font-mono); font-size: 0.78rem; color: var(--text-2); margin-top: 10px; letter-spacing: 0.03em;" aria-hidden="true">~45 sec &nbsp;·&nbsp; no daemon &nbsp;·&nbsp; pure Python</p>
         </div>
 
@@ -1782,8 +1783,8 @@
               <span class="step-win-title">setup</span>
             </div>
             <div class="step-body">
-              <code class="step-command"><span class="prompt" aria-hidden="true">$</span><span class="cmd">altergo --setup --name work</span></code>
-              <p class="step-caption">Create a named account in seconds. Repeat for personal, client-A, or any name you choose. Symlinks wired automatically.</p>
+              <code class="step-command"><span class="prompt" aria-hidden="true">$</span><span class="cmd">altergo --setup --name mine</span></code>
+              <p class="step-caption">Create a named account — one per AI account you use. Repeat for each one you have. Symlinks wired automatically.</p>
             </div>
           </div>
 
@@ -1799,8 +1800,8 @@
               <span class="step-win-title">switch</span>
             </div>
             <div class="step-body">
-              <code class="step-command"><span class="prompt" aria-hidden="true">$</span><span class="cmd">altergo work</span></code>
-              <p class="step-caption">Prefix any command with the account name. That's it. Run <code>altergo --resume</code> any time to open the interactive session picker across all accounts.</p>
+              <code class="step-command"><span class="prompt" aria-hidden="true">$</span><span class="cmd">altergo mine</span></code>
+              <p class="step-caption">Use the account name to launch. That's it. Run <code>altergo --resume</code> any time to open the interactive session picker across all accounts.</p>
             </div>
           </div>
         </div>
@@ -1818,7 +1819,7 @@
         <div class="reveal">
           <span class="section-label" aria-hidden="true">Features</span>
           <h2 class="section-title" id="features-heading">N accounts. No entourage.</h2>
-          <p class="section-subtitle">A single Python file that manages as many Claude identities as you need and refuses to be dramatic about it.</p>
+          <p class="section-subtitle">A single Python file that manages as many AI assistant accounts as you need — across Claude Code, Gemini CLI, Codex, and GitHub Copilot — and refuses to be dramatic about it.</p>
         </div>
 
         <div class="features-grid" role="list" aria-label="Feature list">
@@ -1851,7 +1852,7 @@
               </svg>
             </div>
             <h3>Named Accounts — Unlimited</h3>
-            <p>work, personal, client-A — create as many named accounts as you need. Each gets its own Claude credentials; everything else is shared.</p>
+            <p>mine, acme, clientco — one per AI account you use, as many as you need. Each gets its own isolated provider credentials; everything else is shared.</p>
           </div>
           <div class="feature-item reveal reveal-delay-3" role="listitem" style="--shimmer-duration:8s; --shimmer-delay:0.5s">
             <div class="feature-icon" aria-hidden="true">
@@ -1863,7 +1864,7 @@
               </svg>
             </div>
             <h3>One Command to Switch</h3>
-            <p><code style="font-family:var(--font-mono);font-size:0.82em;color:var(--cyan)">altergo work</code> launches Claude with the right credentials. No flags, no config editing — just the account name.</p>
+            <p><code style="font-family:var(--font-mono);font-size:0.82em;color:var(--cyan)">altergo mine</code> launches your configured AI assistant with the right credentials. No flags, no config editing — just the account name.</p>
           </div>
           <div class="feature-item reveal reveal-delay-4" role="listitem" style="--shimmer-duration:13s; --shimmer-delay:5.1s">
             <div class="feature-icon" aria-hidden="true">
@@ -1904,8 +1905,8 @@
                 <circle cx="9" cy="16" r="2" fill="rgba(99,102,241,0.25)" stroke="var(--indigo-bright)" stroke-width="1.3"/>
               </svg>
             </div>
-            <h3>Isolates Claude, Shares the Rest</h3>
-            <p>Only Claude's OAuth token is isolated per account. AWS, GCP, Docker, kubectl, and GitHub CLI are shared across all accounts by default. Tune it with <code>altergo --settings</code> — a curses TUI, space to toggle, <kbd>s</kbd> to save.</p>
+            <h3>Isolates credentials. Shares the rest.</h3>
+            <p>Each account's provider credentials are isolated — Claude Code's <code>.credentials.json</code>, Gemini's <code>oauth_creds.json</code>, Codex's <code>auth.json</code>. AWS, GCP, Docker, kubectl, and GitHub CLI are shared across all accounts by default. Tune it with <code>altergo --settings</code> — a curses TUI, space to toggle, <kbd>s</kbd> to save.</p>
           </div>
           <div class="feature-item reveal reveal-delay-6" role="listitem" style="--shimmer-duration:12s; --shimmer-delay:7.3s">
             <div class="feature-icon" aria-hidden="true">
@@ -1949,13 +1950,13 @@
                 <code><span class="comment"># Install from PyPI</span>
 <span class="cmd">pip install altergo</span>
 
-<span class="comment"># Create named accounts</span>
-<span class="cmd">altergo --setup --name work</span>
-<span class="cmd">altergo --setup --name personal</span>
+<span class="comment"># Create accounts — one per AI account you use</span>
+<span class="cmd">altergo --setup --name mine</span>
+<span class="cmd">altergo --setup --name acme</span>
 
-<span class="comment"># Switch — just prefix the name</span>
-<span class="cmd">altergo work</span></code>
-                <button class="code-copy-btn" aria-label="Copy pip install commands" data-copy="pip install altergo&#10;altergo --setup --name work&#10;altergo work">
+<span class="comment"># Switch — just use the account name</span>
+<span class="cmd">altergo mine</span></code>
+                <button class="code-copy-btn" aria-label="Copy pip install commands" data-copy="pip install altergo&#10;altergo --setup --name mine&#10;altergo mine">
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
                     <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
@@ -1973,13 +1974,13 @@
                 <code><span class="comment"># Isolated environment</span>
 <span class="cmd">pipx install altergo</span>
 
-<span class="comment"># Create named accounts</span>
-<span class="cmd">altergo --setup --name work</span>
-<span class="cmd">altergo --setup --name personal</span>
+<span class="comment"># Create accounts — one per AI account you use</span>
+<span class="cmd">altergo --setup --name mine</span>
+<span class="cmd">altergo --setup --name acme</span>
 
-<span class="comment"># Switch — just prefix the name</span>
-<span class="cmd">altergo work</span></code>
-                <button class="code-copy-btn" aria-label="Copy pipx install commands" data-copy="pipx install altergo&#10;altergo --setup --name work&#10;altergo work">
+<span class="comment"># Switch — just use the account name</span>
+<span class="cmd">altergo mine</span></code>
+                <button class="code-copy-btn" aria-label="Copy pipx install commands" data-copy="pipx install altergo&#10;altergo --setup --name mine&#10;altergo mine">
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
                     <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
@@ -1994,10 +1995,8 @@
                 Manual / curl
               </div>
               <div class="code-block">
-                <code><span class="comment"># Single file install</span>
-<span class="cmd">curl -fsSL \
-  https://raw.githubusercontent.com/thepixelabs/altergo/main/altergo.py \
-  -o ~/.local/bin/altergo</span>
+                <code style="white-space: pre-wrap; word-break: break-all;"><span class="comment"># Core only — no pip required</span>
+<span class="cmd">curl -fsSL https://raw.githubusercontent.com/thepixelabs/altergo/main/altergo.py -o ~/.local/bin/altergo</span>
 <span class="cmd">chmod +x ~/.local/bin/altergo</span></code>
                 <button class="code-copy-btn" aria-label="Copy manual curl install command" data-copy="curl -fsSL https://raw.githubusercontent.com/thepixelabs/altergo/main/altergo.py -o ~/.local/bin/altergo && chmod +x ~/.local/bin/altergo">
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -2036,18 +2035,14 @@
             </h3>
             <table class="cmd-table" role="table" aria-label="altergo command reference">
               <tbody>
-                <tr><td>altergo &lt;name&gt;</td><td>Launch Claude as the named account (e.g. <code>altergo work</code>)</td></tr>
-                <tr><td>altergo</td><td>Launch Claude as the default account (backwards compatible)</td></tr>
-                <tr><td>altergo --resume</td><td>Open the interactive TUI session picker (all accounts)</td></tr>
-                <tr><td>altergo --resume &lt;id&gt;</td><td>Resume a specific session by ID directly</td></tr>
-                <tr><td>altergo --list</td><td>Print recent sessions as a plain table</td></tr>
-                <tr><td>altergo --setup --name &lt;n&gt;</td><td>Create a named account, wire symlinks automatically</td></tr>
-                <tr><td>altergo --teardown</td><td>Remove symlinks (account directory + credentials untouched)</td></tr>
-                <tr><td>altergo --settings</td><td>Configure which CLI tool credentials are shared (interactive TUI)</td></tr>
-                <tr><td>altergo &lt;name&gt; shell</td><td>Interactive shell inside the named account HOME</td></tr>
-                <tr><td>altergo &lt;name&gt; -- &lt;cmd&gt;</td><td>Run one command with HOME set to the named account directory</td></tr>
-                <tr><td>altergo --version</td><td>Show version number</td></tr>
-                <tr><td>altergo --help</td><td>Show help text</td></tr>
+                <tr><td>altergo &lt;name&gt;</td><td>Launch the named account (e.g. <code>altergo mine</code>)</td></tr>
+                <tr><td>altergo &lt;name&gt; &lt;provider&gt;</td><td>Launch with a specific provider — <code>altergo mine gemini</code>, <code>altergo acme codex</code></td></tr>
+                <tr><td>altergo --setup --name &lt;n&gt; --provider &lt;p&gt;</td><td>Create an account for a specific provider — <code>claude</code>, <code>gemini</code>, <code>codex</code>, <code>copilot</code></td></tr>
+                <tr><td>altergo --resume</td><td>Interactive session picker — browse, preview, resume</td></tr>
+                <tr><td>altergo --search</td><td>Full-text search across all conversation history</td></tr>
+                <tr><td>altergo --settings</td><td>Configure themes, behavior, and credential sharing</td></tr>
+                <tr><td>altergo &lt;name&gt; -- &lt;cmd&gt;</td><td>Run any command inside a named account's HOME</td></tr>
+                <tr><td>altergo --teardown</td><td>Remove symlinks — data and credentials untouched</td></tr>
               </tbody>
             </table>
           </div>
@@ -2060,10 +2055,9 @@
               </svg>
               Credentials &amp; Auth
             </h3>
-            <p class="docs-note">altergo isolates credentials by setting <code>HOME=~/.altergo/accounts/&lt;name&gt;</code> for the Claude process. Each account's token lives at <code>~/.altergo/accounts/&lt;name&gt;/.claude/.credentials.json</code>.</p>
-            <p class="docs-note"><strong>macOS users:</strong> Claude Code may store tokens in the system Keychain rather than a flat file. This is expected — when you authenticate inside <code>altergo work</code>, the token is stored under a separate Keychain entry keyed to that account's email. The credentials directory may appear empty even though auth works correctly.</p>
-            <p class="docs-note"><strong>Per-tool credential sharing:</strong> Run <code>altergo --settings</code> to choose which CLI tools share credentials across all accounts. Cloud providers (AWS, gcloud, Azure), Docker, Kubernetes, Terraform, and GitHub CLI are shared by default. Identity tools (SSH keys, git identity, GPG) are isolated by default.</p>
-            <p class="docs-note"><strong>One-off auth commands:</strong> <code>altergo &lt;name&gt; shell</code> and <code>altergo &lt;name&gt; -- &lt;cmd&gt;</code> are power-user escape hatches for running commands in a named account's HOME — useful for one-time setup tasks like <code>altergo work -- gh auth login</code>.</p>
+            <p class="docs-note">Each account gets its own isolated credentials. altergo logs you in fresh per account — just run <code>altergo mine</code> and authenticate when prompted. That's it.</p>
+            <p class="docs-note"><strong>Shared by default:</strong> AWS, gcloud, Azure, Docker, kubectl, Terraform, GitHub CLI — so your infra tools keep working across accounts without re-auth. Toggle anything via <code>altergo --settings</code>.</p>
+            <p class="docs-note"><strong>Need to auth a tool for one account?</strong> <code>altergo mine -- gh auth login</code> runs any command inside that account's environment.</p>
           </div>
 
           <!-- What gets symlinked -->
@@ -2103,10 +2097,10 @@
               </svg>
               Compatibility &amp; Disclaimers
             </h3>
-            <p class="docs-note">altergo depends on the internal directory structure of Claude Code. Anthropic may change this without notice — if altergo breaks after a Claude Code update, please <a href="https://github.com/thepixelabs/altergo/issues" target="_blank" rel="noopener noreferrer">open an issue</a>.</p>
-            <p class="docs-note">altergo is <strong>not affiliated with or endorsed by Anthropic</strong>. "Claude" and "Claude Code" are Anthropic's trademarks.</p>
+            <p class="docs-note">altergo depends on each provider's internal directory layout. Any provider may change their structure without notice — if altergo breaks after a tool update, please <a href="https://github.com/thepixelabs/altergo/issues" target="_blank" rel="noopener noreferrer">open an issue</a>.</p>
+            <p class="docs-note">altergo is <strong>not affiliated with or endorsed by Anthropic, Google, OpenAI, or GitHub</strong>. "Claude", "Gemini", "Codex", and "GitHub Copilot" are trademarks of their respective owners.</p>
             <div class="docs-disclaimer" role="note">
-              This software is provided "as is" — back up <code>~/.claude/</code> before first use.
+              This software is provided "as is" — back up your provider data directories before first use.
               Full terms in the <a href="https://github.com/thepixelabs/altergo/blob/main/DISCLAIMER.md" target="_blank" rel="noopener noreferrer">DISCLAIMER</a>.
             </div>
           </div>
@@ -2124,7 +2118,7 @@
         <a href="#hero" class="footer-brand" aria-label="altergo — back to top">
           <span class="brand-alt" aria-hidden="true">alt</span><span class="brand-chop" aria-hidden="true"></span><span class="brand-e" aria-hidden="true">e</span><span class="brand-r" aria-hidden="true">r</span><span class="brand-go" aria-hidden="true">go</span>
         </a>
-        <span style="font-size:0.78rem;color:var(--text-3);margin-left:auto;">altergo is an independent open-source project by <a href="https://pixelabs.net" target="_blank" rel="noopener noreferrer" style="color:var(--cyan);text-shadow:0 0 8px var(--cyan);text-decoration:underline;text-underline-offset:3px;">Pixelabs</a> · not affiliated with Anthropic PBC</span>
+        <span style="font-size:0.78rem;color:var(--text-3);margin-left:auto;">altergo is an independent open-source project by <a href="https://pixelabs.net" target="_blank" rel="noopener noreferrer" style="color:var(--cyan);text-shadow:0 0 8px var(--cyan);text-decoration:underline;text-underline-offset:3px;">Pixelabs</a> · not affiliated with Anthropic, Google, OpenAI, or GitHub</span>
       </div>
     </div>
   </footer>
@@ -2462,9 +2456,9 @@
         const body = document.getElementById('term-body');
         if (!body) return;
         body.innerHTML = [
-          '<span class="term-line visible"><span class="tc-prompt">~/my-app $</span> <span class="tc-cmd">altergo work</span></span>',
-          '<span class="term-line visible"><span class="tc-green">&#10003; Credentials active (@work)</span></span>',
-          '<span class="term-line visible"><span class="tc-cyan">Launching claude...</span></span>',
+          '<span class="term-line visible"><span class="tc-prompt">~/my-app $</span> <span class="tc-cmd">altergo mine</span></span>',
+          '<span class="term-line visible"><span class="tc-green">&#10003; Credentials active (@mine)</span></span>',
+          '<span class="term-line visible"><span class="tc-cyan">Launching assistant...</span></span>',
         ].join('');
         return;
       }
@@ -2486,14 +2480,14 @@
       // 'select' — animate row selection change
       // 'clear'  — wipe terminal
       const SCRIPT = [
-        // --- Scene 1: altergo work ---
+        // --- Scene 1: altergo mine ---
         { type: 'pause', ms: 600 },
-        { type: 'type', text: 'altergo work', speed: 72 },
+        { type: 'type', text: 'altergo mine', speed: 72 },
         { type: 'pause', ms: 400 },
         { type: 'enter' },
-        { type: 'output', html: '<span class="tc-dim">Loading account: work...</span>', delay: 120 },
-        { type: 'output', html: '<span class="tc-green">&#10003; Credentials active (@work)</span>', delay: 280 },
-        { type: 'output', html: '<span class="tc-cyan">Launching claude...</span>', delay: 180 },
+        { type: 'output', html: '<span class="tc-dim">Loading account: mine...</span>', delay: 120 },
+        { type: 'output', html: '<span class="tc-green">&#10003; Credentials active (@mine)</span>', delay: 280 },
+        { type: 'output', html: '<span class="tc-cyan">Launching assistant...</span>', delay: 180 },
         { type: 'output', html: '', delay: 320 },
 
         // --- Scene 2: altergo --resume opens the TUI ---
@@ -2513,7 +2507,7 @@
         // --- Scene 4: Enter → launch ---
         { type: 'confirm' },
         { type: 'output', html: '<span class="tc-green">&#10003; Resuming session: api-service</span>', delay: 80 },
-        { type: 'output', html: '<span class="tc-cyan">Launching claude...</span>', delay: 160 },
+        { type: 'output', html: '<span class="tc-cyan">Launching assistant...</span>', delay: 160 },
         { type: 'output', html: '', delay: 900 },
 
         // --- Loop back ---

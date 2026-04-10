@@ -217,7 +217,8 @@ def test_theme_spinner_map_covers_all_themes():
 def test_greeting_copy_guardrails():
     """Spot-check the CEO-mandated rewrites and absent patterns."""
     g = _load_greetings()
-    all_lines = [line for lines in g.GREETINGS.values() for line in lines]
+    # GREETINGS values are now (emoji, text) tuples — extract just the text.
+    all_lines = [text for lines in g.GREETINGS.values() for (_, text) in lines]
     joined = " ".join(all_lines).lower()
 
     # The two CEO-cut lines must NOT be present

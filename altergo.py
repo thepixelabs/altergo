@@ -186,19 +186,37 @@ def show_banner(account: str | None = None):
         from rich_pyfiglet import RichFiglet
         from rich.console import Console, Group
         from rich.text import Text
+        from rich.table import Table
         from rich.align import Align
         console = Console()
         theme = THEMES.get(get_current_theme(), THEMES[_DEFAULT_THEME])
         grad = theme["banner"]
         figlet = RichFiglet("altergo", font="smslant", colors=grad, horizontal=True)
+
+        # Measure the logo upfront — used both for the version column width
+        # (so the version sits right next to the figlet, not on the far edge
+        # of the terminal) and for centering the account name underneath.
+        rendered = pyfiglet.Figlet(font="smslant").renderText("altergo")
+        logo_lines = [l for l in rendered.splitlines() if l.strip()]
+        logo_left = min((len(l) - len(l.lstrip()) for l in logo_lines), default=0)
+        logo_right = max((len(l.rstrip()) for l in logo_lines), default=32)
+        logo_width = logo_right - logo_left
+
+        # Short version tag to the right of the logo, vertically centered
+        # against the figlet block. Rendered in the theme's mid gradient stop
+        # so it reads as part of the logo rather than a separate banner.
+        version_color = grad[len(grad) // 2] if len(grad) >= 2 else grad[0]
+        version_str = f"v{__version__}"
+        version_text = Text(version_str, style=f"bold {version_color}")
+        logo_row = Table.grid(padding=(0, 1), expand=False)
+        # Pin the first column to the actual logo width so the version
+        # column hugs the right edge of the figlet rather than stretching
+        # to fill the terminal.
+        logo_row.add_column(width=logo_right, no_wrap=True)
+        logo_row.add_column(no_wrap=True)
+        logo_row.add_row(figlet, Align(version_text, "left", vertical="middle"))
+
         if account:
-            # Measure the logo so the account line sits centered directly
-            # beneath it — no blank gap, flush against the figlet.
-            rendered = pyfiglet.Figlet(font="smslant").renderText("altergo")
-            logo_lines = [l for l in rendered.splitlines() if l.strip()]
-            logo_left = min((len(l) - len(l.lstrip()) for l in logo_lines), default=0)
-            logo_right = max((len(l.rstrip()) for l in logo_lines), default=32)
-            logo_width = logo_right - logo_left
 
             # Star palette is pulled from the banner gradient so the account
             # line always matches the logo, whatever the theme.
@@ -222,13 +240,15 @@ def show_banner(account: str | None = None):
             name_line.append(".",     style=DIM)
 
             # Pad the name line so its center aligns with the logo's center,
-            # then print directly — no Align wrapper, no extra row.
+            # then print directly — no Align wrapper, no extra row. Alignment
+            # is computed against the figlet alone so the version label on
+            # the right of the logo_row doesn't shift the stars off-center.
             name_w = name_line.cell_len
             lead = logo_left + max(0, (logo_width - name_w) // 2)
             padded = Text(" " * lead) + name_line
-            console.print(Group(figlet, padded))
+            console.print(Group(logo_row, padded))
         else:
-            console.print(figlet)
+            console.print(logo_row)
     except Exception:
         suffix = f"  [{account}]" if account else ""
         print(f"  altergo {__version__}  —  Switch Claude identities. Keep your context.{suffix}")

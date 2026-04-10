@@ -42,19 +42,64 @@ _C_SUCCESS = "38;5;76"       # checkmarks / success
 _C_WARN    = "38;5;220"      # warnings
 
 
-def show_banner():
-    """Print the altergo ASCII banner with gradient. TTY-only."""
+def show_banner(account: str | None = None):
+    """Print the altergo ASCII banner with gradient. TTY-only.
+
+    If ``account`` is given, the account name is rendered to the right of the
+    logo with little stars around it so the user can see at a glance which
+    identity the upcoming session will run under.
+    """
     if not sys.stdout.isatty():
-        print(f"  altergo {__version__}  —  Switch Claude identities. Keep your context.")
+        suffix = f"  [{account}]" if account else ""
+        print(f"  altergo {__version__}  —  Switch Claude identities. Keep your context.{suffix}")
         return
     try:
+        import pyfiglet
         from rich_pyfiglet import RichFiglet
-        from rich.console import Console
+        from rich.console import Console, Group
+        from rich.text import Text
+        from rich.align import Align
         console = Console()
         figlet = RichFiglet("altergo", font="smslant", colors=["#00d7ff", "#005fd7"], horizontal=True)
-        console.print(figlet)
+        if account:
+            # Measure the logo so the account line sits centered directly
+            # beneath it — no blank gap, flush against the figlet.
+            rendered = pyfiglet.Figlet(font="smslant").renderText("altergo")
+            logo_lines = [l for l in rendered.splitlines() if l.strip()]
+            logo_left = min((len(l) - len(l.lstrip()) for l in logo_lines), default=0)
+            logo_right = max((len(l.rstrip()) for l in logo_lines), default=32)
+            logo_width = logo_right - logo_left
+
+            # ASCII stars: '*', '.' — no unicode. All blue to match the logo.
+            DIM   = "#005fd7"  # deep blue — matches logo bottom
+            MID   = "#00afff"  # mid blue
+            BRIGHT = "bold #00d7ff"  # electric cyan — matches logo top
+            name_line = Text()
+            name_line.append(".",     style=DIM)
+            name_line.append("  ",    style=MID)
+            name_line.append("*",     style=BRIGHT)
+            name_line.append("  ",    style=MID)
+            name_line.append(".",     style=DIM)
+            name_line.append("  ",    style=MID)
+            name_line.append(account, style=BRIGHT)
+            name_line.append("  ",    style=MID)
+            name_line.append(".",     style=DIM)
+            name_line.append("  ",    style=MID)
+            name_line.append("*",     style=BRIGHT)
+            name_line.append("  ",    style=MID)
+            name_line.append(".",     style=DIM)
+
+            # Pad the name line so its center aligns with the logo's center,
+            # then print directly — no Align wrapper, no extra row.
+            name_w = name_line.cell_len
+            lead = logo_left + max(0, (logo_width - name_w) // 2)
+            padded = Text(" " * lead) + name_line
+            console.print(Group(figlet, padded))
+        else:
+            console.print(figlet)
     except Exception:
-        print(f"  altergo {__version__}  —  Switch Claude identities. Keep your context.")
+        suffix = f"  [{account}]" if account else ""
+        print(f"  altergo {__version__}  —  Switch Claude identities. Keep your context.{suffix}")
 
 
 def show_help():
@@ -1720,6 +1765,7 @@ def launch_claude(account: str = "default", args=None, provider: str | None = No
 
     env = _build_alt_env(account)
     cmd = [binary_path] + (args or [])
+    show_banner(account)
     result = subprocess.run(cmd, env=env)
     _print_launch_message()
     sys.exit(result.returncode)
@@ -1740,6 +1786,7 @@ def launch_shell(account: str = "default"):
         env["PS1"] = f"({label}) {env['PS1']}"
     elif shell_name == "zsh":
         env["PROMPT"] = f"({label}) {env.get('PROMPT', '%n@%m %~ %# ')}"
+    show_banner(account)
     print(_c(36, f"Entering altergo shell [{account}] (HOME={account_home})"))
     print(_c(2, "Run 'exit' or Ctrl-D to return to your primary account.\n"))
     result = subprocess.run([shell], env=env)

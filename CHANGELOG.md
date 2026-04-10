@@ -1,6 +1,23 @@
 # CHANGELOG
 
 
+## v0.12.0 (2026-04-10)
+
+### Features
+
+- Add color themes with live launcher cycle
+  ([`d9773a9`](https://github.com/thepixelabs/altergo/commit/d9773a937a5a53ab682c2bec933eff6f34c33eba))
+
+Introduces a THEMES catalog (ocean, forest, lavender, sunset, mono, rainbow) that drives every
+  colored surface: help, list, settings, session picker, launcher, banner, and shell prompt. Themes
+  persist in .altergo.json, can be cycled live in the launcher with 't', set via 'altergo --theme
+  <name>', and route through a runtime C(role) lookup instead of hardcoded constants.
+
+Also shows the altergo banner on --list, --setup, --settings and --theme so the logo is present
+  across every top-level screen, and drops the redundant 'account: <name>' prefix line now that the
+  banner shows the active account directly under the logo.
+
+
 ## v0.11.0 (2026-04-10)
 
 ### Features

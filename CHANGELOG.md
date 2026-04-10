@@ -1,6 +1,18 @@
 # CHANGELOG
 
 
+## v0.13.0 (2026-04-10)
+
+### Features
+
+- Show short version tag to the right of the banner logo
+  ([`b9c7493`](https://github.com/thepixelabs/altergo/commit/b9c74933fddcbac57460985e63d7ae382567c667))
+
+Renders v<version> vertically centered against the figlet block, in the theme's mid gradient stop so
+  it reads as part of the logo. Pinned to the logo's natural width so it hugs the figlet rather than
+  drifting to the terminal's right edge.
+
+
 ## v0.12.0 (2026-04-10)
 
 ### Features

@@ -160,6 +160,25 @@ def set_current_theme(name: str) -> None:
         _CURRENT_THEME = name
 
 
+def _gradient_color(stops: list, t: float) -> str:
+    """Interpolate between hex color stops at position *t* (0.0–1.0)."""
+    if len(stops) == 1 or t <= 0:
+        return stops[0]
+    if t >= 1:
+        return stops[-1]
+    segment = t * (len(stops) - 1)
+    i = int(segment)
+    f = segment - i
+    if i >= len(stops) - 1:
+        return stops[-1]
+    r1, g1, b1 = int(stops[i][1:3], 16), int(stops[i][3:5], 16), int(stops[i][5:7], 16)
+    r2, g2, b2 = int(stops[i+1][1:3], 16), int(stops[i+1][3:5], 16), int(stops[i+1][5:7], 16)
+    r = int(r1 + (r2 - r1) * f)
+    g = int(g1 + (g2 - g1) * f)
+    b = int(b1 + (b2 - b1) * f)
+    return f"#{r:02x}{g:02x}{b:02x}"
+
+
 def C(role: str) -> str:
     """Return the ANSI code for a logical role under the active theme.
 
@@ -315,17 +334,14 @@ def show_banner(
             BRIGHT = f"bold {grad[0]}"
             MID    = grad[len(grad) // 2] if len(grad) > 2 else grad[0]
 
-            # Greeting text with theme gradient sweep across the message body.
+            # Greeting text with smooth per-character gradient across the message.
             greet_text = Text()
             if greet_line:
                 greet_text.append(f"  {greet_icon}  ", style=MID)
-                _n, _g = len(greet_line), len(grad)
-                _chunk = max(1, _n // _g)
-                for _i, _col in enumerate(grad):
-                    _s = _i * _chunk
-                    _e = min(_s + _chunk, _n) if _i < _g - 1 else _n
-                    if _s < _n:
-                        greet_text.append(greet_line[_s:_e], style=_col)
+                _n = len(greet_line)
+                for _i, _ch in enumerate(greet_line):
+                    _t = _i / max(_n - 1, 1)
+                    greet_text.append(_ch, style=_gradient_color(grad, _t))
 
             if account:
                 if animate_duration > 0:
@@ -1945,6 +1961,16 @@ def _draw_animated_nav(stdscr, row, text, max_width, phase, attrs):
         _safe_addch(stdscr, row, i, ch, attr)
 
 
+def _session_matches(s, query):
+    """Return True if *query* (lowercase) matches any searchable field."""
+    q = query.lower()
+    for field in (format_project_name(s["project"]), s.get("topic") or "",
+                  s.get("cwd") or "", s.get("id") or ""):
+        if q in field.lower():
+            return True
+    return False
+
+
 def _draw_picker(stdscr, sessions):
     curses.curs_set(0)
     attrs = _picker_attrs()
@@ -1954,6 +1980,9 @@ def _draw_picker(stdscr, sessions):
     scroll_offset = 0
     preview_cache = {}  # session_id -> loaded preview dict
     phase = 0
+    search_query = ""     # active filter text ("" = show all)
+    search_mode = False   # True while typing in the / search bar
+    filtered = sessions   # visible subset
 
     while True:
         stdscr.erase()
@@ -1961,7 +1990,10 @@ def _draw_picker(stdscr, sessions):
         cols = _compute_columns(max_x)
 
         # Title bar
-        title = f" altergo — pick a session  ·  {len(sessions)} total"
+        if search_query:
+            title = f" altergo — pick a session  ·  {len(filtered)}/{len(sessions)} matching"
+        else:
+            title = f" altergo — pick a session  ·  {len(sessions)} total"
         _safe_addnstr(stdscr, 0, 0, title.ljust(max_x), max_x - 1, attrs["title"])
 
         # Column header row
@@ -1982,9 +2014,9 @@ def _draw_picker(stdscr, sessions):
 
         for i in range(visible_rows):
             idx = scroll_offset + i
-            if idx >= len(sessions):
+            if idx >= len(filtered):
                 break
-            s = sessions[idx]
+            s = filtered[idx]
             row = i + 3
             is_sel = idx == current
 
@@ -2014,15 +2046,29 @@ def _draw_picker(stdscr, sessions):
                 topic_attr = attrs["dim"] if topic_is_empty else attrs["topic"]
                 _safe_addnstr(stdscr, row, x, topic, max_x - x - 1, topic_attr)
 
-        # Footer: session id + cwd (normal brightness, not dim)
+        # Footer
         footer_row = max_y - 2
-        if 0 <= current < len(sessions):
-            s = sessions[current]
-            sid = s["id"]
-            cwd = s.get("cwd") or decode_project_path(s["project"])
-            foot = f" {sid}  ·  {cwd}"
-            _safe_addnstr(stdscr, footer_row, 0, _truncate(foot, max_x - 1), max_x - 1, attrs["topic"])
-        nav = " ↑↓/jk move  ·  g/G top/bot  ·  PgUp/PgDn page  ·  p/Tab preview  ·  Enter resume  ·  q quit  ·  pixelabs"
+        if search_mode:
+            # Search input bar
+            prompt = f" /{search_query}"
+            _safe_addnstr(stdscr, footer_row, 0, prompt.ljust(max_x), max_x - 1, attrs["topic"])
+            curses.curs_set(1)
+            try:
+                stdscr.move(footer_row, min(len(prompt), max_x - 1))
+            except curses.error:
+                pass
+        else:
+            curses.curs_set(0)
+            if search_query:
+                foot = f" /{search_query}"
+                _safe_addnstr(stdscr, footer_row, 0, _truncate(foot, max_x - 1), max_x - 1, attrs["topic"])
+            elif 0 <= current < len(filtered):
+                s = filtered[current]
+                sid = s["id"]
+                cwd = s.get("cwd") or decode_project_path(s["project"])
+                foot = f" {sid}  ·  {cwd}"
+                _safe_addnstr(stdscr, footer_row, 0, _truncate(foot, max_x - 1), max_x - 1, attrs["topic"])
+        nav = " ↑↓/jk move  ·  / search  ·  g/G top/bot  ·  p/Tab preview  ·  Enter resume  ·  q quit  ·  pixelabs"
         _draw_animated_nav(stdscr, footer_row + 1, nav, max_x - 1, phase, attrs)
 
         stdscr.refresh()
@@ -2033,29 +2079,59 @@ def _draw_picker(stdscr, sessions):
             phase += 1
             continue
 
+        # -- Search mode input handling --
+        if search_mode:
+            if key == 27:  # Esc — cancel search, restore full list
+                search_mode = False
+                search_query = ""
+                filtered = sessions
+                current = 0
+                scroll_offset = 0
+            elif key in (curses.KEY_ENTER, 10, 13):  # Enter — accept filter
+                search_mode = False
+            elif key in (curses.KEY_BACKSPACE, 127, 8):
+                search_query = search_query[:-1]
+                if search_query:
+                    filtered = [s for s in sessions if _session_matches(s, search_query)]
+                else:
+                    filtered = sessions
+                current = min(current, max(len(filtered) - 1, 0))
+                scroll_offset = 0
+            elif 32 <= key <= 126:  # printable character
+                search_query += chr(key)
+                filtered = [s for s in sessions if _session_matches(s, search_query)]
+                current = min(current, max(len(filtered) - 1, 0))
+                scroll_offset = 0
+            continue
+
+        # -- Normal mode input handling --
         if key in (curses.KEY_UP, ord("k")):
             current = max(0, current - 1)
         elif key in (curses.KEY_DOWN, ord("j")):
-            current = min(len(sessions) - 1, current + 1)
+            current = min(len(filtered) - 1, current + 1)
         elif key == curses.KEY_PPAGE:
             current = max(0, current - visible_rows)
         elif key == curses.KEY_NPAGE:
-            current = min(len(sessions) - 1, current + visible_rows)
+            current = min(len(filtered) - 1, current + visible_rows)
         elif key == ord("g"):
             current = 0
         elif key == ord("G"):
-            current = len(sessions) - 1
+            current = max(len(filtered) - 1, 0)
         elif key in (curses.KEY_ENTER, 10, 13):
-            return sessions[current]
+            if filtered:
+                return filtered[current]
         elif key in (ord("p"), ord(" "), 9):  # p, space, Tab → preview
-            if 0 <= current < len(sessions):
-                s = sessions[current]
+            if 0 <= current < len(filtered):
+                s = filtered[current]
                 if s["id"] not in preview_cache:
                     preview_cache[s["id"]] = load_session_preview(s["path"])
                 action = _draw_preview(stdscr, attrs, s, preview_cache[s["id"]])
                 if action == "resume":
                     return s
                 # else: just return to picker
+        elif key == ord("/"):
+            search_mode = True
+            search_query = ""
         elif key in (ord("q"), 27):
             return None
         elif key == curses.KEY_RESIZE:
@@ -2621,22 +2697,24 @@ def _prompt_provider_selection(current_providers: list[str] | None = None) -> li
 # --- Goodbye messages ---
 
 _GOODBYE = [
-    "Back to reality. Good luck with the next bug.",
-    "Session closed. The context window has left the building.",
-    "That was productive, ah?",
-    "Claude has left the chat. Your git blame remains.",
-    "All that intelligence, and it still couldn't push to main for you.",
-    "See you in 5 minutes when the next edge case appears.",
-    "The model has spoken. Whether it was right is your problem.",
-    "Tokens spent. Wisdom optional.",
-    "Another session closed. Another PR description that writes itself.",
-    "Done. The AI did the thinking. You take the blame.",
-    "Clean exit. The work continues.",
-    "Until next time. May your tests be green.",
-    "Context preserved. You know where to find it.",
-    "Ship it.",
-    "Commit early, commit often. You know the drill.",
+    ("👋", "Back to reality. Good luck with the next bug."),
+    ("🚪", "Session closed. The context window has left the building."),
+    ("🤔", "That was productive, ah?"),
+    ("💬", "The chat is over. Your git blame remains."),
+    ("🧠", "All that intelligence, and it still couldn't push to main for you."),
+    ("⏱️", "See you in 5 minutes when the next edge case appears."),
+    ("🔮", "The model has spoken. Whether it was right is your problem."),
+    ("💸", "Tokens spent. Wisdom optional."),
+    ("📝", "Another session closed. Another PR description that writes itself."),
+    ("🤷", "Done. The AI did the thinking. You take the blame."),
+    ("✅", "Clean exit. The work continues."),
+    ("🍀", "Until next time. May your tests be green."),
+    ("📌", "Context preserved. You know where to find it."),
+    ("🚀", "Ship it."),
+    ("💾", "Commit early, commit often. You know the drill."),
 ]
+
+_GOODBYE_GRADIENT = ["#af5fff", "#5f87ff", "#00d7ff", "#00d787"]
 
 
 def _print_launch_message():
@@ -2644,8 +2722,17 @@ def _print_launch_message():
     if not sys.stderr.isatty():
         return
     import random
-    msg = random.choice(_GOODBYE)
-    print(f"\n  {_c(C('command'), 'altergo')}  {_c(C('dim'), msg)}\n", file=sys.stderr)
+    emoji, msg = random.choice(_GOODBYE)
+    # Build a smooth per-character gradient across the message text.
+    grad = _GOODBYE_GRADIENT
+    parts = []
+    n = len(msg)
+    for i, ch in enumerate(msg):
+        t = i / max(n - 1, 1)
+        col = _gradient_color(grad, t)
+        parts.append(f"\033[38;2;{int(col[1:3],16)};{int(col[3:5],16)};{int(col[5:7],16)}m{ch}")
+    colored = "".join(parts) + "\033[0m"
+    print(f"\n  {emoji}  {colored}\n", file=sys.stderr)
 
 
 # --- Interactive provider+account launcher ---
@@ -2880,16 +2967,9 @@ def _first_run_onboarding():
     except Exception:
         logo_lines = ["altergo"]
 
-    # Collect every non-space character position across all lines so we can
-    # spread the gradient evenly — same technique show_banner uses for greetings.
-    all_chars = []
-    for line in logo_lines:
-        for ch in line:
-            if ch != " ":
-                all_chars.append(ch)
-    total = max(len(all_chars), 1)
-    n_grad = len(grad)
-    chunk = max(1, total // n_grad)
+    # Count non-space characters to spread the gradient smoothly across them.
+    total = sum(1 for line in logo_lines for ch in line if ch != " ")
+    total = max(total, 1)
 
     char_idx = 0
     for line_idx, line in enumerate(logo_lines):
@@ -2898,8 +2978,8 @@ def _first_run_onboarding():
             if ch == " ":
                 text.append(" ")
             else:
-                color_slot = min(char_idx // chunk, n_grad - 1)
-                text.append(ch, style=grad[color_slot])
+                _t = char_idx / max(total - 1, 1)
+                text.append(ch, style=_gradient_color(grad, _t))
                 char_idx += 1
 
         # Append version tag dim-styled to the right of the last logo line.

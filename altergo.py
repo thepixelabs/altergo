@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Altergo — multi-account session manager for Claude Code. Run 'altergo --help' for usage."""
 
-__version__ = "0.11.0"
+__version__ = "0.12.0"
 
 import curses
 import json

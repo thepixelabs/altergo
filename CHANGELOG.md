@@ -1,6 +1,67 @@
 # CHANGELOG
 
 
+## v0.21.0 (2026-04-11)
+
+### Bug Fixes
+
+- Apply all landing page scenario pivot changes correctly
+  ([`b6e9b7f`](https://github.com/thepixelabs/altergo/commit/b6e9b7fec52675b4297b7cf665305b0984307b3c))
+
+Previous commits had copy failures between worktrees — changes weren't persisting. This commit
+  applies everything cleanly in one pass:
+
+- Hero h1: "Don't break flow. Switch accounts." - Hero subtitle: rate-limit/mid-session scenario
+  with `altergo backup` - New #when section: three scenario cards (Rate-limited, Thinker/sprinter,
+  Clients/credentials) with nav links (desktop + mobile) - Why section: "Never lose your flow."
+  heading + updated subtitle - All CLI examples: `altergo pro` → `altergo backup`, `altergo
+  personal` → `altergo backup`, `--name personal` → `--name work`, `--name pro` → `--name backup`
+  (14+ occurrences across HTML, JS, data-copy attrs) - Meta description updated - Multi-name lists
+  like `personal, pro, sideproject` left unchanged
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+- Replace tier-implying account names with neutral examples
+  ([`87b8334`](https://github.com/thepixelabs/altergo/commit/87b8334b17616908ea7aa3b8259edf4dd317f2b2))
+
+`altergo pro` and `altergo personal` in CLI snippets accidentally read as altergo product tiers.
+  Replace with `altergo backup` (and `work` in multi-example contexts) throughout — hero, features,
+  how-it-works, install snippets, commands table, and terminal animation.
+
+Multi-example listings like `personal, pro, sideproject` (showing that names are user-defined) are
+  left unchanged.
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+### Features
+
+- Interactive provider picker and default-provider resolution
+  ([`c831f73`](https://github.com/thepixelabs/altergo/commit/c831f73ffb002049d184e867124301c06a223f65))
+
+Replace the numbered-checkbox provider prompt with a curses-based arrow/ radio picker (Space
+  toggles, d sets default, Enter/s saves). Persist the chosen default in account.json via a new
+  default_provider field with back-fill for pre-existing accounts. launch_claude now resolves the
+  default provider from meta so altergo <account> and bare altergo (with an active account) both
+  launch directly without requiring an explicit provider argument. Style the first-run onboarding
+  copy with theme accent colors and add a short Rich spinner beat so it no longer renders as plain
+  white text.
+
+- Pivot landing page to flow-continuity hooks
+  ([`6a3fa2e`](https://github.com/thepixelabs/altergo/commit/6a3fa2e925e7227bd1392f2f44db92ff1bd2a51b))
+
+Lead with rate-limit continuity as the #1 scenario hook — the moment you hit a wall mid-session and
+  need to keep going without losing context. Add thinker/executor and client isolation as secondary
+  scenarios.
+
+- docs/index.html: new hero headline, new #when section with 3 scenario cards, updated #why heading,
+  updated meta description, new nav link - README.md: new tagline, why section, before/after table
+  leading with the rate-limit moment - docs/launch/positioning.md: full rewrite with ranked
+  scenarios and tone rules (never say cheaper/bypass — frame as flow continuity) -
+  docs/how-it-works.md: expand problem statement with new scenarios
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+
 ## v0.20.2 (2026-04-11)
 
 ### Refactoring

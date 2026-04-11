@@ -365,6 +365,76 @@ def test_teardown_removes_symlinks(fake_home):
             link = account_home / rel
             assert not link.is_symlink(), f"~/{rel} symlink should be removed after teardown"
 
+    # All home-level provider file symlinks must be gone.
+    for pid, prov in altergo.PROVIDERS.items():
+        for name in prov.get("symlink_home_files", []):
+            link = account_home / name
+            assert not link.is_symlink(), f"{name} symlink should be removed after teardown"
+
+
+def test_setup_creates_home_file_symlinks(fake_home):
+    """do_config() symlinks provider symlink_home_files from account_home → MAIN_HOME."""
+    main_home = fake_home["main_home"]
+    accounts_dir = fake_home["accounts_dir"]
+    _create_main_claude_sources(fake_home["main_claude"])
+
+    claude_prov = altergo.PROVIDERS["claude"]
+    for name in claude_prov.get("symlink_home_files", []):
+        (main_home / name).touch()
+
+    altergo.do_config("work")
+
+    account_home = accounts_dir / "work"
+    for name in claude_prov.get("symlink_home_files", []):
+        link = account_home / name
+        src = main_home / name
+        assert link.is_symlink(), f"{name} should be a symlink at account_home level"
+        assert link.resolve() == src.resolve(), f"{name} must point into MAIN_HOME"
+
+
+def test_setup_promotes_home_file(fake_home):
+    """do_config() promotes a real account-home file to MAIN_HOME when src is absent."""
+    main_home = fake_home["main_home"]
+    accounts_dir = fake_home["accounts_dir"]
+    _create_main_claude_sources(fake_home["main_claude"])
+
+    # Pre-create the account home with a real .claude.json before do_config runs.
+    account_home = accounts_dir / "work"
+    account_home.mkdir(parents=True, exist_ok=True)
+    real_file = account_home / ".claude.json"
+    real_file.write_text('{"mcpServers": {}}')
+
+    assert not (main_home / ".claude.json").exists(), "src must be absent to trigger promotion"
+
+    altergo.do_config("work")
+
+    src = main_home / ".claude.json"
+    dst = account_home / ".claude.json"
+    assert src.exists(), ".claude.json must be promoted to MAIN_HOME"
+    assert src.read_text() == '{"mcpServers": {}}'
+    assert dst.is_symlink(), "account_home/.claude.json must become a symlink after promotion"
+    assert dst.resolve() == src.resolve()
+
+
+def test_setup_home_file_conflict_leaves_both(fake_home):
+    """do_config() warns and leaves both files untouched when both src and dst are real."""
+    main_home = fake_home["main_home"]
+    accounts_dir = fake_home["accounts_dir"]
+    _create_main_claude_sources(fake_home["main_claude"])
+
+    account_home = accounts_dir / "work"
+    account_home.mkdir(parents=True, exist_ok=True)
+    (main_home / ".claude.json").write_text('{"main": true}')
+    (account_home / ".claude.json").write_text('{"account": true}')
+
+    altergo.do_config("work")
+
+    # Neither file is touched: both remain as real files, no symlink created.
+    dst = account_home / ".claude.json"
+    assert not dst.is_symlink(), "conflicting .claude.json must not become a symlink"
+    assert dst.read_text() == '{"account": true}', "account file must not be overwritten"
+    assert (main_home / ".claude.json").read_text() == '{"main": true}', "main file must not be overwritten"
+
 
 # ---------------------------------------------------------------------------
 # T9 — _ensure_symlinked_dir / _sweep_existing_accounts
@@ -589,12 +659,20 @@ def test_ensure_symlinked_dir_noop_when_correct(sweep_home):
 
 def test_providers_dict_structure():
     required_keys = {"display_name", "dot_dir", "binary", "credentials_file", "symlink_dirs", "symlink_files"}
+    optional_keys = {"symlink_home_files"}
     for pid, prov in altergo.PROVIDERS.items():
-        assert required_keys == set(prov.keys()), f"provider {pid!r} missing keys or has extra keys"
+        actual_keys = set(prov.keys())
+        missing = required_keys - actual_keys
+        unknown = actual_keys - required_keys - optional_keys
+        assert not missing, f"provider {pid!r} missing required keys: {missing}"
+        assert not unknown, f"provider {pid!r} has unrecognised keys: {unknown}"
         assert isinstance(prov["symlink_dirs"], list), f"provider {pid!r} symlink_dirs must be a list"
         assert all(isinstance(s, str) for s in prov["symlink_dirs"]), f"provider {pid!r} symlink_dirs must be list of str"
         assert isinstance(prov["symlink_files"], list), f"provider {pid!r} symlink_files must be a list"
         assert all(isinstance(s, str) for s in prov["symlink_files"]), f"provider {pid!r} symlink_files must be list of str"
+        if "symlink_home_files" in prov:
+            assert isinstance(prov["symlink_home_files"], list), f"provider {pid!r} symlink_home_files must be a list"
+            assert all(isinstance(s, str) for s in prov["symlink_home_files"]), f"provider {pid!r} symlink_home_files must be list of str"
 
 
 def test_credentials_isolation_all_providers():

@@ -29,8 +29,10 @@ Claude Code stores everything under `~/.claude/`:
 
 There is no built-in support for multiple accounts. Common scenarios where this matters:
 
-- **Personal + work**: You have a personal Claude Max subscription and a separate work subscription.
-- **Multiple clients**: You work with client-A and client-B, each providing their own organization seat.
+- **Session continuity**: You hit a rate limit mid-session and need to continue on a second account without losing your place.
+- **Thinker + executor**: You run one account on high-capability models for architecture decisions and a second on faster models for execution — same project, two operating modes.
+- **Multiple clients**: You work with client-A and client-B, each providing their own organization seat, and need their contexts fully isolated.
+- **Work vs. personal**: Your employer provisions a managed AI account; you also have a personal account for OSS and side projects on the same machine.
 - **Testing / isolation**: You want to run a second account to test different CLAUDE.md instructions without touching your primary configuration.
 
 In all of these cases, `~/.claude/.credentials.json` holds the active session for exactly one account at a time. Switching accounts naively means losing everything else in `~/.claude/`.

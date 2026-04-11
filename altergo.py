@@ -788,16 +788,23 @@ def load_account_meta(account_home: Path) -> dict:
     Backwards compat: if account.json missing but .claude/ exists, returns
     {"version": 1, "providers": ["claude"]} without writing anything.
     If neither exists, returns None.
+
+    The optional "default_provider" key is added if absent: falls back to
+    the first entry in "providers" so older account.json files keep working.
     """
     meta_file = account_home / "account.json"
     if meta_file.exists():
         try:
-            return json.loads(meta_file.read_text())
+            data = json.loads(meta_file.read_text())
         except Exception:
-            return {"version": 1, "providers": ["claude"]}
+            data = {"version": 1, "providers": ["claude"]}
+        # Back-fill default_provider for accounts created before this field existed.
+        if "default_provider" not in data and data.get("providers"):
+            data["default_provider"] = data["providers"][0]
+        return data
     # Legacy account: .claude dir exists but no account.json
     if (account_home / ".claude").exists():
-        return {"version": 1, "providers": ["claude"]}
+        return {"version": 1, "providers": ["claude"], "default_provider": "claude"}
     return None
 
 
@@ -1473,7 +1480,7 @@ def _ensure_symlinked_dir(name: str, src: Path, dst: Path, account_claude: Path)
         return False
 
 
-def do_setup(account: str = "default", providers: list[str] | None = None):
+def do_setup(account: str = "default", providers: list[str] | None = None, default_provider: str | None = None):
     if providers is None:
         providers = ["claude"]
     account_home, account_claude = resolve_account(account)
@@ -1566,9 +1573,16 @@ def do_setup(account: str = "default", providers: list[str] | None = None):
     _status_wrap("Linking shared credentials…", _apply_catalog_entries)
 
     # 4. Save account metadata
+    # Resolve default_provider: explicit arg > existing meta > first in list.
+    _existing_default = meta.get("default_provider") if meta else None
+    _resolved_default = default_provider or _existing_default or (providers[0] if providers else "claude")
+    # If the chosen default is no longer in the providers list, reset to first.
+    if _resolved_default not in providers:
+        _resolved_default = providers[0]
     save_account_meta(account_home, {
         "version": 1,
         "providers": providers,
+        "default_provider": _resolved_default,
         "created": (meta.get("created") if meta else None) or datetime.now().isoformat(timespec="seconds"),
     })
 
@@ -3457,8 +3471,8 @@ def launch_claude(account: str = "default", args=None, provider: str | None = No
     """Launch a provider CLI with account HOME, passing args through unchanged.
 
     If provider is None, reads account.json to determine which provider to use.
-    Single-provider accounts auto-select; multi-provider accounts require a
-    positional provider argument (e.g. altergo work gemini).
+    Single-provider accounts auto-select; multi-provider accounts use the
+    default_provider field if set, otherwise exit with a helpful error.
     """
     _sweep_existing_accounts()
 
@@ -3474,11 +3488,15 @@ def launch_claude(account: str = "default", args=None, provider: str | None = No
 
         if len(prov_list) == 1:
             provider = prov_list[0]
+        elif meta is not None and meta.get("default_provider") in prov_list:
+            # Multi-provider account with a default set — use it directly
+            provider = meta["default_provider"]
         else:
             names = ", ".join(prov_list)
             print(
                 f"altergo: account '{account}' has multiple providers ({names}).\n"
-                f"  Specify one: altergo {account} <provider>",
+                f"  Specify one: altergo {account} <provider>\n"
+                f"  Or run 'altergo --setup --name {account}' to set a default provider.",
                 file=sys.stderr,
             )
             sys.exit(1)
@@ -3606,70 +3624,170 @@ def _prompt_account_name() -> str:
             print(f"  Invalid name '{raw}'. Use letters, digits, - or _ only.")
 
 
-def _prompt_provider_selection(current_providers: list[str] | None = None) -> list[str]:
-    """Prompt user to select which AI providers this account uses.
+def _prompt_provider_selection(current_providers=None, current_default=None):
+    """Curses-based interactive provider picker.
 
-    Detects installed provider binaries and pre-checks them.
-    current_providers: if set, pre-check these instead of detecting.
-    Returns list of provider IDs (at least one).
+    Arrow keys navigate, Space toggles a provider on/off, 'd' marks the
+    highlighted provider as the default, Enter/s saves and closes.
+
+    current_providers: pre-selected provider IDs (None = detect installed).
+    current_default:   pre-set default provider ID (None = first selected).
+
+    Returns (providers_list, default_provider_id).
+    Falls back to a plain-text prompt when stdin/stdout are not a TTY.
     """
     # Build ordered list: installed ones first, then others
     installed = [pid for pid, p in PROVIDERS.items() if shutil.which(p["binary"])]
     all_providers = list(PROVIDERS.keys())
     ordered = installed + [p for p in all_providers if p not in installed]
 
-    pre_checked = current_providers if current_providers is not None else installed
-    # Always ensure claude is pre-checked if nothing is installed
-    if not pre_checked:
-        pre_checked = ["claude"]
+    pre_selected = set(current_providers) if current_providers is not None else set(installed)
+    if not pre_selected:
+        pre_selected = {"claude"}
 
-    print()
-    print("  Select AI providers for this account (space to toggle, enter to confirm):")
-    print()
+    # Fall back to plain prompt when not running in a TTY (e.g. piped input)
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        providers = list(pre_selected) if pre_selected else ["claude"]
+        default = current_default or providers[0]
+        return providers, default
 
-    selected = set(pre_checked)
-    items = ordered
+    def _draw_provider_picker(stdscr, state):
+        """Inner curses draw loop. Mutates state dict in-place."""
+        curses.curs_set(0)
+        attrs = _picker_attrs()
+        stdscr.timeout(80)
+        phase = 0
 
-    # Simple interactive: show numbered list, ask for comma-separated selection
-    for i, pid in enumerate(items):
-        p = PROVIDERS[pid]
-        check_mark = _c(32, "\u2713")
-        checked = check_mark if pid in selected else " "
-        installed_hint = _c(2, " (installed)") if shutil.which(p["binary"]) else _c(31, " (not found)")
-        print(f"  [{checked}] {i+1}. {p['display_name']}{installed_hint}")
+        items = state["items"]          # ordered list of provider IDs
+        selected = state["selected"]    # set of enabled provider IDs
+        default_pid = state["default"]  # single default provider ID or None
+        cursor = state["cursor"]        # currently highlighted row index
 
-    print()
-    pre_nums = [str(items.index(p) + 1) for p in pre_checked if p in items]
-    default_str = ",".join(pre_nums) or "1"
-    raw = input(f"  Enter numbers separated by commas [{_c(36, default_str)}]: ").strip()
+        while True:
+            stdscr.erase()
+            max_y, max_x = stdscr.getmaxyx()
 
-    if not raw:
-        chosen_indices = [int(n) - 1 for n in default_str.split(",")]
-    else:
-        try:
-            chosen_indices = [int(n.strip()) - 1 for n in raw.split(",")]
-        except ValueError:
-            chosen_indices = [int(n) - 1 for n in default_str.split(",")]
+            # Header
+            header = "  Select providers  (Space toggle \xb7 d set default \xb7 Enter save)"
+            _safe_addnstr(stdscr, 0, 0, header[:max_x - 1], max_x - 1, attrs["title"])
 
-    result = []
-    for i in chosen_indices:
-        if 0 <= i < len(items):
-            result.append(items[i])
+            # Separator
+            _safe_addnstr(stdscr, 1, 0, ("\u2500" * (max_x - 1))[:max_x - 1], max_x - 1, attrs["dim"])
 
-    # Deduplicate while preserving order
-    seen = set()
-    deduped = []
-    for pid in result:
-        if pid not in seen:
-            seen.add(pid)
-            deduped.append(pid)
+            # Provider rows starting at line 3
+            for idx, pid in enumerate(items):
+                row = 3 + idx
+                if row >= max_y - 2:
+                    break
+                p = PROVIDERS[pid]
+                is_cursor = idx == cursor
+                is_on = pid in selected
+                is_default = pid == default_pid
 
-    if not deduped:
+                # Radio marker: [●] = default, (●) = selected-only, ( ) = off
+                if is_default:
+                    marker = "[●]"
+                elif is_on:
+                    marker = "(●)"
+                else:
+                    marker = "( )"
+
+                installed_hint = " (installed)" if shutil.which(p["binary"]) else " (not found)"
+                label = f"  {marker} {p['display_name']}{installed_hint}"
+
+                if is_cursor:
+                    row_attr = attrs["selected"]
+                elif is_on or is_default:
+                    row_attr = attrs["accent"]
+                else:
+                    row_attr = attrs["dim"]
+
+                _safe_addnstr(stdscr, row, 0, label[:max_x - 1].ljust(min(max_x - 1, 60)), max_x - 1, row_attr)
+
+            # Save hint at bottom
+            save_row = max_y - 1
+            nav = "  Save (Enter/s)  \xb7  Toggle (Space)  \xb7  Default (d)  \xb7  Quit (q/Esc)"
+            _draw_animated_nav(stdscr, save_row, nav, max_x - 1, phase, attrs)
+
+            stdscr.refresh()
+            key = stdscr.getch()
+
+            if key == -1:
+                phase += 1
+                continue
+
+            if key in (curses.KEY_UP, ord("k")):
+                cursor = max(0, cursor - 1)
+            elif key in (curses.KEY_DOWN, ord("j")):
+                cursor = min(len(items) - 1, cursor + 1)
+            elif key == ord(" "):
+                pid = items[cursor]
+                if pid in selected:
+                    # Cannot deselect the only selected provider
+                    if len(selected) > 1:
+                        selected.discard(pid)
+                        # If we just deselected the current default, pick a new one
+                        if default_pid == pid:
+                            remaining = [p for p in items if p in selected]
+                            default_pid = remaining[0] if remaining else None
+                else:
+                    selected.add(pid)
+                    # Auto-assign default if none set
+                    if default_pid is None:
+                        default_pid = pid
+            elif key == ord("d"):
+                pid = items[cursor]
+                # Mark as default — also ensure it is selected
+                selected.add(pid)
+                default_pid = pid
+            elif key in (curses.KEY_ENTER, 10, 13, ord("s")):
+                state["selected"] = selected
+                state["default"] = default_pid
+                state["cursor"] = cursor
+                return
+            elif key in (ord("q"), 27):
+                state["cancelled"] = True
+                return
+            elif key == curses.KEY_RESIZE:
+                continue
+
+    state = {
+        "items": ordered,
+        "selected": set(pre_selected),
+        "default": current_default if (current_default and current_default in pre_selected) else (next(iter(pre_selected)) if pre_selected else None),
+        "cursor": 0,
+        "cancelled": False,
+    }
+
+    try:
+        curses.wrapper(_draw_provider_picker, state)
+    except Exception:
+        # Curses failed — fall through to plain result using pre-selection
+        providers = list(pre_selected) if pre_selected else ["claude"]
+        default = current_default or providers[0]
+        return providers, default
+
+    if state["cancelled"]:
+        # User quit without saving — return original values
+        providers = list(current_providers) if current_providers else list(pre_selected) or ["claude"]
+        default = current_default or providers[0]
+        return providers, default
+
+    result = [pid for pid in ordered if pid in state["selected"]]
+    if not result:
         warn = _c(33, "\u26a0")
         print(f"  {warn} No provider selected \u2014 defaulting to Claude Code.")
-        deduped = ["claude"]
+        result = ["claude"]
 
-    return deduped
+    default_provider = state["default"]
+    if default_provider not in result:
+        default_provider = result[0]
+
+    # Single-provider accounts: that provider is automatically the default
+    if len(result) == 1:
+        default_provider = result[0]
+
+    return result, default_provider
 
 
 # --- Goodbye messages ---
@@ -3932,7 +4050,8 @@ def _first_run_onboarding():
     # Use pyfiglet's "thin" font (onboarding-only — show_banner stays smslant).
     # Apply the current theme's banner gradient character-by-character across
     # all non-whitespace glyphs so it reads as a gradient sweep.
-    theme = THEMES.get(get_current_theme(), THEMES[_DEFAULT_THEME])
+    theme_id = get_current_theme()
+    theme = THEMES.get(theme_id, THEMES[_DEFAULT_THEME])
     grad = theme["banner"]
 
     logo_lines = []
@@ -3964,19 +4083,59 @@ def _first_run_onboarding():
 
         console.print(text)
 
+    # ── Spinner beat — gives the screen a living feel for ~0.8 s ─────────────
+    # Pick a spinner that matches the active theme (same helper the banner uses).
+    try:
+        import altergo_greetings as _greet
+        _spinner_name = _greet.spinner_for_theme(theme_id)
+    except Exception:
+        _spinner_name = "dots"
+
+    from rich.live import Live
+    from rich.spinner import Spinner
+    from rich.padding import Padding
+    from rich.table import Table as _Table
+
+    _accent_hex = grad[0]
+    _spin_text = Text()
+    _spin_text.append("  scanning for providers", style=f"dim {_accent_hex}")
+
+    _spin_row = _Table.grid(padding=(0, 0), expand=False)
+    _spin_row.add_column(no_wrap=True)
+    _spin_row.add_column(no_wrap=True)
+    _spin_row.add_row(Spinner(_spinner_name, style=f"bold {_accent_hex}"), _spin_text)
+
+    with Live(Padding(_spin_row, (0, 0, 0, 2)), console=console, refresh_per_second=12,
+              transient=True):
+        time.sleep(0.75)
+
     # ── Copy ──────────────────────────────────────────────────────────────────
+    # Determine theme accent color for styled hint lines (brand/accent hex stop).
+    _mid_hex = grad[len(grad) // 2] if len(grad) > 2 else grad[0]
     console.print()
     console.print(Text(
         "  altergo \u2014 multiple AI identities from one terminal.",
         style="dim",
     ))
     console.print()
-    console.print(Text("  You don't have any accounts yet. Let's fix that.", style="dim"))
+    _no_acct_msg = Text()
+    _no_acct_msg.append("  You don't have any accounts yet. ", style="dim")
+    _no_acct_msg.append("Let's fix that.", style=f"bold {_accent_hex}")
+    console.print(_no_acct_msg)
     console.print()
 
     # ── Setup-options hint ────────────────────────────────────────────────────
-    console.print(Text("  run altergo --setup to configure interactively", style="dim"))
-    console.print(Text("  or altergo --setup --name <name> to skip the prompts", style="dim"))
+    _hint1 = Text()
+    _hint1.append("  run ", style="dim")
+    _hint1.append("altergo --setup", style=f"bold {_mid_hex}")
+    _hint1.append(" to configure interactively", style="dim")
+    console.print(_hint1)
+
+    _hint2 = Text()
+    _hint2.append("  or ", style="dim")
+    _hint2.append("altergo --setup --name <name>", style=f"bold {_mid_hex}")
+    _hint2.append(" to skip the prompts", style="dim")
+    console.print(_hint2)
     console.print()
 
     # ── Name prompt loop ──────────────────────────────────────────────────────
@@ -4106,25 +4265,30 @@ def main():
                 name = "default"
 
         # Resolve providers
+        setup_default_provider = None
         if provider_arg is not None:
             providers = [p.strip() for p in provider_arg.split(",")]
             unknown = [p for p in providers if p not in PROVIDERS]
             if unknown:
                 print(f"altergo: unknown provider(s): {', '.join(unknown)}. Known: {', '.join(PROVIDERS)}", file=sys.stderr)
                 sys.exit(1)
+            # Single provider specified → it is the default automatically
+            setup_default_provider = providers[0] if len(providers) == 1 else None
         else:
             if sys.stdin.isatty():
                 account_home, _ = resolve_account(name)
                 meta = load_account_meta(account_home)
                 current = meta["providers"] if meta else None
-                providers = _prompt_provider_selection(current)
+                current_def = meta.get("default_provider") if meta else None
+                providers, setup_default_provider = _prompt_provider_selection(current, current_def)
             else:
                 # Non-interactive: default to claude (backwards compat)
                 account_home, _ = resolve_account(name)
                 meta = load_account_meta(account_home)
                 providers = meta["providers"] if meta else ["claude"]
+                setup_default_provider = meta.get("default_provider") if meta else None
 
-        do_setup(name, providers)
+        do_setup(name, providers, default_provider=setup_default_provider)
         sys.exit(0)
 
     if args and args[0] == "--teardown":

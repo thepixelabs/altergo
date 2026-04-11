@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.21.1 (2026-04-11)
+
+### Bug Fixes
+
+- Rename --setup to --config and add `<name> use <provider>` subcommand
+  ([`4e496d9`](https://github.com/thepixelabs/altergo/commit/4e496d903a30fbc6e8f15e5dfda341d7ef72d426))
+
+
 ## v0.21.0 (2026-04-11)
 
 ### Bug Fixes

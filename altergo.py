@@ -652,6 +652,9 @@ PROVIDERS = {
             "shell-snapshots", "agents", "plans", "cache",
         ],
         "symlink_files": ["settings.json", "CLAUDE.md", "keybindings.json"],
+        # Top-level $HOME files shared across all accounts (MCP servers, global prefs).
+        # Distinct from symlink_files which live inside <dot_dir>/.
+        "symlink_home_files": [".claude.json"],
     },
     "gemini": {
         "display_name": "Gemini CLI",
@@ -1483,6 +1486,39 @@ def _ensure_symlinked_dir(name: str, src: Path, dst: Path, account_claude: Path)
         return False
 
 
+def _ensure_home_file_symlink(name: str, src: Path, dst: Path) -> None:
+    """Ensure dst (account_home/<name>) is a symlink pointing to src (MAIN_HOME/<name>).
+
+    Migration cases:
+      (a) dst already symlinks to src   -> no-op
+      (b) dst absent, src exists        -> create symlink
+      (c) both absent                   -> do nothing (created on first use)
+      (d) dst real file, src absent     -> promote: move dst → src, then symlink
+      (e) dst real file, src exists     -> warn; leave both untouched
+    """
+    if dst.is_symlink():
+        if dst.resolve() == src.resolve():
+            print(f"  {_c(32, '✓')} {name} already symlinked")
+        else:
+            print(f"  {_c(33, '⚠')} {name} symlinked elsewhere — skipping")
+        return
+    if not dst.exists():
+        if src.exists():
+            dst.symlink_to(src)
+            print(f"  {_c(32, '✓')} Symlinked {name}")
+        return
+    # dst is a real file
+    if not src.exists():
+        # (d) Promote account file to main home so all accounts share it
+        src.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(dst), str(src))
+        dst.symlink_to(src)
+        print(f"  {_c(32, '✓')} Promoted {name} to shared location")
+    else:
+        # (e) Conflict — both are real files; don't clobber either
+        print(f"  {_c(33, '⚠')} {name} exists in both account home and main home — remove one to share")
+
+
 def do_config(account: str = "default", providers: list[str] | None = None, default_provider: str | None = None):
     if providers is None:
         providers = ["claude"]
@@ -1556,6 +1592,10 @@ def do_config(account: str = "default", providers: list[str] | None = None, defa
             dst.symlink_to(src)
             print(f"  {_c(32, '✓')} Symlinked {name}")
 
+        # Symlink home-level files (live at $HOME/<name>, not inside <dot_dir>/)
+        for name in prov.get("symlink_home_files", []):
+            _ensure_home_file_symlink(name, MAIN_HOME / name, account_home / name)
+
         # Check credentials for this provider
         creds = acct_dot_dir / prov["credentials_file"]
         print()
@@ -1626,6 +1666,13 @@ def do_teardown(account: str = "default"):
                 if dst.is_symlink():
                     dst.unlink()
                     print(f"  {_c(33, '✓')} Removed symlink: {prov['dot_dir']}/{name}")
+
+            for name in prov.get("symlink_home_files", []):
+                dst = account_home / name
+                src = MAIN_HOME / name
+                if dst.is_symlink() and dst.resolve() == src.resolve():
+                    dst.unlink()
+                    print(f"  {_c(33, '✓')} Removed symlink: {name}")
     else:
         # Legacy account (no account.json) — fall back to SYMLINK_DIRS + SYMLINK_FILES
         for name in SYMLINK_DIRS:

@@ -1778,7 +1778,7 @@
               </svg>
             </div>
             <h3>Zero config drama</h3>
-            <p>Symlinks handle everything. No syncing, no copying, no config files to wrangle. A single setup command and you are done — undo it just as easily.</p>
+            <p>Symlinks handle everything. No syncing, no copying, no config files to wrangle. A single config command and you are done — undo it just as easily.</p>
           </div>
           <div class="why-card reveal reveal-delay-3" role="listitem">
             <div class="why-icon why-icon-green" aria-hidden="true">
@@ -1813,7 +1813,7 @@
           <p class="section-subtitle" style="font-family: var(--font-mono); font-size: 0.78rem; color: var(--text-2); margin-top: 10px; letter-spacing: 0.03em;" aria-hidden="true">~45 sec &nbsp;·&nbsp; no daemon &nbsp;·&nbsp; pure Python</p>
         </div>
 
-        <div class="how-steps" aria-label="Setup steps" role="list">
+        <div class="how-steps" aria-label="Config steps" role="list">
           <div class="how-step reveal reveal-delay-1" role="listitem" aria-label="Step 1: Install">
             <div class="step-titlebar" aria-hidden="true">
               <div class="step-dots">
@@ -1831,17 +1831,17 @@
 
           <div class="how-step-sep" aria-hidden="true">&#8250;</div>
 
-          <div class="how-step reveal reveal-delay-2" role="listitem" aria-label="Step 2: Setup">
+          <div class="how-step reveal reveal-delay-2" role="listitem" aria-label="Step 2: Config">
             <div class="step-titlebar" aria-hidden="true">
               <div class="step-dots">
                 <span class="dot-close"></span>
                 <span class="dot-min"></span>
                 <span class="dot-max"></span>
               </div>
-              <span class="step-win-title">setup</span>
+              <span class="step-win-title">config</span>
             </div>
             <div class="step-body">
-              <code class="step-command"><span class="prompt" aria-hidden="true">$</span><span class="cmd">altergo --setup --name work</span></code>
+              <code class="step-command"><span class="prompt" aria-hidden="true">$</span><span class="cmd">altergo --config --name work</span></code>
               <p class="step-caption">Create a named account — one per AI account you use. Repeat for each one you have. Symlinks wired automatically.</p>
             </div>
           </div>
@@ -2009,12 +2009,12 @@
 <span class="cmd">pip install altergo</span>
 
 <span class="comment"># Name your accounts — run once per login you have</span>
-<span class="cmd">altergo --setup --name work</span>
-<span class="cmd">altergo --setup --name backup</span>
+<span class="cmd">altergo --config --name work</span>
+<span class="cmd">altergo --config --name backup</span>
 
 <span class="comment"># Switch — just use the account name</span>
 <span class="cmd">altergo backup</span></code>
-                <button class="code-copy-btn" aria-label="Copy pip install commands" data-copy="pip install altergo&#10;altergo --setup --name work&#10;altergo backup">
+                <button class="code-copy-btn" aria-label="Copy pip install commands" data-copy="pip install altergo&#10;altergo --config --name work&#10;altergo --config --name backup&#10;altergo backup">
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
                     <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
@@ -2033,12 +2033,12 @@
 <span class="cmd">pipx install altergo</span>
 
 <span class="comment"># Name your accounts — run once per login you have</span>
-<span class="cmd">altergo --setup --name work</span>
-<span class="cmd">altergo --setup --name backup</span>
+<span class="cmd">altergo --config --name work</span>
+<span class="cmd">altergo --config --name backup</span>
 
 <span class="comment"># Switch — just use the account name</span>
 <span class="cmd">altergo backup</span></code>
-                <button class="code-copy-btn" aria-label="Copy pipx install commands" data-copy="pipx install altergo&#10;altergo --setup --name work&#10;altergo backup">
+                <button class="code-copy-btn" aria-label="Copy pipx install commands" data-copy="pipx install altergo&#10;altergo --config --name work&#10;altergo --config --name backup&#10;altergo backup">
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
                     <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
@@ -2095,7 +2095,8 @@
               <tbody>
                 <tr><td>altergo &lt;name&gt;</td><td>Launch the named account (e.g. <code>altergo backup</code>)</td></tr>
                 <tr><td>altergo &lt;name&gt; &lt;provider&gt;</td><td>Launch with a specific provider — <code>altergo backup gemini</code>, <code>altergo backup codex</code></td></tr>
-                <tr><td>altergo --setup --name &lt;n&gt; --provider &lt;p&gt;</td><td>Create an account for a specific provider — <code>claude</code>, <code>gemini</code>, <code>codex</code>, <code>copilot</code></td></tr>
+                <tr><td>altergo --config --name &lt;n&gt; --provider &lt;p&gt;</td><td>Create or reconfigure an account with a specific provider — <code>claude</code>, <code>gemini</code>, <code>codex</code>, <code>copilot</code></td></tr>
+                <tr><td>altergo &lt;name&gt; use &lt;provider&gt;</td><td>Set the default provider for an existing account — <code>altergo pro use gemini</code></td></tr>
                 <tr><td>altergo --resume</td><td>Interactive session picker — browse, preview, resume</td></tr>
                 <tr><td>altergo --search</td><td>Full-text search across all conversation history</td></tr>
                 <tr><td>altergo --settings</td><td>Configure themes, behavior, and credential sharing</td></tr>

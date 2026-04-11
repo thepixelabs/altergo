@@ -67,7 +67,7 @@ altergo implements this with two mechanisms working together:
 
 2. **Symlink everything else** inside the account's `.claude/` directory back to the corresponding paths inside `~/.claude/` so every account sees the same session history, settings, and context as the primary account.
 
-After `altergo --setup` runs, the directory structure looks like this:
+After `altergo --config` runs, the directory structure looks like this:
 
 ```
 ~/.claude/                          ← Primary account (unmodified)
@@ -195,7 +195,7 @@ altergo resolves this with a two-step check in `main()`:
 
 ```python
 _KNOWN_COMMANDS = frozenset([
-    "shell", "--resume", "--list", "--setup", "--teardown",
+    "shell", "--resume", "--list", "--config", "--teardown",
     "--settings", "--version", "-h", "--help", "--"
 ])
 
@@ -218,7 +218,7 @@ if args and _looks_like_account(args[0]):
     if not acct_home.is_dir():
         print(
             f"altergo: account '{candidate}' not found. "
-            f"Run 'altergo --setup --name {candidate}' to create it.",
+            f"Run 'altergo --config --name {candidate}' to create it.",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -371,18 +371,18 @@ Because it also uses `os.execvpe`, the altergo process is replaced by the target
 | `CLAUDE.md` | File | Yes (symlink) | Your global instructions apply regardless of which account is active |
 | `keybindings.json` | File | Yes (symlink) | Muscle memory is account-agnostic |
 
-### The symlink setup and teardown contract
+### The symlink config and teardown contract
 
-`altergo --setup` creates symlinks. It skips any entry in the source (`~/.claude/`) that does not yet exist — for example, if you have not yet configured keybindings, `~/.claude/keybindings.json` does not exist, so no symlink is created. Creating a dangling symlink pointing at a nonexistent target would cause Claude Code to behave differently than it would for a fresh install.
+`altergo --config` creates symlinks. It skips any entry in the source (`~/.claude/`) that does not yet exist — for example, if you have not yet configured keybindings, `~/.claude/keybindings.json` does not exist, so no symlink is created. Creating a dangling symlink pointing at a nonexistent target would cause Claude Code to behave differently than it would for a fresh install.
 
-`altergo --teardown` removes only the symlinks it created. It does not touch `.credentials.json` or any real files. After teardown, the account directory still exists with its credentials intact — you can re-run `altergo --setup` at any time to restore the symlinks.
+`altergo --teardown` removes only the symlinks it created. It does not touch `.credentials.json` or any real files. After teardown, the account directory still exists with its credentials intact — you can re-run `altergo --config` at any time to restore the symlinks.
 
 ### Unmanaged state
 
 Two directories accumulate inside the account's `.claude/` from normal Claude Code usage that altergo does not manage:
 
 - **`paste-cache/`** — Ephemeral clipboard / paste buffer state. This being isolated per-account is harmless; paste cache is transient.
-- **`plugins/`** — Plugin state. If you install Claude Code plugins, they accumulate separately per account. If you want plugins shared, manually symlink the `plugins/` directory after running setup.
+- **`plugins/`** — Plugin state. If you install Claude Code plugins, they accumulate separately per account. If you want plugins shared, manually symlink the `plugins/` directory after running `altergo --config`.
 
 ---
 
@@ -442,7 +442,7 @@ Claude Code writes to several locations beyond `~/.claude/`. With HOME overridde
    ├─ migrate_legacy() — no-op if already on new layout
    │
    ├─ Parse sys.argv
-   │  ├─ --setup / --teardown / --list / --version / --help → handled, exit
+   │  ├─ --config / --teardown / --list / --version / --help → handled, exit
    │  ├─ --resume (no id) → session picker TUI → select → launch_claude("default", ["--resume", id])
    │  ├─ _looks_like_account(args[0]) → account = args[0]; args = args[1:]
    │  ├─ [account] shell → launch_shell(account)

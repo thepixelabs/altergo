@@ -466,9 +466,10 @@ def show_help():
         "",
         sep(),
         h("Accounts"),
-        f"  {kw('altergo --setup')}                    {dim('Create or reconfigure an account')}",
-        f"  {kw('altergo --setup --name')} {arg('<name>')}      {dim('Name the account')}",
-        f"  {kw('altergo --setup --provider')} {arg('<p,…>')}   {dim('claude, gemini, codex, copilot')}",
+        f"  {kw('altergo --config')}                   {dim('Create or reconfigure an account')}",
+        f"  {kw('altergo --config --name')} {arg('<name>')}     {dim('Name the account')}",
+        f"  {kw('altergo --config --provider')} {arg('<p,…>')}  {dim('claude, gemini, codex, copilot')}",
+        f"  {kw('altergo')} {arg('<name>')} {kw('use')} {arg('<provider>')}      {dim('Set default provider for an account')}",
         f"  {kw('altergo --use')} {arg('<name>')}               {dim('Set default account')}",
         f"  {kw('altergo --teardown')} {arg('[--name <n>]')}    {dim('Remove account symlinks')}",
         f"  {kw('altergo --settings')}                 {dim('Manage shared credentials (TUI)')}",
@@ -515,7 +516,7 @@ MAIN_HOME = _pw_home
 MAIN_CLAUDE = MAIN_HOME / ".claude"
 ACCOUNTS_DIR = MAIN_HOME / ".altergo" / "accounts"
 
-# Reserved account names — blocked at --setup --name time
+# Reserved account names — blocked at --config --name time
 _RESERVED_NAMES = frozenset(
     [
         "main",
@@ -523,6 +524,7 @@ _RESERVED_NAMES = frozenset(
         "new",
         "rm",
         "shell",
+        "config",
         "setup",
         "teardown",
         "help",
@@ -530,6 +532,7 @@ _RESERVED_NAMES = frozenset(
         "legacy",
         "backup",
         "migrate",
+        "use",
     ]
 )
 
@@ -1392,7 +1395,7 @@ def _apply_entry(entry, overrides, account_home):
                 print(f"  {_c(33, '✓')} Unshared ~/{rel}")
 
 
-# --- Setup / Teardown ---
+# --- Config / Teardown ---
 
 
 def _ensure_symlinked_dir(name: str, src: Path, dst: Path, account_claude: Path) -> bool:
@@ -1480,14 +1483,14 @@ def _ensure_symlinked_dir(name: str, src: Path, dst: Path, account_claude: Path)
         return False
 
 
-def do_setup(account: str = "default", providers: list[str] | None = None, default_provider: str | None = None):
+def do_config(account: str = "default", providers: list[str] | None = None, default_provider: str | None = None):
     if providers is None:
         providers = ["claude"]
     account_home, account_claude = resolve_account(account)
     show_banner(account)
     header = f"altergo v{__version__} · " + _link("https://pixelabs.net", "pixelabs.net")
     print(_c(C("dim"), header))
-    print(_c(C("header"), f"=== Altergo — Setup ({account}) ==="))
+    print(_c(C("header"), f"=== Altergo — Config ({account}) ==="))
     print()
 
     # Load existing metadata for created timestamp preservation
@@ -1588,7 +1591,7 @@ def do_setup(account: str = "default", providers: list[str] | None = None, defau
 
     launch_cmd = f"altergo {account}" if account != "default" else "altergo"
     print()
-    print(_c(32, "Setup complete!"))
+    print(_c(32, "Config complete!"))
     print(f"  Run {_c(1, launch_cmd)} to start a session  ·  {_c(1, 'altergo --resume')} to pick one")
     print()
     print(_c(2, "  Isolates credentials per provider. Shares AWS, GCP, Docker, and kubectl by default."))
@@ -3454,7 +3457,7 @@ def _sweep_existing_accounts() -> bool:
 
     Runs automatically after migrate_legacy() and at the start of launch_claude()
     so that existing 0.6.0 users are repaired on next launch without needing
-    to run --setup manually.  Silent unless something actually changes.
+    to run --config manually.  Silent unless something actually changes.
     """
     changed = False
     for acct in list_accounts():
@@ -3496,7 +3499,7 @@ def launch_claude(account: str = "default", args=None, provider: str | None = No
             print(
                 f"altergo: account '{account}' has multiple providers ({names}).\n"
                 f"  Specify one: altergo {account} <provider>\n"
-                f"  Or run 'altergo --setup --name {account}' to set a default provider.",
+                f"  Or run 'altergo --config --name {account}' to set a default provider.",
                 file=sys.stderr,
             )
             sys.exit(1)
@@ -3590,7 +3593,7 @@ def launch_command(account: str = "default", cmd_args=None):
 
 
 _KNOWN_COMMANDS = frozenset(
-    ["shell", "--resume", "--list", "--search", "--setup", "--teardown", "--settings", "--version", "--use", "--launch", "--theme", "--update-check", "-h", "--help", "--"]
+    ["shell", "use", "--resume", "--list", "--search", "--config", "--teardown", "--settings", "--version", "--use", "--launch", "--theme", "--update-check", "-h", "--help", "--"]
 )
 
 
@@ -4029,8 +4032,8 @@ def _draw_launcher(stdscr, menu):
 def _first_run_onboarding():
     """Full-screen onboarding for brand-new users with zero accounts configured.
 
-    Shows a thin-font logo, two lines of copy, a setup-options hint, and an
-    inline name prompt. On a valid name the function runs do_setup() then drops
+    Shows a thin-font logo, two lines of copy, a config-options hint, and an
+    inline name prompt. On a valid name the function runs do_config() then drops
     straight into interactive_launcher() so the user never has to type a second
     command. On empty input or Ctrl-C it prints a hint and exits cleanly.
     """
@@ -4043,7 +4046,7 @@ def _first_run_onboarding():
         console = Console()
     except Exception:
         # Extremely degraded environment — fall back to plain text and bail.
-        print("altergo: no accounts found. Run 'altergo --setup' first.", file=sys.stderr)
+        print("altergo: no accounts found. Run 'altergo --config' first.", file=sys.stderr)
         sys.exit(1)
 
     # ── Logo ──────────────────────────────────────────────────────────────────
@@ -4124,16 +4127,16 @@ def _first_run_onboarding():
     console.print(_no_acct_msg)
     console.print()
 
-    # ── Setup-options hint ────────────────────────────────────────────────────
+    # ── Config-options hint ───────────────────────────────────────────────────
     _hint1 = Text()
     _hint1.append("  run ", style="dim")
-    _hint1.append("altergo --setup", style=f"bold {_mid_hex}")
+    _hint1.append("altergo --config", style=f"bold {_mid_hex}")
     _hint1.append(" to configure interactively", style="dim")
     console.print(_hint1)
 
     _hint2 = Text()
     _hint2.append("  or ", style="dim")
-    _hint2.append("altergo --setup --name <name>", style=f"bold {_mid_hex}")
+    _hint2.append("altergo --config --name <name>", style=f"bold {_mid_hex}")
     _hint2.append(" to skip the prompts", style="dim")
     console.print(_hint2)
     console.print()
@@ -4143,19 +4146,19 @@ def _first_run_onboarding():
         try:
             raw = Prompt.ask(
                 "  Account name (e.g., personal, pro, sideproject)"
-                " [or press Enter to run --setup]",
+                " [or press Enter to run --config]",
                 default="",
                 show_default=False,
                 console=console,
             ).strip()
         except KeyboardInterrupt:
             console.print()
-            console.print("  \u2192 run: altergo --setup --name <name> when ready")
+            console.print("  \u2192 run: altergo --config --name <name> when ready")
             sys.exit(0)
 
         if not raw:
             console.print()
-            console.print("  \u2192 run: altergo --setup")
+            console.print("  \u2192 run: altergo --config")
             sys.exit(0)
 
         # Inline validation — we cannot call validate_account_name() here
@@ -4185,9 +4188,9 @@ def _first_run_onboarding():
     if not detected:
         detected = ["claude"]
 
-    # ── Run setup then drop into the launcher ────────────────────────────────
+    # ── Run config then drop into the launcher ───────────────────────────────
     console.print()
-    do_setup(raw, detected)
+    do_config(raw, detected)
     interactive_launcher()
 
 
@@ -4195,7 +4198,7 @@ def interactive_launcher():
     """Show the provider+account picker and launch the selected account."""
     menu = build_launcher_menu()
     if not menu:
-        print("altergo: no accounts found. Run 'altergo --setup' first.", file=sys.stderr)
+        print("altergo: no accounts found. Run 'altergo --config' first.", file=sys.stderr)
         sys.exit(1)
     result = curses.wrapper(_draw_launcher, menu)
     account, shell_mode = result if result else (None, False)
@@ -4235,13 +4238,13 @@ def main():
         print(f"altergo {__version__}")
         sys.exit(0)
 
-    if args and args[0] == "--setup":
+    if args and args[0] == "--config":
         # Parse --name and --provider flags
         # Supported forms:
-        #   altergo --setup                              (interactive)
-        #   altergo --setup --name work                  (named, interactive provider)
-        #   altergo --setup --name work --provider claude,gemini  (fully specified)
-        #   altergo --setup --provider gemini            (interactive name, specified provider)
+        #   altergo --config                              (interactive)
+        #   altergo --config --name work                  (named, interactive provider)
+        #   altergo --config --name work --provider claude,gemini  (fully specified)
+        #   altergo --config --provider gemini            (interactive name, specified provider)
         remaining = args[1:]
         name = None
         provider_arg = None
@@ -4265,7 +4268,7 @@ def main():
                 name = "default"
 
         # Resolve providers
-        setup_default_provider = None
+        cfg_default_provider = None
         if provider_arg is not None:
             providers = [p.strip() for p in provider_arg.split(",")]
             unknown = [p for p in providers if p not in PROVIDERS]
@@ -4273,22 +4276,22 @@ def main():
                 print(f"altergo: unknown provider(s): {', '.join(unknown)}. Known: {', '.join(PROVIDERS)}", file=sys.stderr)
                 sys.exit(1)
             # Single provider specified → it is the default automatically
-            setup_default_provider = providers[0] if len(providers) == 1 else None
+            cfg_default_provider = providers[0] if len(providers) == 1 else None
         else:
             if sys.stdin.isatty():
                 account_home, _ = resolve_account(name)
                 meta = load_account_meta(account_home)
                 current = meta["providers"] if meta else None
                 current_def = meta.get("default_provider") if meta else None
-                providers, setup_default_provider = _prompt_provider_selection(current, current_def)
+                providers, cfg_default_provider = _prompt_provider_selection(current, current_def)
             else:
                 # Non-interactive: default to claude (backwards compat)
                 account_home, _ = resolve_account(name)
                 meta = load_account_meta(account_home)
                 providers = meta["providers"] if meta else ["claude"]
-                setup_default_provider = meta.get("default_provider") if meta else None
+                cfg_default_provider = meta.get("default_provider") if meta else None
 
-        do_setup(name, providers, default_provider=setup_default_provider)
+        do_config(name, providers, default_provider=cfg_default_provider)
         sys.exit(0)
 
     if args and args[0] == "--teardown":
@@ -4406,7 +4409,7 @@ def main():
         use_home = ACCOUNTS_DIR / use_name
         if not use_home.is_dir():
             print(
-                f"altergo: account '{use_name}' not found. Run 'altergo --setup --name {use_name}' to create it.",
+                f"altergo: account '{use_name}' not found. Run 'altergo --config --name {use_name}' to create it.",
                 file=sys.stderr,
             )
             sys.exit(1)
@@ -4436,7 +4439,7 @@ def main():
     if args and args[0] == "--resume" and len(args) == 1:
         accounts = list_accounts()
         if not accounts:
-            print("altergo: no accounts found. Run 'altergo --setup' first.", file=sys.stderr)
+            print("altergo: no accounts found. Run 'altergo --config' first.", file=sys.stderr)
             sys.exit(1)
         if len(accounts) == 1:
             resume_account = accounts[0]
@@ -4468,7 +4471,7 @@ def main():
         acct_home = ACCOUNTS_DIR / candidate
         if not acct_home.is_dir():
             print(
-                f"altergo: account '{candidate}' not found. Run 'altergo --setup --name {candidate}' to create it.",
+                f"altergo: account '{candidate}' not found. Run 'altergo --config --name {candidate}' to create it.",
                 file=sys.stderr,
             )
             sys.exit(1)
@@ -4493,7 +4496,7 @@ def main():
                 _first_run_onboarding()
                 sys.exit(0)
             else:
-                print("altergo: no accounts found. Run 'altergo --setup' first.", file=sys.stderr)
+                print("altergo: no accounts found. Run 'altergo --config' first.", file=sys.stderr)
                 sys.exit(1)
         else:
             # Multiple accounts, non-interactive — cannot pick one silently
@@ -4510,6 +4513,46 @@ def main():
     # altergo [<name>] shell
     if args and args[0] == "shell":
         launch_shell(account)
+
+    # altergo <name> use <provider>  → set default provider for this account
+    if args and args[0] == "use":
+        if len(args) < 2:
+            print(
+                f"altergo: 'use' requires a provider id. Example: altergo {account} use gemini",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        new_default = args[1]
+        if new_default not in PROVIDERS:
+            print(
+                f"altergo: unknown provider '{new_default}'. Known: {', '.join(PROVIDERS)}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        acct_home, _ = resolve_account(account)
+        meta = load_account_meta(acct_home)
+        if meta is None:
+            print(
+                f"altergo: account '{account}' has no metadata. Run 'altergo --config --name {account}' first.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        configured = meta.get("providers") or []
+        if new_default not in configured:
+            print(
+                f"altergo: '{new_default}' is not configured on account '{account}'. "
+                f"Configured: {', '.join(configured)}.\n"
+                f"  Run 'altergo --config --name {account}' to add it.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        if meta.get("default_provider") == new_default:
+            print(f"altergo: {new_default} is already the default for {account} — no change.")
+            sys.exit(0)
+        meta["default_provider"] = new_default
+        save_account_meta(acct_home, meta)
+        print(f"altergo: default provider for {_c(C('command'), account)} → {_c(C('command'), new_default)}")
+        sys.exit(0)
 
     # altergo [<name>] -- <cmd> [args...]
     if args and args[0] == "--":

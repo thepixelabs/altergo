@@ -50,7 +50,7 @@ def full_home(tmp_path):
               personal/
                 .claude/ ...               (same symlinks)
 
-    The accounts are set up by calling altergo.do_setup() with module globals
+    The accounts are set up by calling altergo.do_config() with module globals
     temporarily pointed at this tree.  Globals are restored before the fixture
     yields so that the test body sees the original (real) globals — subprocess
     tests drive altergo via HOME env, not via Python globals.
@@ -72,7 +72,7 @@ def full_home(tmp_path):
     main_claude = home / ".claude"
     accounts_dir = home / ".altergo" / "accounts"
 
-    # Build the MAIN_HOME/.claude/ sources that do_setup() will symlink from.
+    # Build the MAIN_HOME/.claude/ sources that do_config() will symlink from.
     for name in altergo.SYMLINK_DIRS:
         (main_claude / name).mkdir(parents=True, exist_ok=True)
     for name in altergo.SYMLINK_FILES:
@@ -80,7 +80,7 @@ def full_home(tmp_path):
 
     accounts_dir.mkdir(parents=True, exist_ok=True)
 
-    # Temporarily redirect module globals so do_setup() operates on our tree.
+    # Temporarily redirect module globals so do_config() operates on our tree.
     # We save and restore manually (rather than using monkeypatch) so that
     # globals are clean when the fixture yields and the test body runs.
     _saved = {
@@ -94,12 +94,12 @@ def full_home(tmp_path):
     altergo.ACCOUNTS_DIR = accounts_dir
     altergo.SETTINGS_FILE = home / ".altergo" / ".altergo.json"
     try:
-        altergo.do_setup("default")
-        altergo.do_setup("work")
-        altergo.do_setup("personal")
+        altergo.do_config("default")
+        altergo.do_config("work")
+        altergo.do_config("personal")
         altergo.set_active_account("default")
     finally:
-        # Always restore — even if do_setup raises.
+        # Always restore — even if do_config raises.
         for attr, val in _saved.items():
             setattr(altergo, attr, val)
 

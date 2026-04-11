@@ -108,8 +108,8 @@ brew install thepixelabs/tap/altergo
 
 ```bash
 # Name your accounts — run once per login you have
-altergo --setup --name personal
-altergo --setup --name pro
+altergo --config --name personal
+altergo --config --name pro
 
 # Launch your configured AI assistant as that account
 altergo personal
@@ -147,7 +147,9 @@ That is the full workflow. The first time you run `altergo personal`, your confi
 | `altergo --resume` | Open the interactive TUI session picker (all accounts) |
 | `altergo --resume <id>` | Resume a specific session by ID directly |
 | `altergo --list` | Print recent sessions as a plain table |
-| `altergo --setup --name <n>` | Create a named account, wire symlinks automatically |
+| `altergo --config --name <n>` | Create or reconfigure a named account, wire symlinks automatically |
+| `altergo --config --name <n> --provider <id,…>` | Configure an account with one or more providers (single provider auto-sets as default) |
+| `altergo <name> use <provider>` | Set the default provider for an existing account (e.g. `altergo pro use gemini`) |
 | `altergo --teardown` | Remove symlinks (account directory and credentials untouched) |
 | `altergo --teardown --name <n>` | Remove a specific named account's symlinks |
 | `altergo --settings` | Multi-page settings TUI: appearance, behavior, and credentials |
@@ -197,7 +199,7 @@ altergo sets `HOME=~/.altergo/accounts/<name>` for the provider process. Each ac
         │       ├── projects/        ──→ symlink to ~/.claude/projects/
         │       ├── settings.json    ──→ symlink to ~/.claude/settings.json
         │       └── CLAUDE.md        ──→ symlink to ~/.claude/CLAUDE.md
-        └── pro/                  Named account (altergo --setup --name pro)
+        └── pro/                  Named account (altergo --config --name pro)
             └── .claude/
                 ├── .credentials.json   ← isolated per account
                 ├── projects/        ──→ symlink to ~/.claude/projects/

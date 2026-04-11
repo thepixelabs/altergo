@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  <strong>Switch AI identities. Keep your context.</strong>
+  <strong>Don't break flow. Switch accounts.</strong>
 </p>
 
 <p align="center">
@@ -27,7 +27,14 @@
 
 ## <img src="docs/icons/why.svg" width="22" align="center"> Why altergo
 
-You use AI coding assistants — Claude Code, Gemini CLI, Codex, GitHub Copilot — across multiple accounts. A personal login, a Pro subscription, maybe a separate one for a side project or a different provider. Switching between them normally means juggling separate terminals, losing your session history, or manually swapping credential files. That is friction you should not have to think about.
+You're mid-session and your AI hits a limit — or you need a different model for the next task. `altergo pro` swaps credentials in place. Same project, same history, no ramp-up. You just keep working.
+
+**When altergo matters:**
+
+- **Rate-limited. Not stopped.** You hit the wall mid-thought. Another account is ready. Switch credentials and drop back into the same session — no lost context, no starting over.
+- **Thinker, then sprinter.** One account for deep architecture (extended reasoning, heavy models). Another for rapid execution (fast models, high throughput). Flip between them like gear ratios — same codebase, different operating mode.
+- **Clients, credentials, firewalls.** Consultant with three engagements? OSS contributor with a personal account and a project account? Each gets isolated credentials. Shared history stays local. Nothing leaks sideways.
+- **Work vs. personal.** Your employer provisions a managed AI account. You also have a personal one for side projects. Keep them cleanly separated on one machine without touching either.
 
 altergo runs each account in its own isolated HOME, so credentials never mix. Session history, settings, and tool configs are shared across all accounts via symlinks — pick up any conversation from any account, instantly.
 
@@ -43,20 +50,20 @@ No daemon. No sync service. No config files to wrangle. One Python file.
 <tr>
 <td>
 
+- Hit a limit mid-session → terminal dead end, context lost, start over
 - Separate terminals per account, or swap credential files by hand
-- Log out, log in, lose your place
-- Each account has its own session history — hard to find "where was I?"
+- Each account has its own session history — "where was I?" requires hunting
 - Tool configs (AWS, gcloud, kubectl) randomly break as you jump around
-- No idea which account you're currently running as — and no way to tell until you hit a rate limit or get an auth error
+- No visual indicator of which account is active until something breaks
 
 </td>
 <td>
 
-- One terminal. `altergo pro` → right credentials, instantly.
-- Credentials swap instantly, no login dance
+- Hit a limit → `altergo pro` → same session, different credentials, keep going
+- One terminal. One command. Right credentials, instantly.
 - Session history shared across **all** accounts — `altergo --resume` picks from everywhere
 - AWS, gcloud, Docker, kubectl stay shared by default — nothing breaks
-- Each account is isolated at `HOME`, so wires never cross
+- Each account isolated at `HOME`, wires never cross
 
 </td>
 </tr>

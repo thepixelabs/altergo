@@ -19,7 +19,7 @@
 </p>
 
 <p align="center">
-  Personal account, work login, side project — as many as you need.<br>
+  Personal account, Pro subscription, side project — as many as you need.<br>
   <code>altergo personal</code> and you are in. Isolates credentials. Shares everything else.
 </p>
 
@@ -27,7 +27,7 @@
 
 ## <img src="docs/icons/why.svg" width="22" align="center"> Why altergo
 
-You use AI coding assistants — Claude Code, Gemini CLI, Codex, GitHub Copilot — across multiple accounts. A personal login, a work account your employer pays for, maybe a third for open source. Switching between them normally means juggling separate terminals, losing your session history, or manually swapping credential files. That is friction you should not have to think about.
+You use AI coding assistants — Claude Code, Gemini CLI, Codex, GitHub Copilot — across multiple accounts. A personal login, a Pro subscription, maybe a separate one for a side project or a different provider. Switching between them normally means juggling separate terminals, losing your session history, or manually swapping credential files. That is friction you should not have to think about.
 
 altergo runs each account in its own isolated HOME, so credentials never mix. Session history, settings, and tool configs are shared across all accounts via symlinks — pick up any conversation from any account, instantly.
 
@@ -52,7 +52,7 @@ No daemon. No sync service. No config files to wrangle. One Python file.
 </td>
 <td>
 
-- One terminal. `altergo work` → right credentials, instantly.
+- One terminal. `altergo pro` → right credentials, instantly.
 - Credentials swap instantly, no login dance
 - Session history shared across **all** accounts — `altergo --resume` picks from everywhere
 - AWS, gcloud, Docker, kubectl stay shared by default — nothing breaks
@@ -102,7 +102,7 @@ brew install thepixelabs/tap/altergo
 ```bash
 # Name your accounts — run once per login you have
 altergo --setup --name personal
-altergo --setup --name work
+altergo --setup --name pro
 
 # Launch your configured AI assistant as that account
 altergo personal
@@ -119,8 +119,8 @@ That is the full workflow. The first time you run `altergo personal`, your confi
 
 | Feature | What it means |
 |---|---|
-| **Named accounts, unlimited** | `personal`, `work`, `sideproject`, or any name. One per AI account you use. Each gets its own isolated provider credentials. |
-| **One command to switch** | `altergo work` launches your configured AI assistant with the right credentials. No flags, no config editing. |
+| **Named accounts, unlimited** | `personal`, `pro`, `sideproject`, or any name. One per AI account you use. Each gets its own isolated provider credentials. |
+| **One command to switch** | `altergo pro` launches your configured AI assistant with the right credentials. No flags, no config editing. |
 | **Credential isolation** | Each account's provider credentials are isolated. AWS, GCP, Docker, kubectl, and GitHub CLI stay shared by default. |
 | **Configurable sharing** | `altergo --settings` opens a multi-page TUI — configure appearance (theme, launch animation), behavior (greeting/goodbye messages, update checks), and which CLI tool credentials are shared. |
 | **Interactive session picker** | Full-screen TUI with arrow keys, `j`/`k` vim bindings, page up/down, and a preview of each session's final message. |
@@ -135,7 +135,7 @@ That is the full workflow. The first time you run `altergo personal`, your confi
 
 | Command | What it does |
 |---|---|
-| `altergo <name>` | Launch the configured AI assistant as the named account (e.g. `altergo work`) |
+| `altergo <name>` | Launch the configured AI assistant as the named account (e.g. `altergo personal`) |
 | `altergo` | Launch the default account's AI assistant (backwards compatible) |
 | `altergo --resume` | Open the interactive TUI session picker (all accounts) |
 | `altergo --resume <id>` | Resume a specific session by ID directly |
@@ -190,7 +190,7 @@ altergo sets `HOME=~/.altergo/accounts/<name>` for the provider process. Each ac
         │       ├── projects/        ──→ symlink to ~/.claude/projects/
         │       ├── settings.json    ──→ symlink to ~/.claude/settings.json
         │       └── CLAUDE.md        ──→ symlink to ~/.claude/CLAUDE.md
-        └── work/                 Named account (altergo --setup --name work)
+        └── pro/                  Named account (altergo --setup --name pro)
             └── .claude/
                 ├── .credentials.json   ← isolated per account
                 ├── projects/        ──→ symlink to ~/.claude/projects/
@@ -208,22 +208,21 @@ altergo sets `HOME=~/.altergo/accounts/<name>` for the provider process. Each ac
 Some tools (`gh`, `git`, SSH) read credentials from your home directory. Use `altergo <name> shell` or `altergo <name> -- <cmd>` to run them inside a specific account's HOME:
 
 ```bash
-# Authenticate gh for the work account
-altergo work shell
+# Authenticate gh inside a specific account's environment
+altergo pro shell
 gh auth login
-git config --global user.email me@work.com
 exit
 
 # Or run a single command directly
-altergo work -- gh auth login
-altergo work -- gh auth status
+altergo pro -- gh auth login
+altergo pro -- gh auth status
 ```
 
-Credentials set this way persist in `~/.altergo/accounts/work/` and are available every time you run `altergo work`. The same pattern works for the default account with `altergo shell` or `altergo -- <cmd>`.
+Credentials set this way persist in `~/.altergo/accounts/pro/` and are available every time you run `altergo pro`. The same pattern works for the default account with `altergo shell` or `altergo -- <cmd>`.
 
 ### macOS Keychain note
 
-When using Claude Code, tokens may be stored in the system Keychain rather than a flat file. When you authenticate inside `altergo work`, the token is stored under a separate Keychain entry keyed to that account's email. The `.credentials.json` file may appear empty — this is expected. Auth still works correctly.
+When using Claude Code, tokens may be stored in the system Keychain rather than a flat file. When you authenticate inside `altergo pro`, the token is stored under a separate Keychain entry keyed to that account's email. The `.credentials.json` file may appear empty — this is expected. Auth still works correctly.
 
 ---
 

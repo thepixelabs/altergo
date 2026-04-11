@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>altergo — Switch AI identities. Keep your context.</title>
-  <meta name="description" content="Named accounts for Claude Code, Gemini CLI, Codex, and GitHub Copilot — personal, work, side project, as many as you need. Credentials isolated per account, conversations shared across all of them. Zero dependencies, open source. By pixelabs." />
+  <meta name="description" content="Named accounts for Claude Code, Gemini CLI, Codex, and GitHub Copilot — personal, pro, sideproject, as many as you need. Credentials isolated per account, conversations shared across all of them. Zero dependencies, open source. By pixelabs." />
   <meta name="robots" content="index, follow" />
   <link rel="canonical" href="https://altergo.pixelabs.net/" />
 
@@ -12,7 +12,7 @@
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://altergo.pixelabs.net/" />
   <meta property="og:title" content="altergo — Switch AI identities. Keep your context." />
-  <meta property="og:description" content="Named accounts — personal, work, side project. One command to switch. Credentials isolated, history shared." />
+  <meta property="og:description" content="Named accounts — personal, pro, sideproject. One command to switch. Credentials isolated, history shared." />
   <meta property="og:image" content="https://altergo.pixelabs.net/og-image.png" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
@@ -21,7 +21,7 @@
   <meta property="og:locale" content="en_US" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="altergo — Switch AI identities. Keep your context." />
-  <meta name="twitter:description" content="Named accounts — personal, work, side project. `altergo personal` — that's it. Credentials isolated, history shared." />
+  <meta name="twitter:description" content="Named accounts — personal, pro, sideproject. `altergo personal` — that's it. Credentials isolated, history shared." />
   <meta name="twitter:image" content="https://altergo.pixelabs.net/og-image.png" />
   <meta name="twitter:creator" content="@thepixelabs" />
 
@@ -1616,7 +1616,7 @@
             <p class="hero-h1-alt reveal reveal-delay-1">Isolates credentials. Shares everything else.</p>
 
             <p class="hero-subtitle reveal reveal-delay-2">
-              You have a personal AI account and a work login your company pays for. Maybe a third for side projects. <code style="font-family:var(--font-mono);font-size:0.9em;color:var(--cyan)">altergo personal</code>, <code style="font-family:var(--font-mono);font-size:0.9em;color:var(--cyan)">altergo work</code> — one command, right credentials, same history everywhere.
+              You have a Claude account and a Gemini account. Maybe a Pro subscription and a free one. Maybe a third for a side project. <code style="font-family:var(--font-mono);font-size:0.9em;color:var(--cyan)">altergo personal</code>, <code style="font-family:var(--font-mono);font-size:0.9em;color:var(--cyan)">altergo pro</code> — one command, right credentials, same history everywhere.
             </p>
 
             <div class="hero-actions reveal reveal-delay-3">
@@ -1852,7 +1852,7 @@
               </svg>
             </div>
             <h3>Named Accounts — Unlimited</h3>
-            <p>personal, work, sideproject — one per AI account you use, as many as you need. Each gets its own isolated provider credentials; everything else is shared.</p>
+            <p>personal, pro, sideproject — one per AI account you use, as many as you need. Each gets its own isolated provider credentials; everything else is shared.</p>
           </div>
           <div class="feature-item reveal reveal-delay-3" role="listitem" style="--shimmer-duration:8s; --shimmer-delay:0.5s">
             <div class="feature-icon" aria-hidden="true">
@@ -1952,7 +1952,7 @@
 
 <span class="comment"># Name your accounts — run once per login you have</span>
 <span class="cmd">altergo --setup --name personal</span>
-<span class="cmd">altergo --setup --name work</span>
+<span class="cmd">altergo --setup --name pro</span>
 
 <span class="comment"># Switch — just use the account name</span>
 <span class="cmd">altergo personal</span></code>
@@ -1976,7 +1976,7 @@
 
 <span class="comment"># Name your accounts — run once per login you have</span>
 <span class="cmd">altergo --setup --name personal</span>
-<span class="cmd">altergo --setup --name work</span>
+<span class="cmd">altergo --setup --name pro</span>
 
 <span class="comment"># Switch — just use the account name</span>
 <span class="cmd">altergo personal</span></code>
@@ -2036,7 +2036,7 @@
             <table class="cmd-table" role="table" aria-label="altergo command reference">
               <tbody>
                 <tr><td>altergo &lt;name&gt;</td><td>Launch the named account (e.g. <code>altergo personal</code>)</td></tr>
-                <tr><td>altergo &lt;name&gt; &lt;provider&gt;</td><td>Launch with a specific provider — <code>altergo personal gemini</code>, <code>altergo work codex</code></td></tr>
+                <tr><td>altergo &lt;name&gt; &lt;provider&gt;</td><td>Launch with a specific provider — <code>altergo personal gemini</code>, <code>altergo pro codex</code></td></tr>
                 <tr><td>altergo --setup --name &lt;n&gt; --provider &lt;p&gt;</td><td>Create an account for a specific provider — <code>claude</code>, <code>gemini</code>, <code>codex</code>, <code>copilot</code></td></tr>
                 <tr><td>altergo --resume</td><td>Interactive session picker — browse, preview, resume</td></tr>
                 <tr><td>altergo --search</td><td>Full-text search across all conversation history</td></tr>

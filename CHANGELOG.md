@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.20.1 (2026-04-11)
+
+### Refactoring
+
+- Reposition copy for makers/tinkerers, replace corporate account examples
+  ([`67e6ff5`](https://github.com/thepixelabs/altergo/commit/67e6ff5cc50b11cdd07a6fddc07e855cb66a6b68))
+
+Switch all example account names from mine/acme/clientco to personal/work/sideproject. Rewrite hero
+  subtitle and Why section to speak to individual devs rather than businesses. Replace "accidentally
+  billed to wrong account" with the real dev pain point: not knowing which account you're running as
+  until you hit a rate limit.
+
+
 ## v0.20.0 (2026-04-10)
 
 ### Features

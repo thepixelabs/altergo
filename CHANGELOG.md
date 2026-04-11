@@ -1,6 +1,18 @@
 # CHANGELOG
 
 
+## v0.20.2 (2026-04-11)
+
+### Refactoring
+
+- Remove work/employer framing, replace with personal/pro/sideproject
+  ([`6805302`](https://github.com/thepixelabs/altergo/commit/68053023827f9fedb28ef7d53620f694b216d40a))
+
+Removes all "work account" and employer-related copy to avoid implying users can mix company-paid
+  sessions with personal ones. Examples now use personal, pro, and sideproject — framing that fits
+  individual makers and tinkerers.
+
+
 ## v0.20.1 (2026-04-11)
 
 ### Refactoring

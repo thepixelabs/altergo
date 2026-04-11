@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>altergo — Switch AI identities. Keep your context.</title>
-  <meta name="description" content="Named accounts for Claude Code, Gemini CLI, Codex, and GitHub Copilot — yours, your employer's, your client's, as many as you need. Credentials isolated per account, conversations shared across all of them. Zero dependencies, open source. By pixelabs." />
+  <meta name="description" content="Named accounts for Claude Code, Gemini CLI, Codex, and GitHub Copilot — personal, work, side project, as many as you need. Credentials isolated per account, conversations shared across all of them. Zero dependencies, open source. By pixelabs." />
   <meta name="robots" content="index, follow" />
   <link rel="canonical" href="https://altergo.pixelabs.net/" />
 
@@ -12,7 +12,7 @@
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://altergo.pixelabs.net/" />
   <meta property="og:title" content="altergo — Switch AI identities. Keep your context." />
-  <meta property="og:description" content="Named accounts — yours, your employer's, your client's. One command to switch. Credentials isolated, history shared." />
+  <meta property="og:description" content="Named accounts — personal, work, side project. One command to switch. Credentials isolated, history shared." />
   <meta property="og:image" content="https://altergo.pixelabs.net/og-image.png" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
@@ -21,7 +21,7 @@
   <meta property="og:locale" content="en_US" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="altergo — Switch AI identities. Keep your context." />
-  <meta name="twitter:description" content="Named accounts — yours, your employer's, your client's. `altergo mine` — that's it. Credentials isolated, history shared." />
+  <meta name="twitter:description" content="Named accounts — personal, work, side project. `altergo personal` — that's it. Credentials isolated, history shared." />
   <meta name="twitter:image" content="https://altergo.pixelabs.net/og-image.png" />
   <meta name="twitter:creator" content="@thepixelabs" />
 
@@ -1616,7 +1616,7 @@
             <p class="hero-h1-alt reveal reveal-delay-1">Isolates credentials. Shares everything else.</p>
 
             <p class="hero-subtitle reveal reveal-delay-2">
-              Named accounts — yours, your employer's, your client's. <code style="font-family:var(--font-mono);font-size:0.9em;color:var(--cyan)">altergo mine</code> and you are in. Your AI tool already saves conversations locally — altergo makes them searchable and resumable across all your accounts. Accounts separate which login you use, not what you can see.
+              You have a personal AI account and a work login your company pays for. Maybe a third for side projects. <code style="font-family:var(--font-mono);font-size:0.9em;color:var(--cyan)">altergo personal</code>, <code style="font-family:var(--font-mono);font-size:0.9em;color:var(--cyan)">altergo work</code> — one command, right credentials, same history everywhere.
             </p>
 
             <div class="hero-actions reveal reveal-delay-3">
@@ -1703,7 +1703,7 @@
               </svg>
             </div>
             <h3>Many accounts, one brain</h3>
-            <p>Your conversations already live on disk. altergo symlinks those local files so every account sees the same history. Accounts separate which login you use — not what you can see.</p>
+            <p>Your conversations already live on disk. altergo symlinks those local files so every account sees the same history. Switch accounts, not worlds — your history follows you everywhere.</p>
           </div>
           <div class="why-card reveal reveal-delay-2" role="listitem">
             <div class="why-icon why-icon-cyan" aria-hidden="true">
@@ -1783,7 +1783,7 @@
               <span class="step-win-title">setup</span>
             </div>
             <div class="step-body">
-              <code class="step-command"><span class="prompt" aria-hidden="true">$</span><span class="cmd">altergo --setup --name mine</span></code>
+              <code class="step-command"><span class="prompt" aria-hidden="true">$</span><span class="cmd">altergo --setup --name personal</span></code>
               <p class="step-caption">Create a named account — one per AI account you use. Repeat for each one you have. Symlinks wired automatically.</p>
             </div>
           </div>
@@ -1800,7 +1800,7 @@
               <span class="step-win-title">switch</span>
             </div>
             <div class="step-body">
-              <code class="step-command"><span class="prompt" aria-hidden="true">$</span><span class="cmd">altergo mine</span></code>
+              <code class="step-command"><span class="prompt" aria-hidden="true">$</span><span class="cmd">altergo personal</span></code>
               <p class="step-caption">Use the account name to launch. That's it. Run <code>altergo --resume</code> any time to open the interactive session picker across all accounts.</p>
             </div>
           </div>
@@ -1852,7 +1852,7 @@
               </svg>
             </div>
             <h3>Named Accounts — Unlimited</h3>
-            <p>mine, acme, clientco — one per AI account you use, as many as you need. Each gets its own isolated provider credentials; everything else is shared.</p>
+            <p>personal, work, sideproject — one per AI account you use, as many as you need. Each gets its own isolated provider credentials; everything else is shared.</p>
           </div>
           <div class="feature-item reveal reveal-delay-3" role="listitem" style="--shimmer-duration:8s; --shimmer-delay:0.5s">
             <div class="feature-icon" aria-hidden="true">
@@ -1864,7 +1864,7 @@
               </svg>
             </div>
             <h3>One Command to Switch</h3>
-            <p><code style="font-family:var(--font-mono);font-size:0.82em;color:var(--cyan)">altergo mine</code> launches your configured AI assistant with the right credentials. No flags, no config editing — just the account name.</p>
+            <p><code style="font-family:var(--font-mono);font-size:0.82em;color:var(--cyan)">altergo personal</code> launches your configured AI assistant with the right credentials. No flags, no config editing — just the account name.</p>
           </div>
           <div class="feature-item reveal reveal-delay-4" role="listitem" style="--shimmer-duration:13s; --shimmer-delay:5.1s">
             <div class="feature-icon" aria-hidden="true">
@@ -1950,13 +1950,13 @@
                 <code><span class="comment"># Install from PyPI</span>
 <span class="cmd">pip install altergo</span>
 
-<span class="comment"># Create accounts — one per AI account you use</span>
-<span class="cmd">altergo --setup --name mine</span>
-<span class="cmd">altergo --setup --name acme</span>
+<span class="comment"># Name your accounts — run once per login you have</span>
+<span class="cmd">altergo --setup --name personal</span>
+<span class="cmd">altergo --setup --name work</span>
 
 <span class="comment"># Switch — just use the account name</span>
-<span class="cmd">altergo mine</span></code>
-                <button class="code-copy-btn" aria-label="Copy pip install commands" data-copy="pip install altergo&#10;altergo --setup --name mine&#10;altergo mine">
+<span class="cmd">altergo personal</span></code>
+                <button class="code-copy-btn" aria-label="Copy pip install commands" data-copy="pip install altergo&#10;altergo --setup --name personal&#10;altergo personal">
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
                     <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
@@ -1974,13 +1974,13 @@
                 <code><span class="comment"># Isolated environment</span>
 <span class="cmd">pipx install altergo</span>
 
-<span class="comment"># Create accounts — one per AI account you use</span>
-<span class="cmd">altergo --setup --name mine</span>
-<span class="cmd">altergo --setup --name acme</span>
+<span class="comment"># Name your accounts — run once per login you have</span>
+<span class="cmd">altergo --setup --name personal</span>
+<span class="cmd">altergo --setup --name work</span>
 
 <span class="comment"># Switch — just use the account name</span>
-<span class="cmd">altergo mine</span></code>
-                <button class="code-copy-btn" aria-label="Copy pipx install commands" data-copy="pipx install altergo&#10;altergo --setup --name mine&#10;altergo mine">
+<span class="cmd">altergo personal</span></code>
+                <button class="code-copy-btn" aria-label="Copy pipx install commands" data-copy="pipx install altergo&#10;altergo --setup --name personal&#10;altergo personal">
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
                     <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
@@ -2035,8 +2035,8 @@
             </h3>
             <table class="cmd-table" role="table" aria-label="altergo command reference">
               <tbody>
-                <tr><td>altergo &lt;name&gt;</td><td>Launch the named account (e.g. <code>altergo mine</code>)</td></tr>
-                <tr><td>altergo &lt;name&gt; &lt;provider&gt;</td><td>Launch with a specific provider — <code>altergo mine gemini</code>, <code>altergo acme codex</code></td></tr>
+                <tr><td>altergo &lt;name&gt;</td><td>Launch the named account (e.g. <code>altergo personal</code>)</td></tr>
+                <tr><td>altergo &lt;name&gt; &lt;provider&gt;</td><td>Launch with a specific provider — <code>altergo personal gemini</code>, <code>altergo work codex</code></td></tr>
                 <tr><td>altergo --setup --name &lt;n&gt; --provider &lt;p&gt;</td><td>Create an account for a specific provider — <code>claude</code>, <code>gemini</code>, <code>codex</code>, <code>copilot</code></td></tr>
                 <tr><td>altergo --resume</td><td>Interactive session picker — browse, preview, resume</td></tr>
                 <tr><td>altergo --search</td><td>Full-text search across all conversation history</td></tr>
@@ -2055,9 +2055,9 @@
               </svg>
               Credentials &amp; Auth
             </h3>
-            <p class="docs-note">Each account gets its own isolated credentials. altergo logs you in fresh per account — just run <code>altergo mine</code> and authenticate when prompted. That's it.</p>
+            <p class="docs-note">Each account gets its own isolated credentials. altergo logs you in fresh per account — just run <code>altergo personal</code> and authenticate when prompted. That's it.</p>
             <p class="docs-note"><strong>Shared by default:</strong> AWS, gcloud, Azure, Docker, kubectl, Terraform, GitHub CLI — so your infra tools keep working across accounts without re-auth. Toggle anything via <code>altergo --settings</code>.</p>
-            <p class="docs-note"><strong>Need to auth a tool for one account?</strong> <code>altergo mine -- gh auth login</code> runs any command inside that account's environment.</p>
+            <p class="docs-note"><strong>Need to auth a tool for one account?</strong> <code>altergo personal -- gh auth login</code> runs any command inside that account's environment.</p>
           </div>
 
           <!-- What gets symlinked -->
@@ -2456,8 +2456,8 @@
         const body = document.getElementById('term-body');
         if (!body) return;
         body.innerHTML = [
-          '<span class="term-line visible"><span class="tc-prompt">~/my-app $</span> <span class="tc-cmd">altergo mine</span></span>',
-          '<span class="term-line visible"><span class="tc-green">&#10003; Credentials active (@mine)</span></span>',
+          '<span class="term-line visible"><span class="tc-prompt">~/my-app $</span> <span class="tc-cmd">altergo personal</span></span>',
+          '<span class="term-line visible"><span class="tc-green">&#10003; Credentials active (@personal)</span></span>',
           '<span class="term-line visible"><span class="tc-cyan">Launching assistant...</span></span>',
         ].join('');
         return;
@@ -2480,13 +2480,13 @@
       // 'select' — animate row selection change
       // 'clear'  — wipe terminal
       const SCRIPT = [
-        // --- Scene 1: altergo mine ---
+        // --- Scene 1: altergo personal ---
         { type: 'pause', ms: 600 },
-        { type: 'type', text: 'altergo mine', speed: 72 },
+        { type: 'type', text: 'altergo personal', speed: 72 },
         { type: 'pause', ms: 400 },
         { type: 'enter' },
-        { type: 'output', html: '<span class="tc-dim">Loading account: mine...</span>', delay: 120 },
-        { type: 'output', html: '<span class="tc-green">&#10003; Credentials active (@mine)</span>', delay: 280 },
+        { type: 'output', html: '<span class="tc-dim">Loading account: personal...</span>', delay: 120 },
+        { type: 'output', html: '<span class="tc-green">&#10003; Credentials active (@personal)</span>', delay: 280 },
         { type: 'output', html: '<span class="tc-cyan">Launching assistant...</span>', delay: 180 },
         { type: 'output', html: '', delay: 320 },
 

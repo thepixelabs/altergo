@@ -19,15 +19,15 @@
 </p>
 
 <p align="center">
-  Named accounts — yours, your employer's, your client's, as many as you need.<br>
-  <code>altergo mine</code> and you are in. Isolates credentials. Shares everything else.
+  Personal account, work login, side project — as many as you need.<br>
+  <code>altergo personal</code> and you are in. Isolates credentials. Shares everything else.
 </p>
 
 ---
 
 ## <img src="docs/icons/why.svg" width="22" align="center"> Why altergo
 
-You use AI coding assistants — Claude Code, Gemini CLI, Codex, GitHub Copilot — across multiple accounts. Your personal login, your employer's team account, a client's seat. Switching between them normally means juggling separate terminals, losing your session history, or manually swapping credential files. That is friction you should not have to think about.
+You use AI coding assistants — Claude Code, Gemini CLI, Codex, GitHub Copilot — across multiple accounts. A personal login, a work account your employer pays for, maybe a third for open source. Switching between them normally means juggling separate terminals, losing your session history, or manually swapping credential files. That is friction you should not have to think about.
 
 altergo runs each account in its own isolated HOME, so credentials never mix. Session history, settings, and tool configs are shared across all accounts via symlinks — pick up any conversation from any account, instantly.
 
@@ -47,12 +47,12 @@ No daemon. No sync service. No config files to wrangle. One Python file.
 - Log out, log in, lose your place
 - Each account has its own session history — hard to find "where was I?"
 - Tool configs (AWS, gcloud, kubectl) randomly break as you jump around
-- Accidentally billed to the wrong account with no easy way to tell
+- No idea which account you're currently running as — and no way to tell until you hit a rate limit or get an auth error
 
 </td>
 <td>
 
-- One terminal. `altergo work` → you are in the work account.
+- One terminal. `altergo work` → right credentials, instantly.
 - Credentials swap instantly, no login dance
 - Session history shared across **all** accounts — `altergo --resume` picks from everywhere
 - AWS, gcloud, Docker, kubectl stay shared by default — nothing breaks
@@ -100,18 +100,18 @@ brew install thepixelabs/tap/altergo
 ## <img src="docs/icons/quickstart.svg" width="22" align="center"> Quick start
 
 ```bash
-# Create named accounts — one per AI account you use
-altergo --setup --name mine
-altergo --setup --name acme
+# Name your accounts — run once per login you have
+altergo --setup --name personal
+altergo --setup --name work
 
 # Launch your configured AI assistant as that account
-altergo mine
+altergo personal
 
 # Open the interactive session picker across all accounts
 altergo --resume
 ```
 
-That is the full workflow. The first time you run `altergo mine`, your configured provider authenticates under that account's isolated credentials. Every session you create is visible from every account — accounts separate which login you use, not what you can see.
+That is the full workflow. The first time you run `altergo personal`, your configured provider authenticates under that account's isolated credentials. Every session you create is visible from every account — switch accounts, not worlds. Your history follows you everywhere.
 
 ---
 
@@ -119,7 +119,7 @@ That is the full workflow. The first time you run `altergo mine`, your configure
 
 | Feature | What it means |
 |---|---|
-| **Named accounts, unlimited** | `mine`, `acme`, `clientco`, or any name. One per AI account you use. Each gets its own isolated provider credentials. |
+| **Named accounts, unlimited** | `personal`, `work`, `sideproject`, or any name. One per AI account you use. Each gets its own isolated provider credentials. |
 | **One command to switch** | `altergo work` launches your configured AI assistant with the right credentials. No flags, no config editing. |
 | **Credential isolation** | Each account's provider credentials are isolated. AWS, GCP, Docker, kubectl, and GitHub CLI stay shared by default. |
 | **Configurable sharing** | `altergo --settings` opens a multi-page TUI — configure appearance (theme, launch animation), behavior (greeting/goodbye messages, update checks), and which CLI tool credentials are shared. |

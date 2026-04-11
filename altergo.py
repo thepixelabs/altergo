@@ -3983,7 +3983,7 @@ def _first_run_onboarding():
     while True:
         try:
             raw = Prompt.ask(
-                "  Account name (e.g., mine, acme, clientco)"
+                "  Account name (e.g., personal, work, sideproject)"
                 " [or press Enter to run --setup]",
                 default="",
                 show_default=False,

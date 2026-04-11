@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.21.2 (2026-04-11)
+
+### Bug Fixes
+
+- Sync .claude.json across accounts via symlink_home_files
+  ([`84b45ca`](https://github.com/thepixelabs/altergo/commit/84b45caefdea2c4628ca2f03d42b797c69a3cfcd))
+
+
 ## v0.21.1 (2026-04-11)
 
 ### Bug Fixes

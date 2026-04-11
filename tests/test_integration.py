@@ -68,7 +68,7 @@ def parse_sentinel_output(stdout: str) -> dict:
     path containing ``==``) are preserved intact.
 
     Lines that do not contain ``=`` are silently ignored, which means normal
-    altergo status output (e.g. the setup banner) does not cause parse errors.
+    altergo status output (e.g. the config banner) does not cause parse errors.
 
     Args:
         stdout: The full captured stdout string from ``run_altergo``.
@@ -78,7 +78,7 @@ def parse_sentinel_output(stdout: str) -> dict:
 
     Example::
 
-        >>> parse_sentinel_output("ALTERGO_TEST_HOME=/tmp/home\\nSetup complete!\\n")
+        >>> parse_sentinel_output("ALTERGO_TEST_HOME=/tmp/home\\nConfig complete!\\n")
         {'ALTERGO_TEST_HOME': '/tmp/home'}
     """
     result = {}
@@ -341,12 +341,12 @@ def test_altergo_passthrough_double_dash(full_home, fake_claude_bin):
 
 
 def test_unknown_account_exits_1_with_message(full_home):
-    """`altergo typo` exits 1 and prints a --setup --name hint for the unknown account."""
+    """`altergo typo` exits 1 and prints a --config --name hint for the unknown account."""
     proc = run_altergo_nobin(full_home, "typo")
     assert proc.returncode == 1
     assert "typo" in proc.stderr, f"Account name 'typo' missing from stderr: {proc.stderr!r}"
-    assert "--setup --name typo" in proc.stderr, (
-        f"Setup hint missing from stderr: {proc.stderr!r}"
+    assert "--config --name typo" in proc.stderr, (
+        f"Config hint missing from stderr: {proc.stderr!r}"
     )
 
 

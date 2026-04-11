@@ -16,7 +16,7 @@ altergo/
     pyproject.toml          ← Package metadata, entry point, dependencies
     tests/
         test_smoke.py       ← Core functionality tests
-        test_integration.py ← Integration tests for setup, teardown, launch
+        test_integration.py ← Integration tests for config, teardown, launch
         test_new_features.py ← Tests for newer features
         conftest.py         ← Shared test fixtures
     docs/
@@ -55,7 +55,7 @@ The entire program is one file. Here is a map of its logical sections:
 | Settings helpers | `load_settings()`, `save_settings()`, `_load_bool_setting()` | Settings persistence |
 | Preferences | `_load_bool_setting()` | Boolean settings: greeting, goodbye, animation |
 | Update checker | `load_update_check_enabled()`, PyPI cache | Background version check |
-| Setup / Teardown | `do_setup()`, `do_teardown()` | Account creation and removal |
+| Config / Teardown | `do_config()`, `do_teardown()` | Account creation and removal |
 | Session discovery | `get_sessions()`, `get_session_preview()` | JSONL session scanning |
 | Session picker | `_draw_picker()` | Curses session resume TUI |
 | Search | `_draw_search()` | Full-text conversation search |
@@ -69,7 +69,7 @@ The entire program is one file. Here is a map of its logical sections:
 
 ## Runtime directory layout
 
-The following describes the filesystem state after `altergo --setup` has been run successfully.
+The following describes the filesystem state after `altergo --config` has been run successfully.
 
 ### Primary account (unchanged)
 
@@ -94,7 +94,7 @@ The following describes the filesystem state after `altergo --setup` has been ru
 
 ### Accounts directory
 
-All altergo accounts live under `~/.altergo/accounts/`. The `default` account is used when you run `altergo` with no account name. Named accounts (e.g. `work`, `client-a`) are created with `altergo --setup --name <name>`.
+All altergo accounts live under `~/.altergo/accounts/`. The `default` account is used when you run `altergo` with no account name. Named accounts (e.g. `work`, `client-a`) are created with `altergo --config --name <name>`.
 
 ```
 ~/.altergo/
@@ -168,9 +168,11 @@ Account names must pass `validate_account_name()`:
 
 - Match `^[a-zA-Z0-9][a-zA-Z0-9_-]*$` (alphanumeric start, then alphanumeric, `-`, or `_`)
 - Maximum 64 characters
-- Must not be in `_RESERVED_NAMES`: `default`, `main`, `list`, `new`, `rm`, `shell`, `setup`, `teardown`, `help`, `version`, `legacy`, `backup`, `migrate`
+- Must not be in `_RESERVED_NAMES`: `default`, `main`, `list`, `new`, `rm`, `shell`, `config`, `setup`, `teardown`, `help`, `version`, `legacy`, `backup`, `migrate`, `use`
 
-`validate_account_name()` is called only during `--setup --name <name>`. It is not called during account lookup in `main()` — if the directory does not exist, the user sees a "not found" error with a hint to run `--setup --name`.
+`validate_account_name()` is called only during `--config --name <name>`. It is not called during account lookup in `main()` — if the directory does not exist, the user sees a "not found" error with a hint to run `--config --name`.
+
+
 
 ---
 
@@ -192,7 +194,7 @@ When the first argument is not a known flag or subcommand, `main()` checks wheth
 
 ```
 _KNOWN_COMMANDS = frozenset([
-    "shell", "--resume", "--list", "--setup", "--teardown",
+    "shell", "--resume", "--list", "--config", "--teardown",
     "--settings", "--version", "-h", "--help", "--"
 ])
 
@@ -286,7 +288,7 @@ These symlinks live directly in the account home (e.g., `~/.altergo/accounts/wor
 | Path | Notes |
 |---|---|
 | `~/.altergo/accounts/<name>/.claude/paste-cache/` | Ephemeral. Safe to leave isolated. |
-| `~/.altergo/accounts/<name>/.claude/plugins/` | Plugin state is isolated per-account. If you use plugins and want them shared, manually symlink this directory after running setup. |
+| `~/.altergo/accounts/<name>/.claude/plugins/` | Plugin state is isolated per-account. If you use plugins and want them shared, manually symlink this directory after running `altergo --config`. |
 
 ---
 
@@ -329,7 +331,7 @@ User runs: altergo [account] [args]
 │   ├─ parse sys.argv[1:]
 │   │   ├─ -h / --help      → show_help()           → sys.exit(0)
 │   │   ├─ --version        → print version         → sys.exit(0)
-│   │   ├─ --setup [--name <n>]  → do_setup(n)      → sys.exit(0)
+│   │   ├─ --config [--name <n>]  → do_config(n)      → sys.exit(0)
 │   │   ├─ --teardown [--name <n>] → do_teardown(n) → sys.exit(0)
 │   │   ├─ --settings       → interactive_settings() → sys.exit(0)
 │   │   ├─ --list           → get_sessions() → print table → sys.exit(0)
@@ -394,9 +396,9 @@ Because `projects/` is symlinked to the same target for every account, sessions 
 
 ---
 
-## `--setup` and `--teardown` idempotency
+## `--config` and `--teardown` idempotency
 
-`do_setup()` is safe to run multiple times:
+`do_config()` is safe to run multiple times:
 
 - If a symlink already points to the correct target, it prints a confirmation and moves on.
 - If a symlink points to a different target, it warns and skips — it does not silently redirect an existing symlink.

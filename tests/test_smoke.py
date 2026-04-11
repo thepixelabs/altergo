@@ -111,7 +111,7 @@ def test_unknown_account_error(tmp_path):
     assert result.returncode == 1
     assert "wokr" in result.stderr
     assert "not found" in result.stderr
-    assert "--setup --name wokr" in result.stderr
+    assert "--config --name wokr" in result.stderr
 
 
 def test_validate_account_name_valid():
@@ -248,7 +248,7 @@ def test_migrate_legacy_idempotent(legacy_home, capsys):
 
 
 def _create_main_claude_sources(main_claude: Path):
-    """Create the source dirs/files in MAIN_CLAUDE that do_setup() will symlink."""
+    """Create the source dirs/files in MAIN_CLAUDE that do_config() will symlink."""
     for name in altergo.SYMLINK_DIRS:
         (main_claude / name).mkdir(parents=True, exist_ok=True)
     for name in altergo.SYMLINK_FILES:
@@ -265,12 +265,12 @@ def _create_catalog_sources(main_home: Path):
 
 
 def test_setup_creates_claude_symlinks(fake_home):
-    """do_setup() creates symlinks for SYMLINK_DIRS inside account_home/.claude/."""
+    """do_config() creates symlinks for SYMLINK_DIRS inside account_home/.claude/."""
     main_claude = fake_home["main_claude"]
     accounts_dir = fake_home["accounts_dir"]
     _create_main_claude_sources(main_claude)
 
-    altergo.do_setup("work")
+    altergo.do_config("work")
 
     account_claude = accounts_dir / "work" / ".claude"
     for name in altergo.SYMLINK_DIRS:
@@ -280,12 +280,12 @@ def test_setup_creates_claude_symlinks(fake_home):
 
 
 def test_setup_creates_claude_file_symlinks(fake_home):
-    """do_setup() creates symlinks for SYMLINK_FILES inside account_home/.claude/."""
+    """do_config() creates symlinks for SYMLINK_FILES inside account_home/.claude/."""
     main_claude = fake_home["main_claude"]
     accounts_dir = fake_home["accounts_dir"]
     _create_main_claude_sources(main_claude)
 
-    altergo.do_setup("work")
+    altergo.do_config("work")
 
     account_claude = accounts_dir / "work" / ".claude"
     for name in altergo.SYMLINK_FILES:
@@ -295,13 +295,13 @@ def test_setup_creates_claude_file_symlinks(fake_home):
 
 
 def test_setup_creates_home_dir_symlinks(fake_home):
-    """do_setup() creates CATALOG symlinks at account_home level pointing into MAIN_HOME."""
+    """do_config() creates CATALOG symlinks at account_home level pointing into MAIN_HOME."""
     main_home = fake_home["main_home"]
     accounts_dir = fake_home["accounts_dir"]
     _create_main_claude_sources(fake_home["main_claude"])
     _create_catalog_sources(main_home)
 
-    altergo.do_setup("work")
+    altergo.do_config("work")
 
     account_home = accounts_dir / "work"
     for entry in altergo.CATALOG:
@@ -320,7 +320,7 @@ def test_symlinks_no_escape(fake_home):
     accounts_dir = fake_home["accounts_dir"]
     _create_main_claude_sources(main_claude)
 
-    altergo.do_setup("work")
+    altergo.do_config("work")
 
     account_claude = accounts_dir / "work" / ".claude"
     for link in account_claude.iterdir():
@@ -337,14 +337,14 @@ def test_symlinks_no_escape(fake_home):
 
 
 def test_teardown_removes_symlinks(fake_home):
-    """do_teardown() removes all symlinks that do_setup() created."""
+    """do_teardown() removes all symlinks that do_config() created."""
     main_home = fake_home["main_home"]
     main_claude = fake_home["main_claude"]
     accounts_dir = fake_home["accounts_dir"]
     _create_main_claude_sources(main_claude)
     _create_catalog_sources(main_home)
 
-    altergo.do_setup("work")
+    altergo.do_config("work")
     altergo.do_teardown("work")
 
     account_claude = accounts_dir / "work" / ".claude"
@@ -501,7 +501,7 @@ def test_list_then_resume_roundtrip(sweep_home):
     accounts_dir = sweep_home["accounts_dir"]
 
     # Set up a properly-symlinked default account.
-    altergo.do_setup("default")
+    altergo.do_config("default")
 
     account_home = accounts_dir / "default"
     account_claude = account_home / ".claude"
@@ -633,7 +633,7 @@ def test_setup_creates_provider_symlinks(fake_home, provider_id):
     for name in prov["symlink_files"]:
         (main_dot_dir / name).touch()
 
-    altergo.do_setup("work", providers=[provider_id])
+    altergo.do_config("work", providers=[provider_id])
 
     account_dot_dir = fake_home["accounts_dir"] / "work" / prov["dot_dir"]
 
@@ -661,11 +661,11 @@ def test_teardown_removes_provider_symlinks(fake_home):
     for name in prov["symlink_files"]:
         (main_dot_dir / name).touch()
 
-    altergo.do_setup("work", providers=["gemini"])
+    altergo.do_config("work", providers=["gemini"])
 
     account_dot_dir = fake_home["accounts_dir"] / "work" / ".gemini"
     created_symlinks = [account_dot_dir / name for name in prov["symlink_dirs"] if (account_dot_dir / name).is_symlink()]
-    assert created_symlinks, "precondition: at least one symlink must exist after setup"
+    assert created_symlinks, "precondition: at least one symlink must exist after config"
 
     altergo.do_teardown("work")
 

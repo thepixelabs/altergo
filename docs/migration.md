@@ -95,7 +95,7 @@ The backup is preserved through the entire v0.5.x series. It will be removed in 
 
 **Applies to:** Anyone who used `claude100-resume` or manually configured `~/claude100-home/` as an alt account home.
 
-If you are coming from a bare shell alias (not `claude100-resume`) — for example `alias claude2='HOME=~/claude2-home claude'` — the same steps apply: copy `.credentials.json` to `~/.altergo/accounts/default/.claude/`, run `altergo --setup`, and remove the alias.
+If you are coming from a bare shell alias (not `claude100-resume`) — for example `alias claude2='HOME=~/claude2-home claude'` — the same steps apply: copy `.credentials.json` to `~/.altergo/accounts/default/.claude/`, run `altergo --config`, and remove the alias.
 
 ---
 
@@ -107,7 +107,7 @@ If you are coming from a bare shell alias (not `claude100-resume`) — for examp
 | Alt home directory | `~/claude100-home/` | `~/.altergo/accounts/default/` |
 | Shell alias | `alias claude100='HOME=$HOME/claude100-home claude'` in `~/.zshrc` | No alias needed — `altergo` handles it |
 
-The new setup does not auto-detect `~/claude100-home/`. If you skip migration, `altergo --setup` creates a fresh `~/.altergo/accounts/default/` with no credentials, and you will be prompted to log in again with your alt account.
+The new altergo does not auto-detect `~/claude100-home/`. If you skip migration, `altergo --config` creates a fresh `~/.altergo/accounts/default/` with no credentials, and you will be prompted to log in again with your alt account.
 
 ---
 
@@ -127,12 +127,12 @@ If you also had a `settings.json` or other config files unique to the alt accoun
 ls -la ~/claude100-home/.claude/
 ```
 
-Only copy files that are regular files, not symlinks. The symlinks will be recreated by `altergo --setup`.
+Only copy files that are regular files, not symlinks. The symlinks will be recreated by `altergo --config`.
 
-#### 2. Run the new setup
+#### 2. Run the new config
 
 ```bash
-altergo --setup
+altergo --config
 ```
 
 This creates the symlink structure inside `~/.altergo/accounts/default/.claude/` so all accounts share session history.
@@ -177,7 +177,7 @@ If you had been using the old alt home for a while, Claude Code may have written
 ls ~/claude100-home/.claude/
 ```
 
-Two directories in particular — `paste-cache/` and `plugins/` — are written by Claude Code but are not in altergo's symlink list. `paste-cache/` is ephemeral and safe to ignore. If `plugins/` exists and you use Claude Code plugins, you may want to manually symlink it after setup:
+Two directories in particular — `paste-cache/` and `plugins/` — are written by Claude Code but are not in altergo's symlink list. `paste-cache/` is ephemeral and safe to ignore. If `plugins/` exists and you use Claude Code plugins, you may want to manually symlink it after running `altergo --config`:
 
 ```bash
 # Only do this if plugins/ exists in your primary ~/.claude/ and you want it shared
@@ -220,7 +220,7 @@ You cannot rewrite already-pushed commits without a force-push and coordination 
 
 **`altergo --list` shows no sessions after migration**
 
-The symlinks inside `~/.altergo/accounts/default/.claude/` may not have been created yet. Run `altergo --setup` and check the output for errors.
+The symlinks inside `~/.altergo/accounts/default/.claude/` may not have been created yet. Run `altergo --config` and check the output for errors.
 
 **`altergo` asks me to log in**
 

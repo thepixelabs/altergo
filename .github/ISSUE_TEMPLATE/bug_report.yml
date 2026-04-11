@@ -22,7 +22,7 @@ body:
       label: Steps to reproduce
       description: How can we reproduce this?
       placeholder: |
-        1. Run `altergo --setup`
+        1. Run `altergo --config`
         2. Run `altergo`
         3. See error...
     validations:

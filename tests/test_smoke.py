@@ -2,6 +2,7 @@
 
 import importlib.util
 import io
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -365,75 +366,139 @@ def test_teardown_removes_symlinks(fake_home):
             link = account_home / rel
             assert not link.is_symlink(), f"~/{rel} symlink should be removed after teardown"
 
-    # All home-level provider file symlinks must be gone.
-    for pid, prov in altergo.PROVIDERS.items():
-        for name in prov.get("symlink_home_files", []):
-            link = account_home / name
-            assert not link.is_symlink(), f"{name} symlink should be removed after teardown"
+
+# ---------------------------------------------------------------------------
+# T8b — MCP sync tests
+# ---------------------------------------------------------------------------
 
 
-def test_setup_creates_home_file_symlinks(fake_home):
-    """do_config() symlinks provider symlink_home_files from account_home → MAIN_HOME."""
+def test_mcp_sync_from_main_to_account(fake_home):
+    """do_config() syncs mcpServers from MAIN_HOME/.claude.json into account."""
     main_home = fake_home["main_home"]
     accounts_dir = fake_home["accounts_dir"]
     _create_main_claude_sources(fake_home["main_claude"])
 
-    claude_prov = altergo.PROVIDERS["claude"]
-    for name in claude_prov.get("symlink_home_files", []):
-        (main_home / name).touch()
+    # Main home has an MCP server configured
+    (main_home / ".claude.json").write_text(json.dumps({
+        "mcpServers": {"dispatch": {"url": "http://localhost:4242"}},
+        "oauthAccount": {"email": "main@example.com"},
+    }))
 
     altergo.do_config("work")
 
-    account_home = accounts_dir / "work"
-    for name in claude_prov.get("symlink_home_files", []):
-        link = account_home / name
-        src = main_home / name
-        assert link.is_symlink(), f"{name} should be a symlink at account_home level"
-        assert link.resolve() == src.resolve(), f"{name} must point into MAIN_HOME"
+    acct_cfg = accounts_dir / "work" / ".claude.json"
+    assert acct_cfg.exists(), "account must have its own .claude.json"
+    assert not acct_cfg.is_symlink(), ".claude.json must be a real file, not a symlink"
+    data = json.loads(acct_cfg.read_text())
+    assert "dispatch" in data.get("mcpServers", {}), "MCP server must be synced to account"
 
 
-def test_setup_promotes_home_file(fake_home):
-    """do_config() promotes a real account-home file to MAIN_HOME when src is absent."""
+def test_mcp_sync_from_account_to_main(fake_home):
+    """do_config() pushes account-only mcpServers back to MAIN_HOME/.claude.json."""
     main_home = fake_home["main_home"]
     accounts_dir = fake_home["accounts_dir"]
     _create_main_claude_sources(fake_home["main_claude"])
 
-    # Pre-create the account home with a real .claude.json before do_config runs.
-    account_home = accounts_dir / "work"
-    account_home.mkdir(parents=True, exist_ok=True)
-    real_file = account_home / ".claude.json"
-    real_file.write_text('{"mcpServers": {}}')
-
-    assert not (main_home / ".claude.json").exists(), "src must be absent to trigger promotion"
-
-    altergo.do_config("work")
-
-    src = main_home / ".claude.json"
-    dst = account_home / ".claude.json"
-    assert src.exists(), ".claude.json must be promoted to MAIN_HOME"
-    assert src.read_text() == '{"mcpServers": {}}'
-    assert dst.is_symlink(), "account_home/.claude.json must become a symlink after promotion"
-    assert dst.resolve() == src.resolve()
-
-
-def test_setup_home_file_conflict_leaves_both(fake_home):
-    """do_config() warns and leaves both files untouched when both src and dst are real."""
-    main_home = fake_home["main_home"]
-    accounts_dir = fake_home["accounts_dir"]
-    _create_main_claude_sources(fake_home["main_claude"])
-
+    # Main home has no MCPs; account already has one
+    (main_home / ".claude.json").write_text('{}')
     account_home = accounts_dir / "work"
     account_home.mkdir(parents=True, exist_ok=True)
-    (main_home / ".claude.json").write_text('{"main": true}')
-    (account_home / ".claude.json").write_text('{"account": true}')
+    (account_home / ".claude.json").write_text(json.dumps({
+        "mcpServers": {"local-tool": {"command": "npx", "args": ["tool"]}},
+    }))
 
     altergo.do_config("work")
 
-    # Neither file is touched: both remain as real files, no symlink created.
-    dst = account_home / ".claude.json"
-    assert not dst.is_symlink(), "conflicting .claude.json must not become a symlink"
-    assert dst.read_text() == '{"account": true}', "account file must not be overwritten"
-    assert (main_home / ".claude.json").read_text() == '{"main": true}', "main file must not be overwritten"
+    main_data = json.loads((main_home / ".claude.json").read_text())
+    assert "local-tool" in main_data.get("mcpServers", {}), "account MCP must propagate to main home"
+
+
+def test_mcp_sync_bidirectional_merge(fake_home):
+    """do_config() merges mcpServers from both sides; account wins on conflict."""
+    main_home = fake_home["main_home"]
+    accounts_dir = fake_home["accounts_dir"]
+    _create_main_claude_sources(fake_home["main_claude"])
+
+    (main_home / ".claude.json").write_text(json.dumps({
+        "mcpServers": {
+            "shared": {"url": "http://main"},
+            "main-only": {"url": "http://main-only"},
+        },
+    }))
+    account_home = accounts_dir / "work"
+    account_home.mkdir(parents=True, exist_ok=True)
+    (account_home / ".claude.json").write_text(json.dumps({
+        "mcpServers": {
+            "shared": {"url": "http://account"},
+            "acct-only": {"url": "http://acct-only"},
+        },
+    }))
+
+    altergo.do_config("work")
+
+    main_data = json.loads((main_home / ".claude.json").read_text())
+    acct_data = json.loads((account_home / ".claude.json").read_text())
+
+    # Both should have all 3 servers
+    for label, data in [("main", main_data), ("account", acct_data)]:
+        mcps = data.get("mcpServers", {})
+        assert "shared" in mcps, f"{label} missing 'shared'"
+        assert "main-only" in mcps, f"{label} missing 'main-only'"
+        assert "acct-only" in mcps, f"{label} missing 'acct-only'"
+
+    # Account wins on conflict
+    assert main_data["mcpServers"]["shared"]["url"] == "http://account"
+    assert acct_data["mcpServers"]["shared"]["url"] == "http://account"
+
+
+def test_mcp_sync_preserves_oauth_per_account(fake_home):
+    """MCP sync does not clobber account-specific oauthAccount."""
+    main_home = fake_home["main_home"]
+    accounts_dir = fake_home["accounts_dir"]
+    _create_main_claude_sources(fake_home["main_claude"])
+
+    (main_home / ".claude.json").write_text(json.dumps({
+        "oauthAccount": {"email": "main@example.com"},
+        "mcpServers": {"srv": {"url": "http://srv"}},
+    }))
+    account_home = accounts_dir / "work"
+    account_home.mkdir(parents=True, exist_ok=True)
+    (account_home / ".claude.json").write_text(json.dumps({
+        "oauthAccount": {"email": "work@example.com"},
+    }))
+
+    altergo.do_config("work")
+
+    acct_data = json.loads((account_home / ".claude.json").read_text())
+    assert acct_data["oauthAccount"]["email"] == "work@example.com", \
+        "account oauthAccount must NOT be overwritten by sync"
+    assert "srv" in acct_data.get("mcpServers", {}), "MCP must still be synced"
+
+
+def test_mcp_sync_unsymlinks_migration(fake_home):
+    """If .claude.json is a symlink (v0.21.1 migration), sync replaces it with a real file."""
+    main_home = fake_home["main_home"]
+    accounts_dir = fake_home["accounts_dir"]
+    _create_main_claude_sources(fake_home["main_claude"])
+
+    main_cfg = main_home / ".claude.json"
+    main_cfg.write_text(json.dumps({
+        "mcpServers": {"srv": {"url": "http://srv"}},
+        "oauthAccount": {"email": "main@example.com"},
+    }))
+
+    # Simulate v0.21.1 state: account .claude.json is a symlink to main
+    account_home = accounts_dir / "work"
+    account_home.mkdir(parents=True, exist_ok=True)
+    acct_cfg = account_home / ".claude.json"
+    acct_cfg.symlink_to(main_cfg)
+
+    altergo.do_config("work")
+
+    assert not acct_cfg.is_symlink(), ".claude.json must be unsymlinked after migration"
+    assert acct_cfg.exists(), ".claude.json must exist as a real file"
+    data = json.loads(acct_cfg.read_text())
+    assert "srv" in data.get("mcpServers", {}), "MCP servers must be preserved after unsymlink"
 
 
 # ---------------------------------------------------------------------------
@@ -659,7 +724,7 @@ def test_ensure_symlinked_dir_noop_when_correct(sweep_home):
 
 def test_providers_dict_structure():
     required_keys = {"display_name", "dot_dir", "binary", "credentials_file", "symlink_dirs", "symlink_files"}
-    optional_keys = {"symlink_home_files"}
+    optional_keys = set()
     for pid, prov in altergo.PROVIDERS.items():
         actual_keys = set(prov.keys())
         missing = required_keys - actual_keys
@@ -670,9 +735,6 @@ def test_providers_dict_structure():
         assert all(isinstance(s, str) for s in prov["symlink_dirs"]), f"provider {pid!r} symlink_dirs must be list of str"
         assert isinstance(prov["symlink_files"], list), f"provider {pid!r} symlink_files must be a list"
         assert all(isinstance(s, str) for s in prov["symlink_files"]), f"provider {pid!r} symlink_files must be list of str"
-        if "symlink_home_files" in prov:
-            assert isinstance(prov["symlink_home_files"], list), f"provider {pid!r} symlink_home_files must be a list"
-            assert all(isinstance(s, str) for s in prov["symlink_home_files"]), f"provider {pid!r} symlink_home_files must be list of str"
 
 
 def test_credentials_isolation_all_providers():

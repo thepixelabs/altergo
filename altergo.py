@@ -49,84 +49,84 @@ def _link(url, text):
 THEMES = {
     "ocean": {
         "display_name": "Ocean",
-        "description":  "Calm cyan & indigo — the original altergo palette",
+        "description": "Calm cyan & indigo — the original altergo palette",
         "ansi": {
-            "command": "38;5;39",     # blue
-            "arg":     "38;5;87",     # electric cyan
-            "header":  "1;38;5;39",   # bold blue
-            "brand":   "38;5;105",    # indigo
-            "success": "38;5;76",     # green
-            "warn":    "38;5;220",    # amber
+            "command": "38;5;39",  # blue
+            "arg": "38;5;87",  # electric cyan
+            "header": "1;38;5;39",  # bold blue
+            "brand": "38;5;105",  # indigo
+            "success": "38;5;76",  # green
+            "warn": "38;5;220",  # amber
         },
         "curses": {"accent": 51, "project": 105, "amber": 220},
         "banner": ["#00d7ff", "#005fd7"],
     },
     "forest": {
         "display_name": "Forest",
-        "description":  "Calming moss & sage — grounded green tones",
+        "description": "Calming moss & sage — grounded green tones",
         "ansi": {
-            "command": "38;5;78",     # mint
-            "arg":     "38;5;121",    # sage
-            "header":  "1;38;5;78",
-            "brand":   "38;5;108",    # muted jade
+            "command": "38;5;78",  # mint
+            "arg": "38;5;121",  # sage
+            "header": "1;38;5;78",
+            "brand": "38;5;108",  # muted jade
             "success": "38;5;84",
-            "warn":    "38;5;222",
+            "warn": "38;5;222",
         },
         "curses": {"accent": 78, "project": 108, "amber": 222},
         "banner": ["#5fff87", "#005f5f"],
     },
     "lavender": {
         "display_name": "Lavender",
-        "description":  "Soft violet & periwinkle — gentle on the eyes",
+        "description": "Soft violet & periwinkle — gentle on the eyes",
         "ansi": {
-            "command": "38;5;141",    # soft purple
-            "arg":     "38;5;183",    # pale lavender
-            "header":  "1;38;5;141",
-            "brand":   "38;5;105",
+            "command": "38;5;141",  # soft purple
+            "arg": "38;5;183",  # pale lavender
+            "header": "1;38;5;141",
+            "brand": "38;5;105",
             "success": "38;5;120",
-            "warn":    "38;5;222",
+            "warn": "38;5;222",
         },
         "curses": {"accent": 141, "project": 105, "amber": 222},
         "banner": ["#d7afff", "#5f5fff"],
     },
     "sunset": {
         "display_name": "Sunset",
-        "description":  "Warm rose & ember — dusk palette",
+        "description": "Warm rose & ember — dusk palette",
         "ansi": {
-            "command": "38;5;209",    # coral
-            "arg":     "38;5;215",    # peach
-            "header":  "1;38;5;209",
-            "brand":   "38;5;205",    # rose
+            "command": "38;5;209",  # coral
+            "arg": "38;5;215",  # peach
+            "header": "1;38;5;209",
+            "brand": "38;5;205",  # rose
             "success": "38;5;114",
-            "warn":    "38;5;220",
+            "warn": "38;5;220",
         },
         "curses": {"accent": 209, "project": 205, "amber": 220},
         "banner": ["#ffaf5f", "#ff5f87"],
     },
     "mono": {
         "display_name": "Mono",
-        "description":  "Grayscale — minimal, distraction-free",
+        "description": "Grayscale — minimal, distraction-free",
         "ansi": {
             "command": "38;5;253",
-            "arg":     "38;5;255",
-            "header":  "1;38;5;255",
-            "brand":   "38;5;245",
+            "arg": "38;5;255",
+            "header": "1;38;5;255",
+            "brand": "38;5;245",
             "success": "38;5;250",
-            "warn":    "38;5;249",
+            "warn": "38;5;249",
         },
         "curses": {"accent": 253, "project": 245, "amber": 249},
         "banner": ["#ffffff", "#808080"],
     },
     "rainbow": {
         "display_name": "Rainbow",
-        "description":  "Every color, still readable — enables chaos mode",
+        "description": "Every color, still readable — enables chaos mode",
         "ansi": {
-            "command": "38;5;201",    # hot magenta
-            "arg":     "38;5;51",     # cyan
-            "header":  "1;38;5;226",  # yellow (bold, dark-term safe)
-            "brand":   "38;5;165",    # violet
-            "success": "38;5;46",     # lime
-            "warn":    "38;5;214",    # orange
+            "command": "38;5;201",  # hot magenta
+            "arg": "38;5;51",  # cyan
+            "header": "1;38;5;226",  # yellow (bold, dark-term safe)
+            "brand": "38;5;165",  # violet
+            "success": "38;5;46",  # lime
+            "warn": "38;5;214",  # orange
         },
         "curses": {"accent": 201, "project": 51, "amber": 214},
         # Multi-stop gradient — RichFiglet accepts N colors and interpolates.
@@ -137,7 +137,7 @@ THEMES = {
 # Roles whose styling is intentionally theme-invariant — dim text should
 # always read as dim, and the version blurb is purposely low-contrast.
 _STATIC_ANSI = {
-    "dim":     "2",
+    "dim": "2",
     "version": "2;38;5;244",
 }
 
@@ -172,7 +172,7 @@ def _gradient_color(stops: list, t: float) -> str:
     if i >= len(stops) - 1:
         return stops[-1]
     r1, g1, b1 = int(stops[i][1:3], 16), int(stops[i][3:5], 16), int(stops[i][5:7], 16)
-    r2, g2, b2 = int(stops[i+1][1:3], 16), int(stops[i+1][3:5], 16), int(stops[i+1][5:7], 16)
+    r2, g2, b2 = int(stops[i + 1][1:3], 16), int(stops[i + 1][3:5], 16), int(stops[i + 1][5:7], 16)
     r = int(r1 + (r2 - r1) * f)
     g = int(g1 + (g2 - g1) * f)
     b = int(b1 + (b2 - b1) * f)
@@ -288,6 +288,7 @@ def show_banner(
         from rich.table import Table
         from rich.text import Text
         from rich_pyfiglet import RichFiglet
+
         console = Console()
         theme = THEMES.get(get_current_theme(), THEMES[_DEFAULT_THEME])
         theme_id = get_current_theme()
@@ -336,6 +337,7 @@ def show_banner(
         if show_greeting:
             try:
                 import altergo_greetings as _greet
+
                 greet_icon, greet_line = _greet.pick_greeting()
             except Exception:
                 # Greetings are a nice-to-have — never break the banner.
@@ -347,7 +349,7 @@ def show_banner(
         # Rich Spinner so the symbol visibly ticks while the provider warms up.
         if account or greet_line:
             BRIGHT = f"bold {grad[0]}"
-            MID    = grad[len(grad) // 2] if len(grad) > 2 else grad[0]
+            MID = grad[len(grad) // 2] if len(grad) > 2 else grad[0]
 
             # Greeting text with smooth per-character gradient across the message.
             greet_text = Text()
@@ -362,10 +364,12 @@ def show_banner(
                 if animate_duration > 0:
                     try:
                         import altergo_greetings as _greet
+
                         spinner_name = _greet.spinner_for_theme(theme_id)
                     except Exception:
                         spinner_name = "dots"
                     from rich.padding import Padding
+
                     acct_inner = Table.grid(padding=(0, 0), expand=False)
                     acct_inner.add_column(no_wrap=True)
                     acct_inner.add_column(no_wrap=True)
@@ -403,6 +407,7 @@ def show_banner(
             upgrade_text.append("  ", style=C("dim"))
             try:
                 import altergo_greetings as _greet
+
                 upgrade_text.append(_greet.pick_icon() + "  ", style=C("dim"))
             except Exception:
                 upgrade_text.append("* ", style=C("dim"))
@@ -418,8 +423,8 @@ def show_banner(
             # last frame as persistent output, so the terminal is left in a
             # clean state before we hand off to the provider CLI.
             from rich.live import Live
-            with Live(group, console=console, refresh_per_second=12,
-                      transient=False):
+
+            with Live(group, console=console, refresh_per_second=12, transient=False):
                 time.sleep(animate_duration)
         else:
             console.print(group)
@@ -655,8 +660,14 @@ PROVIDERS = {
         "binary": "claude",
         "credentials_file": ".credentials.json",
         "symlink_dirs": [
-            "projects", "tasks", "session-env", "file-history",
-            "shell-snapshots", "agents", "plans", "cache",
+            "projects",
+            "tasks",
+            "session-env",
+            "file-history",
+            "shell-snapshots",
+            "agents",
+            "plans",
+            "cache",
         ],
         "symlink_files": ["settings.json", "CLAUDE.md", "keybindings.json"],
         # .claude.json is intentionally NOT in symlink_home_files — it is managed
@@ -897,6 +908,7 @@ def save_persisted_theme(name: str) -> None:
 
 # ── Random theme helpers ──────────────────────────────────────────────────────
 
+
 def _patch_settings(updates: dict) -> None:
     """Atomically merge *updates* into SETTINGS_FILE, preserving all other keys."""
     SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -924,12 +936,12 @@ def load_random_theme_settings() -> dict:
     try:
         data = json.loads(SETTINGS_FILE.read_text())
         enabled = data.get("random_theme_enabled")
-        freq    = data.get("random_theme_frequency")
-        ctr     = data.get("random_theme_counter")
+        freq = data.get("random_theme_frequency")
+        ctr = data.get("random_theme_counter")
         return {
-            "random_theme_enabled":   enabled if isinstance(enabled, bool) else False,
-            "random_theme_frequency": freq    if isinstance(freq, int) and 1 <= freq <= 5 else 3,
-            "random_theme_counter":   ctr     if isinstance(ctr, int) and ctr >= 0 else 0,
+            "random_theme_enabled": enabled if isinstance(enabled, bool) else False,
+            "random_theme_frequency": freq if isinstance(freq, int) and 1 <= freq <= 5 else 3,
+            "random_theme_counter": ctr if isinstance(ctr, int) and ctr >= 0 else 0,
         }
     except Exception:
         return defaults
@@ -952,11 +964,12 @@ def maybe_rotate_random_theme() -> None:
     _CURRENT_THEME. No-op if random_theme_enabled is False.
     """
     import random as _random
+
     rts = load_random_theme_settings()
     if not rts["random_theme_enabled"]:
         return
 
-    freq    = rts["random_theme_frequency"]
+    freq = rts["random_theme_frequency"]
     counter = rts["random_theme_counter"]
 
     # Counter of 0 means "not yet initialized" — seed it and return.
@@ -986,10 +999,10 @@ def maybe_rotate_random_theme() -> None:
 # instant (27ms measured) so we skip animation for it — a 700ms dance
 # would finish long after codex itself is up.
 _HANDOFF_ANIM_SECONDS: dict[str, float] = {
-    "claude":  0.7,
-    "gemini":  0.7,
+    "claude": 0.7,
+    "gemini": 0.7,
     "copilot": 0.7,
-    "codex":   0.0,
+    "codex": 0.0,
 }
 
 
@@ -1012,8 +1025,10 @@ def _status_wrap(message: str, func, *args, **kwargs):
         return func(*args, **kwargs)
     try:
         from rich.console import Console
+
         try:
             import altergo_greetings as _greet
+
             spinner = _greet.spinner_for_theme(get_current_theme())
         except Exception:
             spinner = "dots"
@@ -1245,6 +1260,7 @@ def _fetch_latest_version() -> None:
 
         class _CappedRedirect(urllib.request.HTTPRedirectHandler):
             """Redirect handler that caps at 3 hops."""
+
             max_redirections = 3
 
         ua = f"altergo/{__version__} Python/{sys.version_info.major}.{sys.version_info.minor}"
@@ -1315,11 +1331,7 @@ def first_launch_notice_if_needed() -> None:
     if _get_intro_shown():
         return
     if sys.stdout.isatty():
-        print(
-            "  " + _c(C("dim"),
-                       "Version checks are enabled by default. "
-                       "Disable with: altergo --update-check off")
-        )
+        print("  " + _c(C("dim"), "Version checks are enabled by default. Disable with: altergo --update-check off"))
     _mark_intro_shown()
 
 
@@ -1695,11 +1707,14 @@ def do_config(account: str = "default", provider: str = "claude"):
     _status_wrap("Linking shared credentials…", _apply_catalog_entries)
 
     # 4. Save account metadata (v2 schema — one account, one provider)
-    save_account_meta(account_home, {
-        "version": 2,
-        "provider": provider,
-        "created": (meta.get("created") if meta else None) or datetime.now().isoformat(timespec="seconds"),
-    })
+    save_account_meta(
+        account_home,
+        {
+            "version": 2,
+            "provider": provider,
+            "created": (meta.get("created") if meta else None) or datetime.now().isoformat(timespec="seconds"),
+        },
+    )
 
     launch_cmd = f"altergo {account}" if account != "default" else "altergo"
     print()
@@ -2104,12 +2119,12 @@ def interactive_picker(sessions):
 # banner gradient for its nav sweep base color, giving each screen a subtly
 # distinct shade while sharing the same palette.
 _PAGE_TINTS = {
-    "resume":      0.0,
-    "settings":    0.15,
-    "launcher":    0.3,
-    "onboarding":  0.45,
-    "search":      0.6,
-    "default":     0.0,
+    "resume": 0.0,
+    "settings": 0.15,
+    "launcher": 0.3,
+    "onboarding": 0.45,
+    "search": 0.6,
+    "default": 0.0,
 }
 
 # Curses pair index reserved for the per-page nav tint (allocated once per
@@ -2219,8 +2234,8 @@ def _compute_columns(max_x: int) -> dict:
     """Responsive column widths. Topic gets the leftover space."""
     proj_w = 18 if max_x >= 100 else (14 if max_x >= 80 else 10)
     time_w = 11  # "yesterday  " / "12h ago    "
-    size_w = 7   # " 1.2MB " right-aligned
-    gutter = 2   # leading "▸ "
+    size_w = 7  # " 1.2MB " right-aligned
+    gutter = 2  # leading "▸ "
     spacing = 2  # between cols
     used = gutter + proj_w + spacing + time_w + spacing + size_w + spacing
     topic_w = max(20, max_x - used - 1)
@@ -2307,8 +2322,7 @@ def _draw_animated_nav(stdscr, row, text, max_width, phase, attrs):
 def _session_matches(s, query):
     """Return True if *query* (lowercase) matches any searchable field."""
     q = query.lower()
-    for field in (format_project_name(s["project"]), s.get("topic") or "",
-                  s.get("cwd") or "", s.get("id") or ""):
+    for field in (format_project_name(s["project"]), s.get("topic") or "", s.get("cwd") or "", s.get("id") or ""):
         if q in field.lower():
             return True
     return False
@@ -2335,8 +2349,7 @@ def _apply_resume_view(sessions, filter_provider, sort_mode, search_query):
 
     # Sort
     if sort_mode == "project":
-        result = sorted(result, key=lambda s: (format_project_name(s["project"]).lower(),
-                                               -s["modified"].timestamp()))
+        result = sorted(result, key=lambda s: (format_project_name(s["project"]).lower(), -s["modified"].timestamp()))
     elif sort_mode == "provider":
         result = sorted(result, key=lambda s: (s.get("provider", ""), -s["modified"].timestamp()))
     # "time" is the default (already sorted by get_sessions)
@@ -2352,13 +2365,13 @@ def _draw_picker(stdscr, sessions):
     scroll_offset = 0
     preview_cache = {}  # session_id -> loaded preview dict
     phase = 0
-    search_query = ""     # active filter text ("" = show all)
-    search_mode = False   # True while typing in the / search bar
+    search_query = ""  # active filter text ("" = show all)
+    search_mode = False  # True while typing in the / search bar
 
     # Provider filter + sort state (Feature 1)
-    filter_provider = None   # None = all; or a provider id string
-    sort_mode = "time"       # "time" | "project" | "provider"
-    group_mode = False       # True = insert divider lines between project+provider groups
+    filter_provider = None  # None = all; or a provider id string
+    sort_mode = "time"  # "time" | "project" | "provider"
+    group_mode = False  # True = insert divider lines between project+provider groups
 
     filtered = _apply_resume_view(sessions, filter_provider, sort_mode, search_query)
 
@@ -2368,8 +2381,7 @@ def _draw_picker(stdscr, sessions):
         cols = _compute_columns(max_x)
 
         # Title bar
-        n_all = len([s for s in sessions if (filter_provider is None or
-                                              s.get("provider") == filter_provider)])
+        n_all = len([s for s in sessions if (filter_provider is None or s.get("provider") == filter_provider)])
         if search_query:
             title = f" altergo — pick a session  ·  {len(filtered)}/{n_all} matching"
         elif filter_provider:
@@ -2382,8 +2394,7 @@ def _draw_picker(stdscr, sessions):
         prov_label = filter_provider if filter_provider else "all"
         sort_label = sort_mode
         group_label = "on" if group_mode else "off"
-        status = (f" provider: {prov_label}  sort: {sort_label}  group: {group_label}"
-                  f"  [f]ilter [s]ort [g]roup")
+        status = f" provider: {prov_label}  sort: {sort_label}  group: {group_label}  [f]ilter [s]ort [g]roup"
         _safe_addnstr(stdscr, 1, 0, _truncate(status, max_x - 1), max_x - 1, attrs["dim"])
 
         # Column header row (row 2)
@@ -2438,13 +2449,13 @@ def _draw_picker(stdscr, sessions):
             if item is None:
                 # Divider line
                 div = "  " + ("─" * max(0, max_x - 4))
-                _safe_addnstr(stdscr, row, 0, div[:max_x - 1], max_x - 1, attrs["dim"])
+                _safe_addnstr(stdscr, row, 0, div[: max_x - 1], max_x - 1, attrs["dim"])
                 continue
 
             s = item
             # Determine if this display item is the cursor row
             real_idx_in_display = real_indices.index(di) if di in real_indices else -1
-            is_sel = (real_idx_in_display == current)
+            is_sel = real_idx_in_display == current
 
             when = _truncate(relative_time(s["modified"]), cols["time"])
             topic = s.get("topic") or ""
@@ -2465,8 +2476,7 @@ def _draw_picker(stdscr, sessions):
                 _safe_addnstr(stdscr, row, 0, line.ljust(max_x), max_x - 1, attrs["selected"])
             else:
                 _safe_addnstr(stdscr, row, 0, "  ", 2)
-                _safe_addnstr(stdscr, row, 2, proj_with_tag.ljust(cols["proj"]),
-                              cols["proj"], attrs["project"])
+                _safe_addnstr(stdscr, row, 2, proj_with_tag.ljust(cols["proj"]), cols["proj"], attrs["project"])
                 x = 2 + cols["proj"] + 2
                 _safe_addnstr(stdscr, row, x, when.ljust(cols["time"]), cols["time"], attrs["time"])
                 x += cols["time"] + 2
@@ -2747,9 +2757,11 @@ def _search_sessions(sessions, terms, project_filter=None, on_progress=None):
     targets = sessions
     if project_filter:
         pf = project_filter.lower()
-        targets = [s for s in sessions
-                   if pf in format_project_name(s["project"]).lower()
-                   or pf in decode_project_path(s["project"]).lower()]
+        targets = [
+            s
+            for s in sessions
+            if pf in format_project_name(s["project"]).lower() or pf in decode_project_path(s["project"]).lower()
+        ]
 
     for idx, s in enumerate(targets):
         if on_progress:
@@ -2783,12 +2795,14 @@ def _search_sessions(sessions, terms, project_filter=None, on_progress=None):
                             snippet = "…" + snippet
                         if snippet_end < len(text):
                             snippet = snippet + "…"
-                        matches.append({
-                            "line_no": line_no,
-                            "role": role,
-                            "snippet": snippet,
-                            "terms": terms,
-                        })
+                        matches.append(
+                            {
+                                "line_no": line_no,
+                                "role": role,
+                                "snippet": snippet,
+                                "terms": terms,
+                            }
+                        )
         except OSError:
             continue
         if matches:
@@ -2837,8 +2851,9 @@ def _draw_search(stdscr, sessions):
 
         if ui_phase == "project_filter":
             # Project filter input screen
-            _safe_addnstr(stdscr, 2, 2, "Filter by project (optional — Enter to skip, search all):",
-                          max_x - 3, attrs["accent"])
+            _safe_addnstr(
+                stdscr, 2, 2, "Filter by project (optional — Enter to skip, search all):", max_x - 3, attrs["accent"]
+            )
 
             # Show input
             prompt = f"  project: {project_input}"
@@ -2869,10 +2884,8 @@ def _draw_search(stdscr, sessions):
         elif ui_phase == "query_input":
             # Search query input
             proj_label = project_input if project_input else "all projects"
-            _safe_addnstr(stdscr, 2, 2, f"Searching in: {proj_label}",
-                          max_x - 3, attrs["project"])
-            _safe_addnstr(stdscr, 3, 2, "Case-insensitive. Use \"quotes\" for exact phrases.",
-                          max_x - 3, attrs["dim"])
+            _safe_addnstr(stdscr, 2, 2, f"Searching in: {proj_label}", max_x - 3, attrs["project"])
+            _safe_addnstr(stdscr, 3, 2, 'Case-insensitive. Use "quotes" for exact phrases.', max_x - 3, attrs["dim"])
 
             prompt = f"  search: {query_input}"
             if not query_input:
@@ -2894,8 +2907,7 @@ def _draw_search(stdscr, sessions):
         elif ui_phase == "scanning":
             curses.curs_set(0)
             proj_label = project_input if project_input else "all projects"
-            _safe_addnstr(stdscr, 2, 2, f"Searching in: {proj_label}",
-                          max_x - 3, attrs["project"])
+            _safe_addnstr(stdscr, 2, 2, f"Searching in: {proj_label}", max_x - 3, attrs["project"])
 
             # Animated scanning bar
             bar_w = max(10, max_x - 8)
@@ -2930,8 +2942,9 @@ def _draw_search(stdscr, sessions):
 
             if not results:
                 _safe_addnstr(stdscr, 5, 4, "No matches found.", max_x - 5, attrs["dim"])
-                _safe_addnstr(stdscr, 6, 4, "Try different terms or broaden the project filter.",
-                              max_x - 5, attrs["dim"])
+                _safe_addnstr(
+                    stdscr, 6, 4, "Try different terms or broaden the project filter.", max_x - 5, attrs["dim"]
+                )
             else:
                 # Build flat display lines from results
                 display_lines = []
@@ -2977,7 +2990,7 @@ def _draw_search(stdscr, sessions):
                         break
                     kind, text, ri = display_lines[li]
                     row = view_start + i
-                    is_selected = (kind == "result_header" and ri == result_cursor)
+                    is_selected = kind == "result_header" and ri == result_cursor
                     if kind == "result_header":
                         attr = attrs["selected"] if is_selected else attrs["project"]
                         _safe_addnstr(stdscr, row, 0, text.ljust(max_x), max_x - 1, attr)
@@ -3030,9 +3043,12 @@ def _draw_search(stdscr, sessions):
                         scan_total = len(sessions)
                         if pf:
                             pfl = pf.lower()
-                            scan_total = sum(1 for s in sessions
-                                             if pfl in format_project_name(s["project"]).lower()
-                                             or pfl in decode_project_path(s["project"]).lower())
+                            scan_total = sum(
+                                1
+                                for s in sessions
+                                if pfl in format_project_name(s["project"]).lower()
+                                or pfl in decode_project_path(s["project"]).lower()
+                            )
                         scan_done = 0
 
                         def _progress(done, total):
@@ -3040,9 +3056,7 @@ def _draw_search(stdscr, sessions):
                             scan_done = done
                             scan_total = max(total, 1)
 
-                        results = _search_sessions(sessions, terms,
-                                                   project_filter=pf,
-                                                   on_progress=_progress)
+                        results = _search_sessions(sessions, terms, project_filter=pf, on_progress=_progress)
                         result_cursor = 0
                         result_scroll = 0
                         ui_phase = "results"
@@ -3138,8 +3152,8 @@ def _draw_settings(stdscr):
     current_theme_idx = theme_names.index(get_current_theme()) if get_current_theme() in theme_names else 0
     launch_anim = _load_bool_setting("launch_animation")
     _rts = load_random_theme_settings()
-    random_theme_on   = _rts["random_theme_enabled"]
-    random_theme_freq = _rts["random_theme_frequency"]   # 1–5
+    random_theme_on = _rts["random_theme_enabled"]
+    random_theme_freq = _rts["random_theme_frequency"]  # 1–5
 
     # Page 1: Behavior
     update_check = load_update_check_enabled()
@@ -3168,7 +3182,7 @@ def _draw_settings(stdscr):
     # Per-page cursor positions
     # Page 0: rows = [theme_0..theme_N-1, launch_anim, random_toggle, freq_slider] → cursor 0..N+2
     page0_cursor = current_theme_idx
-    page0_n = len(theme_names) + 3   # themes + launch_anim + random toggle + freq slider
+    page0_n = len(theme_names) + 3  # themes + launch_anim + random toggle + freq slider
 
     # Page 1: rows = [update_check, show_greeting, show_goodbye]
     page1_cursor = 0
@@ -3201,11 +3215,11 @@ def _draw_settings(stdscr):
         for pi, page in enumerate(_SETTINGS_PAGES):
             tab_text = f"  {page['title']}  "
             if pi == current_page:
-                _safe_addnstr(stdscr, 0, x, tab_text[:max_x - x], max_x - x,
-                              attrs["title"] | curses.A_REVERSE | curses.A_BOLD)
+                _safe_addnstr(
+                    stdscr, 0, x, tab_text[: max_x - x], max_x - x, attrs["title"] | curses.A_REVERSE | curses.A_BOLD
+                )
             else:
-                _safe_addnstr(stdscr, 0, x, tab_text[:max_x - x], max_x - x,
-                              attrs["dim"])
+                _safe_addnstr(stdscr, 0, x, tab_text[: max_x - x], max_x - x, attrs["dim"])
             x += len(tab_text)
             if pi < n_pages - 1 and x < max_x - 1:
                 _safe_addnstr(stdscr, 0, x, "\u2502", 1, attrs["dim"])  # │
@@ -3218,16 +3232,15 @@ def _draw_settings(stdscr):
 
         # Section header: Theme
         section = "Theme " + "\u2500" * max(0, 34)  # ─
-        _safe_addnstr(stdscr, row, 2, section[:max_x - 3], max_x - 3,
-                      attrs_local["accent"] | curses.A_BOLD)
+        _safe_addnstr(stdscr, row, 2, section[: max_x - 3], max_x - 3, attrs_local["accent"] | curses.A_BOLD)
         row += 1
 
         for ti, tid in enumerate(theme_names):
             if row >= max_y - 3:
                 break
             tdata = THEMES[tid]
-            is_focused = (ti == page0_cursor)
-            is_selected = (ti == current_theme_idx)
+            is_focused = ti == page0_cursor
+            is_selected = ti == current_theme_idx
 
             # Marker glyph
             if is_selected:
@@ -3255,15 +3268,13 @@ def _draw_settings(stdscr):
             for si in range(n_swatches):
                 pair_key = (tid, si)
                 if pair_key in swatch_pairs and sx < max_x - 2:
-                    _safe_addnstr(stdscr, row, sx, _SWATCH_BLOCK * 2, 2,
-                                  curses.color_pair(swatch_pairs[pair_key]))
+                    _safe_addnstr(stdscr, row, sx, _SWATCH_BLOCK * 2, 2, curses.color_pair(swatch_pairs[pair_key]))
                     sx += 2
 
             # Description
             desc = "  " + tdata["description"]
             if sx < max_x - 4:
-                _safe_addnstr(stdscr, row, sx, desc[:max_x - sx - 1], max_x - sx - 1,
-                              attrs_local["dim"])
+                _safe_addnstr(stdscr, row, sx, desc[: max_x - sx - 1], max_x - sx - 1, attrs_local["dim"])
 
             row += 1
 
@@ -3272,30 +3283,29 @@ def _draw_settings(stdscr):
         # Section header: Launch
         if row < max_y - 3:
             section2 = "Launch " + "\u2500" * max(0, 33)
-            _safe_addnstr(stdscr, row, 2, section2[:max_x - 3], max_x - 3,
-                          attrs_local["accent"] | curses.A_BOLD)
+            _safe_addnstr(stdscr, row, 2, section2[: max_x - 3], max_x - 3, attrs_local["accent"] | curses.A_BOLD)
             row += 1
 
         anim_row_idx = len(theme_names)
         if row < max_y - 3:
-            is_focused = (page0_cursor == anim_row_idx)
+            is_focused = page0_cursor == anim_row_idx
             prefix = "\u25b8 " if is_focused else "  "
             prefix_attr = attrs_local["accent"] | curses.A_BOLD if is_focused else curses.A_NORMAL
             _safe_addnstr(stdscr, row, 0, prefix, 2, prefix_attr)
 
             if launch_anim:
-                dot = "\u25c9"   # ◉
+                dot = "\u25c9"  # ◉
                 dot_attr = attrs_local["accent"] | curses.A_BOLD
             else:
-                dot = "\u25cb"   # ○
+                dot = "\u25cb"  # ○
                 dot_attr = attrs_local["dim"]
             _safe_addnstr(stdscr, row, 2, dot, 1, dot_attr)
             label = "  Launch animation    "
-            _safe_addnstr(stdscr, row, 3, label[:max_x - 4], max_x - 4, curses.A_NORMAL)
+            _safe_addnstr(stdscr, row, 3, label[: max_x - 4], max_x - 4, curses.A_NORMAL)
             hint = "Star spinner while provider warms up"
             lx = 3 + len(label)
             if lx < max_x - 4:
-                _safe_addnstr(stdscr, row, lx, hint[:max_x - lx - 1], max_x - lx - 1, attrs_local["dim"])
+                _safe_addnstr(stdscr, row, lx, hint[: max_x - lx - 1], max_x - lx - 1, attrs_local["dim"])
             row += 1
 
         row += 1  # blank line before Randomize section
@@ -3303,38 +3313,36 @@ def _draw_settings(stdscr):
         # Section header: Randomize
         if row < max_y - 3:
             section3 = "Randomize " + "\u2500" * max(0, 30)
-            _safe_addnstr(stdscr, row, 2, section3[:max_x - 3], max_x - 3,
-                          attrs_local["accent"] | curses.A_BOLD)
+            _safe_addnstr(stdscr, row, 2, section3[: max_x - 3], max_x - 3, attrs_local["accent"] | curses.A_BOLD)
             row += 1
 
         # ── Random theme toggle ───────────────────────────────────────────────
         rand_toggle_idx = len(theme_names) + 1
         if row < max_y - 3:
-            is_focused = (page0_cursor == rand_toggle_idx)
+            is_focused = page0_cursor == rand_toggle_idx
             prefix = "\u25b8 " if is_focused else "  "
             prefix_attr = attrs_local["accent"] | curses.A_BOLD if is_focused else curses.A_NORMAL
             _safe_addnstr(stdscr, row, 0, prefix, 2, prefix_attr)
 
             if random_theme_on:
-                dot = "\u25c9"   # ◉
+                dot = "\u25c9"  # ◉
                 dot_attr = attrs_local["accent"] | curses.A_BOLD
             else:
-                dot = "\u25cb"   # ○
+                dot = "\u25cb"  # ○
                 dot_attr = attrs_local["dim"]
             _safe_addnstr(stdscr, row, 2, dot, 1, dot_attr)
             label2 = "  Random theme       "
-            _safe_addnstr(stdscr, row, 3, label2[:max_x - 4], max_x - 4, curses.A_NORMAL)
+            _safe_addnstr(stdscr, row, 3, label2[: max_x - 4], max_x - 4, curses.A_NORMAL)
             hint2 = "Pick a new theme automatically every few sessions"
             lx2 = 3 + len(label2)
             if lx2 < max_x - 4:
-                _safe_addnstr(stdscr, row, lx2, hint2[:max_x - lx2 - 1], max_x - lx2 - 1,
-                              attrs_local["dim"])
+                _safe_addnstr(stdscr, row, lx2, hint2[: max_x - lx2 - 1], max_x - lx2 - 1, attrs_local["dim"])
             row += 1
 
         # ── Frequency slider ─────────────────────────────────────────────────
         freq_slider_idx = len(theme_names) + 2
         if row < max_y - 3:
-            is_focused = (page0_cursor == freq_slider_idx)
+            is_focused = page0_cursor == freq_slider_idx
             # 20-char track: █ filled, ◆ thumb, ░ empty
             TRACK_LEN = 20
             thumb_pos = int((random_theme_freq - 1) / 4 * (TRACK_LEN - 1))
@@ -3342,24 +3350,24 @@ def _draw_settings(stdscr):
                 track = ""
                 for i in range(TRACK_LEN):
                     if i < thumb_pos:
-                        track += "\u2588"   # █
+                        track += "\u2588"  # █
                     elif i == thumb_pos:
-                        track += "\u25c6"   # ◆
+                        track += "\u25c6"  # ◆
                     else:
-                        track += "\u2591"   # ░
+                        track += "\u2591"  # ░
                 slider_attr = (attrs_local["accent"] | curses.A_BOLD) if is_focused else curses.A_NORMAL
-                left_label  = "often "
+                left_label = "often "
                 right_label = " rarely"
-                label_attr  = attrs_local["dim"]
-                prefix_sl   = "\u25b8 " if is_focused else "  "
+                label_attr = attrs_local["dim"]
+                prefix_sl = "\u25b8 " if is_focused else "  "
                 prefix_sl_attr = (attrs_local["accent"] | curses.A_BOLD) if is_focused else curses.A_NORMAL
             else:
-                track       = "\u2592" * (TRACK_LEN - 1) + "\u00b7"   # ▒▒▒▒▒·
+                track = "\u2592" * (TRACK_LEN - 1) + "\u00b7"  # ▒▒▒▒▒·
                 slider_attr = attrs_local["dim"]
-                left_label  = "----- "
+                left_label = "----- "
                 right_label = " -----"
-                label_attr  = attrs_local["dim"]
-                prefix_sl   = "  "
+                label_attr = attrs_local["dim"]
+                prefix_sl = "  "
                 prefix_sl_attr = attrs_local["dim"]
 
             cx = 0
@@ -3379,23 +3387,26 @@ def _draw_settings(stdscr):
         # Explanation lines (shown when random theme is on)
         if random_theme_on and row < max_y - 4:
             _freq_descriptions = {
-                1: ("Changes nearly every session",    "Expect a new look very frequently"),
-                2: ("Changes every few sessions",      "Plenty of variety"),
-                3: ("Changes occasionally",            "Balanced \u2014 noticeable but not constant"),
-                4: ("Changes infrequently",            "Mostly consistent, occasional surprise"),
-                5: ("Changes rarely",                  "Stable look with rare surprises"),
+                1: ("Changes nearly every session", "Expect a new look very frequently"),
+                2: ("Changes every few sessions", "Plenty of variety"),
+                3: ("Changes occasionally", "Balanced \u2014 noticeable but not constant"),
+                4: ("Changes infrequently", "Mostly consistent, occasional surprise"),
+                5: ("Changes rarely", "Stable look with rare surprises"),
             }
             line1, line2 = _freq_descriptions.get(random_theme_freq, _freq_descriptions[3])
-            _safe_addnstr(stdscr, row, 4, ("\u25c6 " + line1)[:max_x - 5], max_x - 5,
-                          attrs_local["dim"])
+            _safe_addnstr(stdscr, row, 4, ("\u25c6 " + line1)[: max_x - 5], max_x - 5, attrs_local["dim"])
             row += 1
             if row < max_y - 3:
-                _safe_addnstr(stdscr, row, 4, ("\u00b7 " + line2)[:max_x - 5], max_x - 5,
-                              attrs_local["dim"])
+                _safe_addnstr(stdscr, row, 4, ("\u00b7 " + line2)[: max_x - 5], max_x - 5, attrs_local["dim"])
         elif not random_theme_on and row < max_y - 3:
-            _safe_addnstr(stdscr, row, 4,
-                          "\u00b7 Enable \u201cRandom theme\u201d to configure frequency"[:max_x - 5],
-                          max_x - 5, attrs_local["dim"])
+            _safe_addnstr(
+                stdscr,
+                row,
+                4,
+                "\u00b7 Enable \u201cRandom theme\u201d to configure frequency"[: max_x - 5],
+                max_x - 5,
+                attrs_local["dim"],
+            )
 
     # ── Helper: draw page 1 (Behavior) ───────────────────────────────────────
     def _draw_page1(max_y, max_x):
@@ -3403,37 +3414,36 @@ def _draw_settings(stdscr):
         row = content_start
 
         section = "Launch behavior " + "\u2500" * max(0, 24)
-        _safe_addnstr(stdscr, row, 2, section[:max_x - 3], max_x - 3,
-                      attrs["accent"] | curses.A_BOLD)
+        _safe_addnstr(stdscr, row, 2, section[: max_x - 3], max_x - 3, attrs["accent"] | curses.A_BOLD)
         row += 1
 
         toggles = [
-            ("update_check",  update_check,  "Update check",      "Check PyPI for new altergo versions"),
+            ("update_check", update_check, "Update check", "Check PyPI for new altergo versions"),
             ("show_greeting", show_greeting, "Greeting messages", "Time-of-day greeting on launch"),
-            ("show_goodbye",  show_goodbye,  "Goodbye messages",  "Witty message after each session"),
+            ("show_goodbye", show_goodbye, "Goodbye messages", "Witty message after each session"),
         ]
 
         for ti, (key, val, label, hint) in enumerate(toggles):
             if row >= max_y - 3:
                 break
-            is_focused = (ti == page1_cursor)
+            is_focused = ti == page1_cursor
             prefix = "\u25b8 " if is_focused else "  "
             prefix_attr = attrs["accent"] | curses.A_BOLD if is_focused else curses.A_NORMAL
             _safe_addnstr(stdscr, row, 0, prefix, 2, prefix_attr)
 
             if val:
-                dot = "\u25c9"   # ◉
+                dot = "\u25c9"  # ◉
                 dot_attr = attrs["accent"] | curses.A_BOLD
             else:
-                dot = "\u25cb"   # ○
+                dot = "\u25cb"  # ○
                 dot_attr = attrs["dim"]
             _safe_addnstr(stdscr, row, 2, dot, 1, dot_attr)
 
             label_str = "  " + label.ljust(22)
-            _safe_addnstr(stdscr, row, 3, label_str[:max_x - 4], max_x - 4, curses.A_NORMAL)
+            _safe_addnstr(stdscr, row, 3, label_str[: max_x - 4], max_x - 4, curses.A_NORMAL)
             lx = 3 + len(label_str)
             if lx < max_x - 4:
-                _safe_addnstr(stdscr, row, lx, hint[:max_x - lx - 1], max_x - lx - 1, attrs["dim"])
+                _safe_addnstr(stdscr, row, lx, hint[: max_x - lx - 1], max_x - lx - 1, attrs["dim"])
             row += 1
 
     # ── Helper: draw page 2 (Credentials) ────────────────────────────────────
@@ -3460,12 +3470,11 @@ def _draw_settings(stdscr):
 
             if crow["type"] == "header":
                 section = crow["text"] + "  " + "\u2500" * max(0, 36 - len(crow["text"]))
-                _safe_addnstr(stdscr, screen_row, 2, section[:max_x - 3], max_x - 3,
-                              attrs["accent"] | curses.A_BOLD)
+                _safe_addnstr(stdscr, screen_row, 2, section[: max_x - 3], max_x - 3, attrs["accent"] | curses.A_BOLD)
             else:
                 entry = crow["entry"]
                 enabled = is_enabled(entry, cred_overrides)
-                is_current = (row_idx == current_row_idx)
+                is_current = row_idx == current_row_idx
                 has_warn = "warning" in entry
 
                 warn_tag = " \u26a0" if has_warn else "  "
@@ -3476,20 +3485,25 @@ def _draw_settings(stdscr):
                 _safe_addnstr(stdscr, screen_row, 0, prefix, 2, prefix_attr)
 
                 if enabled:
-                    dot = "\u25c9"   # ◉
+                    dot = "\u25c9"  # ◉
                     dot_attr = attrs["accent"] | curses.A_BOLD
                 else:
-                    dot = "\u25cb"   # ○
+                    dot = "\u25cb"  # ○
                     dot_attr = attrs["dim"]
                 _safe_addnstr(stdscr, screen_row, 2, dot, 1, dot_attr)
 
                 name_str = "  " + entry["name"].ljust(22) + warn_tag
-                _safe_addnstr(stdscr, screen_row, 3, name_str[:max_x - 4], max_x - 4,
-                              curses.A_BOLD if is_current else curses.A_NORMAL)
+                _safe_addnstr(
+                    stdscr,
+                    screen_row,
+                    3,
+                    name_str[: max_x - 4],
+                    max_x - 4,
+                    curses.A_BOLD if is_current else curses.A_NORMAL,
+                )
                 nx = 3 + len(name_str)
                 if nx < max_x - 4:
-                    _safe_addnstr(stdscr, screen_row, nx, path_hint[:max_x - nx - 1],
-                                  max_x - nx - 1, attrs["dim"])
+                    _safe_addnstr(stdscr, screen_row, nx, path_hint[: max_x - nx - 1], max_x - nx - 1, attrs["dim"])
 
     # ── Helper: draw footer ───────────────────────────────────────────────────
     def _draw_footer(max_y, max_x):
@@ -3508,7 +3522,7 @@ def _draw_settings(stdscr):
                 hint = "  Picks a different theme automatically every few sessions"
             else:
                 hint = "  Use \u2190 \u2192 to set how often the theme rotates"
-            _safe_addnstr(stdscr, footer_row, 0, hint[:max_x - 1], max_x - 1, attrs["dim"])
+            _safe_addnstr(stdscr, footer_row, 0, hint[: max_x - 1], max_x - 1, attrs["dim"])
 
         elif current_page == 1:
             hints_behavior = [
@@ -3517,25 +3531,23 @@ def _draw_settings(stdscr):
                 "  Witty one-liner printed to stderr after every session ends",
             ]
             if 0 <= page1_cursor < len(hints_behavior):
-                _safe_addnstr(stdscr, footer_row, 0, hints_behavior[page1_cursor][:max_x - 1],
-                              max_x - 1, attrs["dim"])
+                _safe_addnstr(stdscr, footer_row, 0, hints_behavior[page1_cursor][: max_x - 1], max_x - 1, attrs["dim"])
 
         elif current_page == 2:
             current_row_idx = cred_selectable[page2_cursor]
             crow = cred_rows[current_row_idx]
             if crow["type"] == "entry" and crow["entry"].get("warning"):
                 warn_line = "  \u26a0  " + crow["entry"]["warning"]
-                _safe_addnstr(stdscr, footer_row, 0, warn_line[:max_x - 1], max_x - 1,
-                              curses.color_pair(7) | curses.A_DIM)
+                _safe_addnstr(
+                    stdscr, footer_row, 0, warn_line[: max_x - 1], max_x - 1, curses.color_pair(7) | curses.A_DIM
+                )
 
-        _on_freq_slider = (current_page == 0
-                           and page0_cursor == len(theme_names) + 2
-                           and random_theme_on)
+        _on_freq_slider = current_page == 0 and page0_cursor == len(theme_names) + 2 and random_theme_on
         if _on_freq_slider:
             nav = "  \u2191\u2193/jk navigate  \u2190\u2192/hl adjust  Space toggle  Tab page  s save  q/Esc cancel"
         else:
             nav = "  \u2191\u2193/jk navigate  Space toggle  \u2190\u2192/hl/Tab page  s save  q/Esc cancel"
-        _safe_addnstr(stdscr, max_y - 1, 0, nav[:max_x - 1], max_x - 1, attrs["dim"])
+        _safe_addnstr(stdscr, max_y - 1, 0, nav[: max_x - 1], max_x - 1, attrs["dim"])
 
     # ── Main event loop ───────────────────────────────────────────────────────
     while True:
@@ -3550,15 +3562,14 @@ def _draw_settings(stdscr):
 
         # Page subtitle (row 1)
         subtitle = "  " + _SETTINGS_PAGES[current_page]["subtitle"]
-        _safe_addnstr(stdscr, 1, 0, subtitle[:max_x - 1], max_x - 1, attrs["dim"])
+        _safe_addnstr(stdscr, 1, 0, subtitle[: max_x - 1], max_x - 1, attrs["dim"])
 
         # Separator (row 2) — accent fade: first 8 chars in theme accent, rest dim
         sep_full = "\u2500" * (max_x - 1)
         accent_len = min(8, max_x - 1)
         _safe_addnstr(stdscr, 2, 0, sep_full[:accent_len], accent_len, attrs["accent"])
         if accent_len < max_x - 1:
-            _safe_addnstr(stdscr, 2, accent_len, sep_full[accent_len:max_x - 1],
-                          max_x - 1 - accent_len, attrs["dim"])
+            _safe_addnstr(stdscr, 2, accent_len, sep_full[accent_len : max_x - 1], max_x - 1 - accent_len, attrs["dim"])
 
         # Page content
         if current_page == 0:
@@ -3583,7 +3594,7 @@ def _draw_settings(stdscr):
         elif key in (curses.KEY_RIGHT, ord("l")) and current_page != 0:
             current_page = (current_page + 1) % n_pages
             continue
-        elif key == ord("\t"):   # Tab → next page
+        elif key == ord("\t"):  # Tab → next page
             current_page = (current_page + 1) % n_pages
             continue
         elif key == curses.KEY_BTAB:  # Shift-Tab → prev page
@@ -3606,8 +3617,7 @@ def _draw_settings(stdscr):
                 "show_goodbye": show_goodbye,
                 "random_theme_enabled": random_theme_on,
                 "random_theme_frequency": random_theme_freq,
-                "shared": {k: v for k, v in cred_overrides.items()
-                           if cred_defaults.get(k) != v},
+                "shared": {k: v for k, v in cred_overrides.items() if cred_defaults.get(k) != v},
             }
 
         elif key == curses.KEY_RESIZE:
@@ -3708,13 +3718,12 @@ def interactive_settings():
     data["update_check"] = result.get("update_check", True)
     data["show_greeting"] = result.get("show_greeting", True)
     data["show_goodbye"] = result.get("show_goodbye", True)
-    data["random_theme_enabled"]   = result.get("random_theme_enabled", False)
+    data["random_theme_enabled"] = result.get("random_theme_enabled", False)
     data["random_theme_frequency"] = result.get("random_theme_frequency", 3)
     # random_theme_counter is managed by maybe_rotate_random_theme — do not touch it here
     data["version"] = 1
     cred_defaults = {e["id"]: e["default_on"] for e in CATALOG}
-    data["shared"] = {k: v for k, v in shared_overrides.items()
-                      if cred_defaults.get(k) != v}
+    data["shared"] = {k: v for k, v in shared_overrides.items() if cred_defaults.get(k) != v}
     tmp = SETTINGS_FILE.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(data, indent=2))
     os.replace(str(tmp), str(SETTINGS_FILE))
@@ -3858,10 +3867,7 @@ def launch_claude(account: str = "default", args=None, provider: str | None = No
             sys.exit(1)
         binary_path = shutil.which(prov["binary"])
         if not binary_path:
-            sys.exit(
-                f"altergo: '{prov['binary']}' not found in PATH.\n"
-                f"  Install {prov['display_name']} and try again."
-            )
+            sys.exit(f"altergo: '{prov['binary']}' not found in PATH.\n  Install {prov['display_name']} and try again.")
 
     env = _build_alt_env(account)
     cmd = [binary_path] + (args or [])
@@ -3932,11 +3938,26 @@ def launch_command(account: str = "default", cmd_args=None):
 # --- Account name disambiguation helper ---
 
 
-_KNOWN_COMMANDS = frozenset([
-    "shell", "use", "--resume", "--list", "--search", "--config",
-    "--teardown", "--settings", "--version", "--use", "--launch",
-    "--theme", "--update-check", "-h", "--help", "--",
-])
+_KNOWN_COMMANDS = frozenset(
+    [
+        "shell",
+        "use",
+        "--resume",
+        "--list",
+        "--search",
+        "--config",
+        "--teardown",
+        "--settings",
+        "--version",
+        "--use",
+        "--launch",
+        "--theme",
+        "--update-check",
+        "-h",
+        "--help",
+        "--",
+    ]
+)
 
 
 def _looks_like_account(token: str) -> bool:
@@ -4003,8 +4024,8 @@ def _prompt_provider_picker(current_provider: str | None = None) -> str:
         stdscr.timeout(80)
         phase = 0
 
-        items = state["items"]   # ordered list of provider IDs
-        cursor = state["cursor"] # currently highlighted row index
+        items = state["items"]  # ordered list of provider IDs
+        cursor = state["cursor"]  # currently highlighted row index
 
         while True:
             stdscr.erase()
@@ -4012,10 +4033,10 @@ def _prompt_provider_picker(current_provider: str | None = None) -> str:
 
             # Header
             header = "  Select provider  (\u2191\u2193 navigate \xb7 Enter confirm \xb7 q quit)"
-            _safe_addnstr(stdscr, 0, 0, header[:max_x - 1], max_x - 1, attrs["title"])
+            _safe_addnstr(stdscr, 0, 0, header[: max_x - 1], max_x - 1, attrs["title"])
 
             # Separator
-            _safe_addnstr(stdscr, 1, 0, ("\u2500" * (max_x - 1))[:max_x - 1], max_x - 1, attrs["dim"])
+            _safe_addnstr(stdscr, 1, 0, ("\u2500" * (max_x - 1))[: max_x - 1], max_x - 1, attrs["dim"])
 
             # Provider rows starting at line 3
             for idx, pid in enumerate(items):
@@ -4030,7 +4051,7 @@ def _prompt_provider_picker(current_provider: str | None = None) -> str:
                 label = f"  {marker} {p['display_name']}{installed_hint}"
 
                 row_attr = attrs["selected"] if is_cursor else attrs["dim"]
-                _safe_addnstr(stdscr, row, 0, label[:max_x - 1].ljust(min(max_x - 1, 60)), max_x - 1, row_attr)
+                _safe_addnstr(stdscr, row, 0, label[: max_x - 1].ljust(min(max_x - 1, 60)), max_x - 1, row_attr)
 
             # Nav hint at bottom
             nav = "  Confirm (Enter)  \xb7  Navigate (\u2191\u2193/jk)  \xb7  Quit (q/Esc)"
@@ -4094,6 +4115,7 @@ _GOODBYE = [
     ("💾", "Commit early, commit often. You know the drill."),
 ]
 
+
 def _print_launch_message():
     """Print a witty handoff line to stderr before handing off to an AI session."""
     if not sys.stderr.isatty():
@@ -4101,6 +4123,7 @@ def _print_launch_message():
     if not _load_bool_setting("show_goodbye"):
         return
     import random
+
     emoji, msg = random.choice(_GOODBYE)
     grad = THEMES.get(get_current_theme(), THEMES[_DEFAULT_THEME])["banner"]
     parts = []
@@ -4108,7 +4131,7 @@ def _print_launch_message():
     for i, ch in enumerate(msg):
         t = i / max(n - 1, 1)
         col = _gradient_color(grad, t)
-        parts.append(f"\033[38;2;{int(col[1:3],16)};{int(col[3:5],16)};{int(col[5:7],16)}m{ch}")
+        parts.append(f"\033[38;2;{int(col[1:3], 16)};{int(col[3:5], 16)};{int(col[5:7], 16)}m{ch}")
     colored = "".join(parts) + "\033[0m"
     print(f"\n  {emoji}  {colored}\n", file=sys.stderr)
 
@@ -4116,10 +4139,10 @@ def _print_launch_message():
 # --- Interactive provider+account launcher ---
 
 _LAUNCHER_PROVIDERS = [
-    {"id": "claude",  "label": "anthropic", "binary": "claude"},
-    {"id": "gemini",  "label": "gemini",    "binary": "gemini"},
-    {"id": "codex",   "label": "openai",    "binary": "codex"},
-    {"id": "copilot", "label": "github",    "binary": "copilot"},
+    {"id": "claude", "label": "anthropic", "binary": "claude"},
+    {"id": "gemini", "label": "gemini", "binary": "gemini"},
+    {"id": "codex", "label": "openai", "binary": "codex"},
+    {"id": "copilot", "label": "github", "binary": "copilot"},
 ]
 
 
@@ -4164,11 +4187,13 @@ def build_launcher_menu() -> list:
         available = bool(shutil.which(binary))
         chips = []
         for acct in provider_accounts[pid]:
-            chips.append({
-                "name": acct,
-                "age": acct_ages.get(acct, ""),
-                "available": available,
-            })
+            chips.append(
+                {
+                    "name": acct,
+                    "age": acct_ages.get(acct, ""),
+                    "available": available,
+                }
+            )
         menu.append({"provider_id": pid, "label": label, "accounts": chips})
     return menu
 
@@ -4205,7 +4230,7 @@ def _draw_launcher(stdscr, menu):
         _safe_addnstr(stdscr, 0, 0, header[:max_x], max_x - 1, attrs["title"])
 
         # Separator
-        _safe_addnstr(stdscr, 1, 0, ("─" * (max_x - 1))[:max_x - 1], max_x - 1, attrs["dim"])
+        _safe_addnstr(stdscr, 1, 0, ("─" * (max_x - 1))[: max_x - 1], max_x - 1, attrs["dim"])
 
         # Provider rows (start at row 3, blank row between each)
         row = 3
@@ -4229,16 +4254,16 @@ def _draw_launcher(stdscr, menu):
 
                 if not chip["available"]:
                     chip_str = f"✗ {chip_text}  "
-                    _safe_addnstr(stdscr, row, x, chip_str[:max_x - x - 1], max_x - x - 1, attrs["dim"])
+                    _safe_addnstr(stdscr, row, x, chip_str[: max_x - x - 1], max_x - x - 1, attrs["dim"])
                 elif is_selected:
                     chip_str = f"▓ {chip_text} ▓ "
-                    _safe_addnstr(stdscr, row, x, chip_str[:max_x - x - 1], max_x - x - 1, attrs["selected"])
+                    _safe_addnstr(stdscr, row, x, chip_str[: max_x - x - 1], max_x - x - 1, attrs["selected"])
                 elif is_focused_row:
                     chip_str = f"░ {chip_text} ░ "
-                    _safe_addnstr(stdscr, row, x, chip_str[:max_x - x - 1], max_x - x - 1, attrs["time"])
+                    _safe_addnstr(stdscr, row, x, chip_str[: max_x - x - 1], max_x - x - 1, attrs["time"])
                 else:
                     chip_str = f"  {chip_text}   "
-                    _safe_addnstr(stdscr, row, x, chip_str[:max_x - x - 1], max_x - x - 1, attrs["dim"])
+                    _safe_addnstr(stdscr, row, x, chip_str[: max_x - x - 1], max_x - x - 1, attrs["dim"])
                 x += len(chip_str)
 
             row += 2  # blank line between providers
@@ -4288,7 +4313,7 @@ def _draw_launcher(stdscr, menu):
                 set_active_account(chip["name"])
                 # Show brief flash on the footer so user sees confirmation
                 confirm = f" ✓ '{chip['name']}' set as active account "
-                _safe_addnstr(stdscr, max_y - 1, 0, confirm[:max_x - 1].ljust(max_x - 1), max_x - 1, attrs["accent"])
+                _safe_addnstr(stdscr, max_y - 1, 0, confirm[: max_x - 1].ljust(max_x - 1), max_x - 1, attrs["accent"])
                 stdscr.refresh()
                 curses.napms(800)
         elif key == ord("t"):
@@ -4303,7 +4328,7 @@ def _draw_launcher(stdscr, menu):
             save_persisted_theme(nxt)
             attrs = _picker_attrs("launcher")
             confirm = f" ✓ theme: {THEMES[nxt]['display_name']} — {THEMES[nxt]['description']} "
-            _safe_addnstr(stdscr, max_y - 1, 0, confirm[:max_x - 1].ljust(max_x - 1), max_x - 1, attrs["accent"])
+            _safe_addnstr(stdscr, max_y - 1, 0, confirm[: max_x - 1].ljust(max_x - 1), max_x - 1, attrs["accent"])
             stdscr.refresh()
             curses.napms(700)
         elif key in (ord("q"), 27):
@@ -4326,6 +4351,7 @@ def _first_run_onboarding():
         from rich.console import Console
         from rich.prompt import Prompt
         from rich.text import Text
+
         console = Console()
     except Exception:
         # Extremely degraded environment — fall back to plain text and bail.
@@ -4343,6 +4369,7 @@ def _first_run_onboarding():
     logo_lines = []
     try:
         import pyfiglet
+
         rendered = pyfiglet.Figlet(font="thin").renderText("altergo")
         logo_lines = [ln for ln in rendered.splitlines() if ln.strip()]
     except Exception:
@@ -4373,6 +4400,7 @@ def _first_run_onboarding():
     # Pick a spinner that matches the active theme (same helper the banner uses).
     try:
         import altergo_greetings as _greet
+
         _spinner_name = _greet.spinner_for_theme(theme_id)
     except Exception:
         _spinner_name = "dots"
@@ -4391,18 +4419,19 @@ def _first_run_onboarding():
     _spin_row.add_column(no_wrap=True)
     _spin_row.add_row(Spinner(_spinner_name, style=f"bold {_accent_hex}"), _spin_text)
 
-    with Live(Padding(_spin_row, (0, 0, 0, 2)), console=console, refresh_per_second=12,
-              transient=True):
+    with Live(Padding(_spin_row, (0, 0, 0, 2)), console=console, refresh_per_second=12, transient=True):
         time.sleep(0.75)
 
     # ── Copy ──────────────────────────────────────────────────────────────────
     # Determine theme accent color for styled hint lines (brand/accent hex stop).
     _mid_hex = grad[len(grad) // 2] if len(grad) > 2 else grad[0]
     console.print()
-    console.print(Text(
-        "  altergo \u2014 multiple AI identities from one terminal.",
-        style="dim",
-    ))
+    console.print(
+        Text(
+            "  altergo \u2014 multiple AI identities from one terminal.",
+            style="dim",
+        )
+    )
     console.print()
     _no_acct_msg = Text()
     _no_acct_msg.append("  You don't have any accounts yet. ", style="dim")
@@ -4428,8 +4457,7 @@ def _first_run_onboarding():
     while True:
         try:
             raw = Prompt.ask(
-                "  Account name (e.g., personal, pro, sideproject)"
-                " [or press Enter to run --config]",
+                "  Account name (e.g., personal, pro, sideproject) [or press Enter to run --config]",
                 default="",
                 show_default=False,
                 console=console,
@@ -4447,18 +4475,22 @@ def _first_run_onboarding():
         # Inline validation — we cannot call validate_account_name() here
         # because it calls sys.exit(1) on failure, which would kill the loop.
         if not re.match(r"^[a-zA-Z0-9][a-zA-Z0-9_-]*$", raw) or len(raw) > 64:
-            console.print(Text(
-                f"  Invalid name '{raw}'. Use letters, digits, - or _ only; "
-                "must not start with a digit or special char.",
-                style="dim",
-            ))
+            console.print(
+                Text(
+                    f"  Invalid name '{raw}'. Use letters, digits, - or _ only; "
+                    "must not start with a digit or special char.",
+                    style="dim",
+                )
+            )
             continue
 
         if raw in _RESERVED_NAMES:
-            console.print(Text(
-                f"  '{raw}' is a reserved name. Choose a different account name.",
-                style="dim",
-            ))
+            console.print(
+                Text(
+                    f"  '{raw}' is a reserved name. Choose a different account name.",
+                    style="dim",
+                )
+            )
             continue
 
         # Valid name — proceed.
@@ -4602,16 +4634,13 @@ def main():
                 last = cache.get("last_check", 0)
                 if last:
                     ago = int(time.time() - last)
-                    print(_c(C("dim"),
-                              f"  last checked: {ago // 60} min ago"))
+                    print(_c(C("dim"), f"  last checked: {ago // 60} min ago"))
                 latest = _sanitize_version(cache.get("latest_version"))
                 if latest:
                     marker = _c(C("warn"), "newer") if _is_newer(latest, __version__) else _c(C("success"), "current")
-                    print(_c(C("dim"), f"  latest known: v{latest}  ({marker})")
-                          if latest else "")
+                    print(_c(C("dim"), f"  latest known: v{latest}  ({marker})") if latest else "")
             print()
-            print(_c(C("dim"),
-                      "  Toggle with: altergo --update-check on|off"))
+            print(_c(C("dim"), "  Toggle with: altergo --update-check on|off"))
             sys.exit(0)
         choice = args[1].lower()
         if choice in ("on", "true", "1", "yes"):
@@ -4694,7 +4723,7 @@ def main():
             sys.exit(1)
         set_active_account(use_name)
         print(f"altergo: active account set to {_c(C('command'), use_name)}")
-        print(_c(C('dim'), f"  Bare 'altergo' will now launch '{use_name}' by default."))
+        print(_c(C("dim"), f"  Bare 'altergo' will now launch '{use_name}' by default."))
         sys.exit(0)
 
     # --search → full-text conversation search

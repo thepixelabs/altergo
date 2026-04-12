@@ -773,7 +773,7 @@ def test_setup_creates_provider_symlinks(fake_home, provider_id):
     for name in prov["symlink_files"]:
         (main_dot_dir / name).touch()
 
-    altergo.do_config("work", providers=[provider_id])
+    altergo.do_config("work", provider_id)
 
     account_dot_dir = fake_home["accounts_dir"] / "work" / prov["dot_dir"]
 
@@ -801,7 +801,7 @@ def test_teardown_removes_provider_symlinks(fake_home):
     for name in prov["symlink_files"]:
         (main_dot_dir / name).touch()
 
-    altergo.do_config("work", providers=["gemini"])
+    altergo.do_config("work", "gemini")
 
     account_dot_dir = fake_home["accounts_dir"] / "work" / ".gemini"
     created_symlinks = [account_dot_dir / name for name in prov["symlink_dirs"] if (account_dot_dir / name).is_symlink()]
@@ -813,3 +813,89 @@ def test_teardown_removes_provider_symlinks(fake_home):
         assert not (account_dot_dir / name).is_symlink(), f"gemini: {name}/ symlink should be removed after teardown"
     for name in prov["symlink_files"]:
         assert not (account_dot_dir / name).is_symlink(), f"gemini: {name} symlink should be removed after teardown"
+
+
+# ---------------------------------------------------------------------------
+# T11 — load_account_meta schema handling
+# ---------------------------------------------------------------------------
+
+
+def _write_account_json(account_home, data):
+    """Write a JSON account.json file into account_home."""
+    import json
+    account_home.mkdir(parents=True, exist_ok=True)
+    (account_home / "account.json").write_text(json.dumps(data))
+
+
+def test_load_account_meta_v2_passthrough(tmp_path):
+    """v2 file is returned unchanged without any upgrade logic applied."""
+    account_home = tmp_path / "acct"
+    _write_account_json(account_home, {
+        "version": 2,
+        "provider": "gemini",
+        "created": "2026-01-01T00:00:00",
+    })
+    result = altergo.load_account_meta(account_home)
+    assert result["version"] == 2
+    assert result["provider"] == "gemini"
+    assert result["created"] == "2026-01-01T00:00:00"
+
+
+# ---------------------------------------------------------------------------
+# T12 — v0.22.0 fixes
+# ---------------------------------------------------------------------------
+
+
+# T-A: 'use' subcommand exits 1 with "separate account" guidance in stderr.
+# ACCOUNTS_DIR is anchored to the real passwd home (not $HOME) so we drive
+# this as a unit test with monkeypatching rather than a subprocess test.
+def test_use_subcommand_exits_with_separate_account_message(fake_home, monkeypatch, capsys):
+    """altergo <account> use <provider> exits 1 and tells the user to create a separate account."""
+    # Create a real account directory so account resolution succeeds.
+    acct_dir = fake_home["accounts_dir"] / "myacct"
+    acct_dir.mkdir(parents=True)
+
+    monkeypatch.setattr(sys, "argv", ["altergo", "myacct", "use", "gemini"])
+    with pytest.raises(SystemExit) as exc_info:
+        altergo.main()
+
+    assert exc_info.value.code == 1
+    captured = capsys.readouterr()
+    assert "separate account" in captured.err
+
+
+# T-D: load_account_meta on a corrupt v2 file (missing "provider") returns safe default
+def test_load_account_meta_v2_missing_provider_returns_default(tmp_path):
+    """A v2 file without a 'provider' key returns a safe fallback without crashing."""
+    account_home = tmp_path / "acct"
+    _write_account_json(account_home, {
+        "version": 2,
+        "created": "2026-01-01T00:00:00",
+        # "provider" key intentionally absent
+    })
+    result = altergo.load_account_meta(account_home)
+    assert result["version"] == 2
+    assert result["provider"] == "claude"
+
+
+# T-E: integration — v1 multi-provider file on disk, 'use' subcommand exits 1 with --config hint
+def test_use_subcommand_with_v1_disk_file_exits_1(tmp_path):
+    """Write a v1 account.json with multiple providers into a temp accounts dir,
+    run 'altergo work use gemini', assert exit code 1 and '--config' in stderr."""
+    import json
+
+    accounts_dir = tmp_path / ".altergo" / "accounts"
+    account_home = accounts_dir / "work"
+    account_home.mkdir(parents=True)
+    (account_home / "account.json").write_text(
+        json.dumps({"version": 1, "providers": ["claude", "gemini"], "default_provider": "claude"})
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT), "work", "use", "gemini"],
+        capture_output=True,
+        text=True,
+        env={**__import__("os").environ, "HOME": str(tmp_path)},
+    )
+    assert result.returncode == 1
+    assert "--config" in result.stderr

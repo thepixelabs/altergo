@@ -468,7 +468,7 @@ def show_help():
         h("Accounts"),
         f"  {kw('altergo --config')}                   {dim('Create or reconfigure an account')}",
         f"  {kw('altergo --config --name')} {arg('<name>')}     {dim('Name the account')}",
-        f"  {kw('altergo --config --provider')} {arg('<p,…>')}  {dim('claude, gemini, codex, copilot')}",
+        f"  {kw('altergo --config --provider')} {arg('<p>')}     {dim('claude, gemini, codex, copilot')}",
         f"  {kw('altergo')} {arg('<name>')} {kw('use')} {arg('<provider>')}      {dim('Set default provider for an account')}",
         f"  {kw('altergo --use')} {arg('<name>')}               {dim('Set default account')}",
         f"  {kw('altergo --teardown')} {arg('[--name <n>]')}    {dim('Remove account symlinks')}",
@@ -3531,18 +3531,37 @@ def _find_claude() -> str | None:
 def _sweep_existing_accounts() -> bool:
     """Repair any accounts that still have real dirs where symlinks are expected.
 
+    Reads each account's metadata to determine its configured provider and
+    sweeps the correct dot-dir.  Falls back to Claude-only for legacy accounts.
+
     Runs automatically after migrate_legacy() and at the start of launch_claude()
     so that existing 0.6.0 users are repaired on next launch without needing
     to run --config manually.  Silent unless something actually changes.
     """
     changed = False
     for acct in list_accounts():
-        _, account_claude = resolve_account(acct)
-        for name in SYMLINK_DIRS:
-            src = MAIN_CLAUDE / name
-            dst = account_claude / name
-            if _ensure_symlinked_dir(name, src, dst, account_claude):
-                changed = True
+        account_home, account_claude = resolve_account(acct)
+        meta = load_account_meta(account_home)
+
+        if meta is not None and "providers" in meta:
+            for pid in meta["providers"]:
+                prov = PROVIDERS.get(pid)
+                if prov is None:
+                    continue
+                main_dot = MAIN_HOME / prov["dot_dir"]
+                acct_dot = account_home / prov["dot_dir"]
+                for name in prov["symlink_dirs"]:
+                    src = main_dot / name
+                    dst = acct_dot / name
+                    if _ensure_symlinked_dir(name, src, dst, acct_dot):
+                        changed = True
+        else:
+            # Legacy account — fall back to Claude-only
+            for name in SYMLINK_DIRS:
+                src = MAIN_CLAUDE / name
+                dst = account_claude / name
+                if _ensure_symlinked_dir(name, src, dst, account_claude):
+                    changed = True
     return changed
 
 
@@ -3557,28 +3576,19 @@ def launch_claude(account: str = "default", args=None, provider: str | None = No
 
     account_home, _ = resolve_account(account)
 
-    # Resolve provider
+    # Resolve provider from account metadata
+    meta = load_account_meta(account_home)
+    configured = (meta.get("providers") if meta else None) or ["claude"]
     if provider is None:
-        meta = load_account_meta(account_home)
-        if meta is not None and "providers" in meta:
-            prov_list = meta["providers"]
-        else:
-            prov_list = ["claude"]
-
-        if len(prov_list) == 1:
-            provider = prov_list[0]
-        elif meta is not None and meta.get("default_provider") in prov_list:
-            # Multi-provider account with a default set — use it directly
-            provider = meta["default_provider"]
-        else:
-            names = ", ".join(prov_list)
-            print(
-                f"altergo: account '{account}' has multiple providers ({names}).\n"
-                f"  Specify one: altergo {account} <provider>\n"
-                f"  Or run 'altergo --config --name {account}' to set a default provider.",
-                file=sys.stderr,
-            )
-            sys.exit(1)
+        provider = (meta.get("default_provider") if meta else None) or configured[0]
+    elif provider not in configured:
+        print(
+            f"altergo: provider '{provider}' is not configured on account '{account}'. "
+            f"Configured: {', '.join(configured)}.\n"
+            f"  Run 'altergo {account} use {provider}' to switch.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     # Find the binary
     if provider == "claude":
@@ -3614,7 +3624,8 @@ def launch_claude(account: str = "default", args=None, provider: str | None = No
         show_greeting=_load_bool_setting("show_greeting"),
         animate_duration=_anim,
     )
-    _sync_claude_mcps(account_home)
+    if provider == "claude":
+        _sync_claude_mcps(account_home)
     result = subprocess.run(cmd, env=env)
     _print_launch_message()
     sys.exit(result.returncode)
@@ -3705,15 +3716,15 @@ def _prompt_account_name() -> str:
 
 
 def _prompt_provider_selection(current_providers=None, current_default=None):
-    """Curses-based interactive provider picker.
+    """Curses-based interactive provider picker (single-select).
 
-    Arrow keys navigate, Space toggles a provider on/off, 'd' marks the
-    highlighted provider as the default, Enter/s saves and closes.
+    Arrow keys navigate, Enter/Space selects the highlighted provider and closes.
+    Each account is bound to exactly one provider.
 
     current_providers: pre-selected provider IDs (None = detect installed).
-    current_default:   pre-set default provider ID (None = first selected).
+    current_default:   pre-set default provider ID (None = first installed).
 
-    Returns (providers_list, default_provider_id).
+    Returns ([provider_id], provider_id).
     Falls back to a plain-text prompt when stdin/stdout are not a TTY.
     """
     # Build ordered list: installed ones first, then others
@@ -3721,15 +3732,19 @@ def _prompt_provider_selection(current_providers=None, current_default=None):
     all_providers = list(PROVIDERS.keys())
     ordered = installed + [p for p in all_providers if p not in installed]
 
-    pre_selected = set(current_providers) if current_providers is not None else set(installed)
-    if not pre_selected:
-        pre_selected = {"claude"}
+    # Determine which one to pre-highlight
+    if current_default and current_default in PROVIDERS:
+        pre_choice = current_default
+    elif current_providers:
+        pre_choice = current_providers[0]
+    elif installed:
+        pre_choice = installed[0]
+    else:
+        pre_choice = "claude"
 
     # Fall back to plain prompt when not running in a TTY (e.g. piped input)
     if not sys.stdin.isatty() or not sys.stdout.isatty():
-        providers = list(pre_selected) if pre_selected else ["claude"]
-        default = current_default or providers[0]
-        return providers, default
+        return [pre_choice], pre_choice
 
     def _draw_provider_picker(stdscr, state):
         """Inner curses draw loop. Mutates state dict in-place."""
@@ -3739,8 +3754,6 @@ def _prompt_provider_selection(current_providers=None, current_default=None):
         phase = 0
 
         items = state["items"]          # ordered list of provider IDs
-        selected = state["selected"]    # set of enabled provider IDs
-        default_pid = state["default"]  # single default provider ID or None
         cursor = state["cursor"]        # currently highlighted row index
 
         while True:
@@ -3748,7 +3761,7 @@ def _prompt_provider_selection(current_providers=None, current_default=None):
             max_y, max_x = stdscr.getmaxyx()
 
             # Header
-            header = "  Select providers  (Space toggle \xb7 d set default \xb7 Enter save)"
+            header = "  Select a provider  (↑↓ navigate · Enter select · q quit)"
             _safe_addnstr(stdscr, 0, 0, header[:max_x - 1], max_x - 1, attrs["title"])
 
             # Separator
@@ -3761,32 +3774,18 @@ def _prompt_provider_selection(current_providers=None, current_default=None):
                     break
                 p = PROVIDERS[pid]
                 is_cursor = idx == cursor
-                is_on = pid in selected
-                is_default = pid == default_pid
 
-                # Radio marker: [●] = default, (●) = selected-only, ( ) = off
-                if is_default:
-                    marker = "[●]"
-                elif is_on:
-                    marker = "(●)"
-                else:
-                    marker = "( )"
+                marker = "(●)" if is_cursor else "( )"
 
                 installed_hint = " (installed)" if shutil.which(p["binary"]) else " (not found)"
                 label = f"  {marker} {p['display_name']}{installed_hint}"
 
-                if is_cursor:
-                    row_attr = attrs["selected"]
-                elif is_on or is_default:
-                    row_attr = attrs["accent"]
-                else:
-                    row_attr = attrs["dim"]
-
+                row_attr = attrs["selected"] if is_cursor else attrs["dim"]
                 _safe_addnstr(stdscr, row, 0, label[:max_x - 1].ljust(min(max_x - 1, 60)), max_x - 1, row_attr)
 
-            # Save hint at bottom
+            # Nav hint at bottom
             save_row = max_y - 1
-            nav = "  Save (Enter/s)  \xb7  Toggle (Space)  \xb7  Default (d)  \xb7  Quit (q/Esc)"
+            nav = "  Select (Enter/Space)  \xb7  Quit (q/Esc)"
             _draw_animated_nav(stdscr, save_row, nav, max_x - 1, phase, attrs)
 
             stdscr.refresh()
@@ -3800,29 +3799,8 @@ def _prompt_provider_selection(current_providers=None, current_default=None):
                 cursor = max(0, cursor - 1)
             elif key in (curses.KEY_DOWN, ord("j")):
                 cursor = min(len(items) - 1, cursor + 1)
-            elif key == ord(" "):
-                pid = items[cursor]
-                if pid in selected:
-                    # Cannot deselect the only selected provider
-                    if len(selected) > 1:
-                        selected.discard(pid)
-                        # If we just deselected the current default, pick a new one
-                        if default_pid == pid:
-                            remaining = [p for p in items if p in selected]
-                            default_pid = remaining[0] if remaining else None
-                else:
-                    selected.add(pid)
-                    # Auto-assign default if none set
-                    if default_pid is None:
-                        default_pid = pid
-            elif key == ord("d"):
-                pid = items[cursor]
-                # Mark as default — also ensure it is selected
-                selected.add(pid)
-                default_pid = pid
-            elif key in (curses.KEY_ENTER, 10, 13, ord("s")):
-                state["selected"] = selected
-                state["default"] = default_pid
+            elif key in (curses.KEY_ENTER, 10, 13, ord(" "), ord("s")):
+                state["choice"] = items[cursor]
                 state["cursor"] = cursor
                 return
             elif key in (ord("q"), 27):
@@ -3831,43 +3809,27 @@ def _prompt_provider_selection(current_providers=None, current_default=None):
             elif key == curses.KEY_RESIZE:
                 continue
 
+    # Pre-highlight the current provider (or first installed)
+    initial_cursor = ordered.index(pre_choice) if pre_choice in ordered else 0
+
     state = {
         "items": ordered,
-        "selected": set(pre_selected),
-        "default": current_default if (current_default and current_default in pre_selected) else (next(iter(pre_selected)) if pre_selected else None),
-        "cursor": 0,
+        "choice": pre_choice,
+        "cursor": initial_cursor,
         "cancelled": False,
     }
 
     try:
         curses.wrapper(_draw_provider_picker, state)
     except Exception:
-        # Curses failed — fall through to plain result using pre-selection
-        providers = list(pre_selected) if pre_selected else ["claude"]
-        default = current_default or providers[0]
-        return providers, default
+        return [pre_choice], pre_choice
 
     if state["cancelled"]:
-        # User quit without saving — return original values
-        providers = list(current_providers) if current_providers else list(pre_selected) or ["claude"]
-        default = current_default or providers[0]
-        return providers, default
+        choice = pre_choice
+    else:
+        choice = state.get("choice", pre_choice)
 
-    result = [pid for pid in ordered if pid in state["selected"]]
-    if not result:
-        warn = _c(33, "\u26a0")
-        print(f"  {warn} No provider selected \u2014 defaulting to Claude Code.")
-        result = ["claude"]
-
-    default_provider = state["default"]
-    if default_provider not in result:
-        default_provider = result[0]
-
-    # Single-provider accounts: that provider is automatically the default
-    if len(result) == 1:
-        default_provider = result[0]
-
-    return result, default_provider
+    return [choice], choice
 
 
 # --- Goodbye messages ---
@@ -4258,16 +4220,14 @@ def _first_run_onboarding():
         # Valid name — proceed.
         break
 
-    # ── Provider detection (silent — no prompt) ───────────────────────────────
-    # Mirror the logic in _prompt_provider_selection() but skip the interactive
-    # bits: detect what's installed and default to ["claude"] if nothing is.
+    # ── Provider detection (single provider per account) ────────────────────
+    # Pick the first installed provider; default to claude if none found.
     detected = [pid for pid, p in PROVIDERS.items() if shutil.which(p["binary"])]
-    if not detected:
-        detected = ["claude"]
+    chosen = [detected[0]] if detected else ["claude"]
 
     # ── Run config then drop into the launcher ───────────────────────────────
     console.print()
-    do_config(raw, detected)
+    do_config(raw, chosen)
     interactive_launcher()
 
 
@@ -4316,11 +4276,11 @@ def main():
         sys.exit(0)
 
     if args and args[0] == "--config":
-        # Parse --name and --provider flags
+        # Parse --name and --provider flags (one provider per account)
         # Supported forms:
         #   altergo --config                              (interactive)
         #   altergo --config --name work                  (named, interactive provider)
-        #   altergo --config --name work --provider claude,gemini  (fully specified)
+        #   altergo --config --name work --provider claude (fully specified)
         #   altergo --config --provider gemini            (interactive name, specified provider)
         remaining = args[1:]
         name = None
@@ -4344,16 +4304,18 @@ def main():
             else:
                 name = "default"
 
-        # Resolve providers
+        # Resolve provider (single provider per account)
         cfg_default_provider = None
         if provider_arg is not None:
-            providers = [p.strip() for p in provider_arg.split(",")]
-            unknown = [p for p in providers if p not in PROVIDERS]
-            if unknown:
-                print(f"altergo: unknown provider(s): {', '.join(unknown)}. Known: {', '.join(PROVIDERS)}", file=sys.stderr)
+            provider_arg = provider_arg.strip()
+            if "," in provider_arg:
+                print("altergo: only one provider per account is supported. Pick one.", file=sys.stderr)
                 sys.exit(1)
-            # Single provider specified → it is the default automatically
-            cfg_default_provider = providers[0] if len(providers) == 1 else None
+            if provider_arg not in PROVIDERS:
+                print(f"altergo: unknown provider '{provider_arg}'. Known: {', '.join(PROVIDERS)}", file=sys.stderr)
+                sys.exit(1)
+            providers = [provider_arg]
+            cfg_default_provider = provider_arg
         else:
             if sys.stdin.isatty():
                 account_home, _ = resolve_account(name)
@@ -4591,7 +4553,7 @@ def main():
     if args and args[0] == "shell":
         launch_shell(account)
 
-    # altergo <name> use <provider>  → set default provider for this account
+    # altergo <name> use <provider>  → switch account to a different provider
     if args and args[0] == "use":
         if len(args) < 2:
             print(
@@ -4599,36 +4561,15 @@ def main():
                 file=sys.stderr,
             )
             sys.exit(1)
-        new_default = args[1]
-        if new_default not in PROVIDERS:
+        new_provider = args[1]
+        if new_provider not in PROVIDERS:
             print(
-                f"altergo: unknown provider '{new_default}'. Known: {', '.join(PROVIDERS)}",
+                f"altergo: unknown provider '{new_provider}'. Known: {', '.join(PROVIDERS)}",
                 file=sys.stderr,
             )
             sys.exit(1)
-        acct_home, _ = resolve_account(account)
-        meta = load_account_meta(acct_home)
-        if meta is None:
-            print(
-                f"altergo: account '{account}' has no metadata. Run 'altergo --config --name {account}' first.",
-                file=sys.stderr,
-            )
-            sys.exit(1)
-        configured = meta.get("providers") or []
-        if new_default not in configured:
-            print(
-                f"altergo: '{new_default}' is not configured on account '{account}'. "
-                f"Configured: {', '.join(configured)}.\n"
-                f"  Run 'altergo --config --name {account}' to add it.",
-                file=sys.stderr,
-            )
-            sys.exit(1)
-        if meta.get("default_provider") == new_default:
-            print(f"altergo: {new_default} is already the default for {account} — no change.")
-            sys.exit(0)
-        meta["default_provider"] = new_default
-        save_account_meta(acct_home, meta)
-        print(f"altergo: default provider for {_c(C('command'), account)} → {_c(C('command'), new_default)}")
+        # Run do_config to wire the new provider's symlinks and credentials
+        do_config(account, [new_provider], default_provider=new_provider)
         sys.exit(0)
 
     # altergo [<name>] -- <cmd> [args...]

@@ -3,6 +3,12 @@
 
 ## v0.22.0 (2026-04-12)
 
+### Breaking Changes
+
+- breaking: remove multi-provider-per-account — each account now has exactly one provider
+- remove: `altergo <name> use <provider>` subcommand — create separate accounts per provider instead
+- fix: v1 account.json files auto-upgrade to v2 schema on first run (silent, written to disk)
+
 ### Features
 
 - Bidirectional mcpServers sync across accounts, preserves per-account oauthAccount

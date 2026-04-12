@@ -468,8 +468,9 @@ def show_help():
         h("Accounts"),
         f"  {kw('altergo --config')}                   {dim('Create or reconfigure an account')}",
         f"  {kw('altergo --config --name')} {arg('<name>')}     {dim('Name the account')}",
-        f"  {kw('altergo --config --provider')} {arg('<p>')}     {dim('claude, gemini, codex, copilot')}",
-        f"  {kw('altergo')} {arg('<name>')} {kw('use')} {arg('<provider>')}      {dim('Set default provider for an account')}",
+        f"  {kw('altergo --config --provider')} {arg('<p>')}    {dim('claude, gemini, codex, copilot')}",
+        f"  {dim('  e.g.')} {kw('altergo --config --name')} {arg('work-claude')} {kw('--provider')} {arg('claude')}",
+        f"  {dim('  e.g.')} {kw('altergo --config --name')} {arg('work-gemini')} {kw('--provider')} {arg('gemini')}",
         f"  {kw('altergo --use')} {arg('<name>')}               {dim('Set default account')}",
         f"  {kw('altergo --teardown')} {arg('[--name <n>]')}    {dim('Remove account symlinks')}",
         f"  {kw('altergo --settings')}                 {dim('Manage shared credentials (TUI)')}",
@@ -652,6 +653,9 @@ PROVIDERS = {
             "shell-snapshots", "agents", "plans", "cache",
         ],
         "symlink_files": ["settings.json", "CLAUDE.md", "keybindings.json"],
+        # .claude.json is intentionally NOT in symlink_home_files — it is managed
+        # by _sync_claude_mcps which does a bidirectional MCP merge while keeping
+        # per-account oauthAccount metadata isolated.
     },
     "gemini": {
         "display_name": "Gemini CLI",
@@ -786,28 +790,29 @@ CATALOG = [
 
 
 def load_account_meta(account_home: Path) -> dict:
-    """Load account metadata. Returns dict with 'providers' list.
+    """Load account metadata. Returns dict with a single 'provider' string.
 
-    Backwards compat: if account.json missing but .claude/ exists, returns
-    {"version": 1, "providers": ["claude"]} without writing anything.
-    If neither exists, returns None.
-
-    The optional "default_provider" key is added if absent: falls back to
-    the first entry in "providers" so older account.json files keep working.
+    Schema versions:
+      v2: {"version": 2, "provider": "<id>", ...}  — returned as-is
+      legacy: no account.json but .claude/ exists → {"version": 2, "provider": "claude"}
+      no account: returns None
     """
     meta_file = account_home / "account.json"
     if meta_file.exists():
         try:
             data = json.loads(meta_file.read_text())
         except Exception:
-            data = {"version": 1, "providers": ["claude"]}
-        # Back-fill default_provider for accounts created before this field existed.
-        if "default_provider" not in data and data.get("providers"):
-            data["default_provider"] = data["providers"][0]
-        return data
+            return {"version": 2, "provider": "claude"}
+        if data.get("version") == 2:
+            if "provider" in data:
+                return data
+            # Corrupt v2 — provider key missing
+            return {"version": 2, "provider": "claude"}
+        # Unrecognised format — safe fallback
+        return {"version": 2, "provider": "claude"}
     # Legacy account: .claude dir exists but no account.json
     if (account_home / ".claude").exists():
-        return {"version": 1, "providers": ["claude"], "default_provider": "claude"}
+        return {"version": 2, "provider": "claude"}
     return None
 
 
@@ -1483,6 +1488,39 @@ def _ensure_symlinked_dir(name: str, src: Path, dst: Path, account_claude: Path)
         return False
 
 
+def _ensure_home_file_symlink(name: str, src: Path, dst: Path) -> None:
+    """Ensure dst (account_home/<name>) is a symlink pointing to src (MAIN_HOME/<name>).
+
+    Migration cases:
+      (a) dst already symlinks to src   -> no-op
+      (b) dst absent, src exists        -> create symlink
+      (c) both absent                   -> do nothing (created on first use)
+      (d) dst real file, src absent     -> promote: move dst → src, then symlink
+      (e) dst real file, src exists     -> warn; leave both untouched
+    """
+    if dst.is_symlink():
+        if dst.resolve() == src.resolve():
+            print(f"  {_c(32, '✓')} {name} already symlinked")
+        else:
+            print(f"  {_c(33, '⚠')} {name} symlinked elsewhere — skipping")
+        return
+    if not dst.exists():
+        if src.exists():
+            dst.symlink_to(src)
+            print(f"  {_c(32, '✓')} Symlinked {name}")
+        return
+    # dst is a real file
+    if not src.exists():
+        # (d) Promote account file to main home so all accounts share it
+        src.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(dst), str(src))
+        dst.symlink_to(src)
+        print(f"  {_c(32, '✓')} Promoted {name} to shared location")
+    else:
+        # (e) Conflict — both are real files; don't clobber either
+        print(f"  {_c(33, '⚠')} {name} exists in both account home and main home — remove one to share")
+
+
 def _sync_claude_mcps(account_home: Path) -> None:
     """Sync mcpServers between MAIN_HOME/.claude.json and account_home/.claude.json.
 
@@ -1553,9 +1591,7 @@ def _sync_claude_mcps(account_home: Path) -> None:
         print(f"  {_c(32, '✓')} Synced {count} MCP server{'s' if count != 1 else ''}")
 
 
-def do_config(account: str = "default", providers: list[str] | None = None, default_provider: str | None = None):
-    if providers is None:
-        providers = ["claude"]
+def do_config(account: str = "default", provider: str = "claude"):
     account_home, account_claude = resolve_account(account)
     show_banner(account)
     header = f"altergo v{__version__} · " + _link("https://pixelabs.net", "pixelabs.net")
@@ -1573,71 +1609,74 @@ def do_config(account: str = "default", providers: list[str] | None = None, defa
     else:
         print(f"  {_c(32, '✓')} Account home exists: {account_home}")
 
-    # 2. Wire each provider
-    for pid in providers:
-        prov = PROVIDERS[pid]
-        main_dot_dir = MAIN_HOME / prov["dot_dir"]
-        acct_dot_dir = account_home / prov["dot_dir"]
+    # 2. Wire the single provider
+    prov = PROVIDERS[provider]
+    main_dot_dir = MAIN_HOME / prov["dot_dir"]
+    acct_dot_dir = account_home / prov["dot_dir"]
 
-        print()
-        print(_c(1, _c(36, f"=== Provider: {prov['display_name']} ===")))
+    print()
+    print(_c(1, _c(36, f"=== Provider: {prov['display_name']} ===")))
 
-        # Ensure provider dot-dir exists
-        acct_dot_dir.mkdir(parents=True, exist_ok=True)
+    # Ensure provider dot-dir exists
+    acct_dot_dir.mkdir(parents=True, exist_ok=True)
 
-        # Symlink directories
-        for name in prov["symlink_dirs"]:
-            src = main_dot_dir / name
-            dst = acct_dot_dir / name
+    # Symlink directories
+    for name in prov["symlink_dirs"]:
+        src = main_dot_dir / name
+        dst = acct_dot_dir / name
 
-            if dst.is_symlink():
-                target = dst.resolve()
-                if target == src.resolve():
-                    print(f"  {_c(32, '✓')} {name}/ already symlinked")
-                else:
-                    print(f"  {_c(33, '⚠')} {name}/ symlinked to {target} (expected {src})")
-                continue
+        if dst.is_symlink():
+            target = dst.resolve()
+            if target == src.resolve():
+                print(f"  {_c(32, '✓')} {name}/ already symlinked")
+            else:
+                print(f"  {_c(33, '⚠')} {name}/ symlinked to {target} (expected {src})")
+            continue
 
-            # _ensure_symlinked_dir handles all real-dir migration cases (empty
-            # real dir, non-empty real dir, merge conflicts).  It prints its own
-            # richer messages for promotion/merge/conflict cases.  For the normal
-            # fresh-install path (dst absent) it silently creates the symlink and
-            # returns True, so we print the standard checkmark here.
-            was_absent = not dst.exists()
-            _ensure_symlinked_dir(name, src, dst, acct_dot_dir)
-            if was_absent and dst.is_symlink():
-                print(f"  {_c(32, '✓')} Symlinked {name}/")
+        # _ensure_symlinked_dir handles all real-dir migration cases (empty
+        # real dir, non-empty real dir, merge conflicts).  It prints its own
+        # richer messages for promotion/merge/conflict cases.  For the normal
+        # fresh-install path (dst absent) it silently creates the symlink and
+        # returns True, so we print the standard checkmark here.
+        was_absent = not dst.exists()
+        _ensure_symlinked_dir(name, src, dst, acct_dot_dir)
+        if was_absent and dst.is_symlink():
+            print(f"  {_c(32, '✓')} Symlinked {name}/")
 
-        # Symlink files
-        for name in prov["symlink_files"]:
-            src = main_dot_dir / name
-            dst = acct_dot_dir / name
+    # Symlink files
+    for name in prov["symlink_files"]:
+        src = main_dot_dir / name
+        dst = acct_dot_dir / name
 
-            if not src.exists():
-                continue
+        if not src.exists():
+            continue
 
-            if dst.is_symlink():
-                print(f"  {_c(32, '✓')} {name} already symlinked")
-                continue
+        if dst.is_symlink():
+            print(f"  {_c(32, '✓')} {name} already symlinked")
+            continue
 
-            if dst.exists():
-                dst.unlink()
+        if dst.exists():
+            dst.unlink()
 
-            dst.symlink_to(src)
-            print(f"  {_c(32, '✓')} Symlinked {name}")
+        dst.symlink_to(src)
+        print(f"  {_c(32, '✓')} Symlinked {name}")
 
-        # Check credentials for this provider
-        creds = acct_dot_dir / prov["credentials_file"]
-        print()
-        if creds.exists():
-            print(f"  {_c(32, '✓')} {prov['display_name']} credentials found")
-        else:
-            print(f"  {_c(33, '⚠')} No {prov['display_name']} credentials found.")
-            cmd = f"altergo {account}" if account != "default" else "altergo"
-            print(f"     Run '{cmd}' to authenticate.\n")
+    # Symlink home-level files (live at $HOME/<name>, not inside <dot_dir>/)
+    for name in prov.get("symlink_home_files", []):
+        _ensure_home_file_symlink(name, MAIN_HOME / name, account_home / name)
+
+    # Check credentials for this provider
+    creds = acct_dot_dir / prov["credentials_file"]
+    print()
+    if creds.exists():
+        print(f"  {_c(32, '✓')} {prov['display_name']} credentials found")
+    else:
+        print(f"  {_c(33, '⚠')} No {prov['display_name']} credentials found.")
+        cmd = f"altergo {account}" if account != "default" else "altergo"
+        print(f"     Run '{cmd}' to authenticate.\n")
 
     # Sync MCP servers for Claude provider (bidirectional, keeps oauthAccount per-account)
-    if "claude" in providers:
+    if provider == "claude":
         _sync_claude_mcps(account_home)
 
     # 3. Apply catalog entries (shared CLI tool credentials) at account_home level
@@ -1649,17 +1688,10 @@ def do_config(account: str = "default", providers: list[str] | None = None, defa
 
     _status_wrap("Linking shared credentials…", _apply_catalog_entries)
 
-    # 4. Save account metadata
-    # Resolve default_provider: explicit arg > existing meta > first in list.
-    _existing_default = meta.get("default_provider") if meta else None
-    _resolved_default = default_provider or _existing_default or (providers[0] if providers else "claude")
-    # If the chosen default is no longer in the providers list, reset to first.
-    if _resolved_default not in providers:
-        _resolved_default = providers[0]
+    # 4. Save account metadata (v2 schema — one account, one provider)
     save_account_meta(account_home, {
-        "version": 1,
-        "providers": providers,
-        "default_provider": _resolved_default,
+        "version": 2,
+        "provider": provider,
         "created": (meta.get("created") if meta else None) or datetime.now().isoformat(timespec="seconds"),
     })
 
@@ -1681,12 +1713,11 @@ def do_teardown(account: str = "default"):
 
     meta = load_account_meta(account_home)
 
-    if meta is not None and "providers" in meta:
-        # Modern account with account.json — tear down per-provider symlinks
-        for pid in meta["providers"]:
-            prov = PROVIDERS.get(pid)
-            if prov is None:
-                continue
+    if meta is not None:
+        # Modern account with account.json — tear down the single provider's symlinks
+        pid = meta.get("provider", "claude")
+        prov = PROVIDERS.get(pid)
+        if prov is not None:
             acct_dot_dir = account_home / prov["dot_dir"]
 
             for name in prov["symlink_dirs"]:
@@ -1701,7 +1732,12 @@ def do_teardown(account: str = "default"):
                     dst.unlink()
                     print(f"  {_c(33, '✓')} Removed symlink: {prov['dot_dir']}/{name}")
 
-
+            for name in prov.get("symlink_home_files", []):
+                dst = account_home / name
+                src = MAIN_HOME / name
+                if dst.is_symlink() and dst.resolve() == src.resolve():
+                    dst.unlink()
+                    print(f"  {_c(33, '✓')} Removed symlink: {name}")
     else:
         # Legacy account (no account.json) — fall back to SYMLINK_DIRS + SYMLINK_FILES
         for name in SYMLINK_DIRS:
@@ -3531,8 +3567,9 @@ def _find_claude() -> str | None:
 def _sweep_existing_accounts() -> bool:
     """Repair any accounts that still have real dirs where symlinks are expected.
 
-    Reads each account's metadata to determine its configured provider and
-    sweeps the correct dot-dir.  Falls back to Claude-only for legacy accounts.
+    Reads each account's v2 metadata to determine its configured provider and
+    sweeps the correct dot-dir.  Falls back to Claude-only for legacy accounts
+    (no account.json).
 
     Runs automatically after migrate_legacy() and at the start of launch_claude()
     so that existing 0.6.0 users are repaired on next launch without needing
@@ -3543,11 +3580,10 @@ def _sweep_existing_accounts() -> bool:
         account_home, account_claude = resolve_account(acct)
         meta = load_account_meta(account_home)
 
-        if meta is not None and "providers" in meta:
-            for pid in meta["providers"]:
-                prov = PROVIDERS.get(pid)
-                if prov is None:
-                    continue
+        if meta is not None:
+            pid = meta.get("provider", "claude")
+            prov = PROVIDERS.get(pid)
+            if prov is not None:
                 main_dot = MAIN_HOME / prov["dot_dir"]
                 acct_dot = account_home / prov["dot_dir"]
                 for name in prov["symlink_dirs"]:
@@ -3555,8 +3591,15 @@ def _sweep_existing_accounts() -> bool:
                     dst = acct_dot / name
                     if _ensure_symlinked_dir(name, src, dst, acct_dot):
                         changed = True
+            else:
+                # Unknown provider id — fall back to Claude-only
+                for name in SYMLINK_DIRS:
+                    src = MAIN_CLAUDE / name
+                    dst = account_claude / name
+                    if _ensure_symlinked_dir(name, src, dst, account_claude):
+                        changed = True
         else:
-            # Legacy account — fall back to Claude-only
+            # Legacy account (no account.json at all) — fall back to Claude-only
             for name in SYMLINK_DIRS:
                 src = MAIN_CLAUDE / name
                 dst = account_claude / name
@@ -3569,26 +3612,16 @@ def launch_claude(account: str = "default", args=None, provider: str | None = No
     """Launch a provider CLI with account HOME, passing args through unchanged.
 
     If provider is None, reads account.json to determine which provider to use.
-    Single-provider accounts auto-select; multi-provider accounts use the
-    default_provider field if set, otherwise exit with a helpful error.
+    Falls back to "claude" for legacy accounts with no metadata.
     """
     _sweep_existing_accounts()
 
     account_home, _ = resolve_account(account)
 
-    # Resolve provider from account metadata
-    meta = load_account_meta(account_home)
-    configured = (meta.get("providers") if meta else None) or ["claude"]
+    # Resolve provider
     if provider is None:
-        provider = (meta.get("default_provider") if meta else None) or configured[0]
-    elif provider not in configured:
-        print(
-            f"altergo: provider '{provider}' is not configured on account '{account}'. "
-            f"Configured: {', '.join(configured)}.\n"
-            f"  Run 'altergo {account} use {provider}' to switch.",
-            file=sys.stderr,
-        )
-        sys.exit(1)
+        meta = load_account_meta(account_home)
+        provider = meta["provider"] if meta is not None else "claude"
 
     # Find the binary
     if provider == "claude":
@@ -3715,16 +3748,14 @@ def _prompt_account_name() -> str:
             print(f"  Invalid name '{raw}'. Use letters, digits, - or _ only.")
 
 
-def _prompt_provider_selection(current_providers=None, current_default=None):
-    """Curses-based interactive provider picker (single-select).
+def _prompt_provider_picker(current_provider: str | None = None) -> str:
+    """Curses-based single-select provider picker.
 
-    Arrow keys navigate, Enter/Space selects the highlighted provider and closes.
-    Each account is bound to exactly one provider.
+    Arrow keys navigate, Enter confirms the highlighted provider.
 
-    current_providers: pre-selected provider IDs (None = detect installed).
-    current_default:   pre-set default provider ID (None = first installed).
+    current_provider: pre-highlighted provider ID (None = detect installed or "claude").
 
-    Returns ([provider_id], provider_id).
+    Returns a single provider_id string.
     Falls back to a plain-text prompt when stdin/stdout are not a TTY.
     """
     # Build ordered list: installed ones first, then others
@@ -3732,36 +3763,34 @@ def _prompt_provider_selection(current_providers=None, current_default=None):
     all_providers = list(PROVIDERS.keys())
     ordered = installed + [p for p in all_providers if p not in installed]
 
-    # Determine which one to pre-highlight
-    if current_default and current_default in PROVIDERS:
-        pre_choice = current_default
-    elif current_providers:
-        pre_choice = current_providers[0]
+    # Determine initial highlighted provider
+    if current_provider and current_provider in ordered:
+        initial = current_provider
     elif installed:
-        pre_choice = installed[0]
+        initial = installed[0]
     else:
-        pre_choice = "claude"
+        initial = "claude"
 
-    # Fall back to plain prompt when not running in a TTY (e.g. piped input)
+    # Fall back to plain result when not running in a TTY (e.g. piped input)
     if not sys.stdin.isatty() or not sys.stdout.isatty():
-        return [pre_choice], pre_choice
+        return initial
 
-    def _draw_provider_picker(stdscr, state):
+    def _draw_picker(stdscr, state):
         """Inner curses draw loop. Mutates state dict in-place."""
         curses.curs_set(0)
         attrs = _picker_attrs()
         stdscr.timeout(80)
         phase = 0
 
-        items = state["items"]          # ordered list of provider IDs
-        cursor = state["cursor"]        # currently highlighted row index
+        items = state["items"]   # ordered list of provider IDs
+        cursor = state["cursor"] # currently highlighted row index
 
         while True:
             stdscr.erase()
             max_y, max_x = stdscr.getmaxyx()
 
             # Header
-            header = "  Select a provider  (↑↓ navigate · Enter select · q quit)"
+            header = "  Select provider  (\u2191\u2193 navigate \xb7 Enter confirm \xb7 q quit)"
             _safe_addnstr(stdscr, 0, 0, header[:max_x - 1], max_x - 1, attrs["title"])
 
             # Separator
@@ -3775,8 +3804,7 @@ def _prompt_provider_selection(current_providers=None, current_default=None):
                 p = PROVIDERS[pid]
                 is_cursor = idx == cursor
 
-                marker = "(●)" if is_cursor else "( )"
-
+                marker = ">" if is_cursor else " "
                 installed_hint = " (installed)" if shutil.which(p["binary"]) else " (not found)"
                 label = f"  {marker} {p['display_name']}{installed_hint}"
 
@@ -3784,9 +3812,8 @@ def _prompt_provider_selection(current_providers=None, current_default=None):
                 _safe_addnstr(stdscr, row, 0, label[:max_x - 1].ljust(min(max_x - 1, 60)), max_x - 1, row_attr)
 
             # Nav hint at bottom
-            save_row = max_y - 1
-            nav = "  Select (Enter/Space)  \xb7  Quit (q/Esc)"
-            _draw_animated_nav(stdscr, save_row, nav, max_x - 1, phase, attrs)
+            nav = "  Confirm (Enter)  \xb7  Navigate (\u2191\u2193/jk)  \xb7  Quit (q/Esc)"
+            _draw_animated_nav(stdscr, max_y - 1, nav, max_x - 1, phase, attrs)
 
             stdscr.refresh()
             key = stdscr.getch()
@@ -3799,8 +3826,7 @@ def _prompt_provider_selection(current_providers=None, current_default=None):
                 cursor = max(0, cursor - 1)
             elif key in (curses.KEY_DOWN, ord("j")):
                 cursor = min(len(items) - 1, cursor + 1)
-            elif key in (curses.KEY_ENTER, 10, 13, ord(" "), ord("s")):
-                state["choice"] = items[cursor]
+            elif key in (curses.KEY_ENTER, 10, 13):
                 state["cursor"] = cursor
                 return
             elif key in (ord("q"), 27):
@@ -3809,27 +3835,22 @@ def _prompt_provider_selection(current_providers=None, current_default=None):
             elif key == curses.KEY_RESIZE:
                 continue
 
-    # Pre-highlight the current provider (or first installed)
-    initial_cursor = ordered.index(pre_choice) if pre_choice in ordered else 0
-
+    initial_cursor = ordered.index(initial) if initial in ordered else 0
     state = {
         "items": ordered,
-        "choice": pre_choice,
         "cursor": initial_cursor,
         "cancelled": False,
     }
 
     try:
-        curses.wrapper(_draw_provider_picker, state)
+        curses.wrapper(_draw_picker, state)
     except Exception:
-        return [pre_choice], pre_choice
+        return initial
 
     if state["cancelled"]:
-        choice = pre_choice
-    else:
-        choice = state.get("choice", pre_choice)
+        return current_provider or initial
 
-    return [choice], choice
+    return ordered[state["cursor"]]
 
 
 # --- Goodbye messages ---
@@ -3888,14 +3909,13 @@ def build_launcher_menu() -> list:
         [{"provider_id": str, "label": str, "accounts": [{"name": str, "age": str, "available": bool}]}]
     """
     accounts = list_accounts()
-    # Group accounts by their primary provider from account.json
+    # Group accounts by their provider from account.json
     provider_accounts: dict = {}
     for acct in accounts:
         acct_home = ACCOUNTS_DIR / acct
         meta = load_account_meta(acct_home)
-        providers_for_acct = meta["providers"] if meta else ["claude"]
-        primary = providers_for_acct[0] if providers_for_acct else "claude"
-        provider_accounts.setdefault(primary, []).append(acct)
+        provider_for_acct = meta["provider"] if meta else "claude"
+        provider_accounts.setdefault(provider_for_acct, []).append(acct)
 
     # Resolve most-recent session age per account (best-effort) — wrapped
     # in a spinner because JSONL scanning can be 1–2s for heavy users.
@@ -4220,14 +4240,18 @@ def _first_run_onboarding():
         # Valid name — proceed.
         break
 
-    # ── Provider detection (single provider per account) ────────────────────
-    # Pick the first installed provider; default to claude if none found.
-    detected = [pid for pid, p in PROVIDERS.items() if shutil.which(p["binary"])]
-    chosen = [detected[0]] if detected else ["claude"]
+    # ── Provider selection ────────────────────────────────────────────────────
+    # Use the interactive picker so the user explicitly chooses.
+    # If stdin is not a TTY (non-interactive / CI), fall back to "claude".
+    if sys.stdin.isatty():
+        chosen_provider = _prompt_provider_picker()
+    else:
+        detected_providers = [pid for pid, p in PROVIDERS.items() if shutil.which(p["binary"])]
+        chosen_provider = detected_providers[0] if detected_providers else "claude"
 
     # ── Run config then drop into the launcher ───────────────────────────────
     console.print()
-    do_config(raw, chosen)
+    do_config(raw, chosen_provider)
     interactive_launcher()
 
 
@@ -4276,12 +4300,12 @@ def main():
         sys.exit(0)
 
     if args and args[0] == "--config":
-        # Parse --name and --provider flags (one provider per account)
+        # Parse --name and --provider flags
         # Supported forms:
-        #   altergo --config                              (interactive)
-        #   altergo --config --name work                  (named, interactive provider)
-        #   altergo --config --name work --provider claude (fully specified)
-        #   altergo --config --provider gemini            (interactive name, specified provider)
+        #   altergo --config                                  (interactive)
+        #   altergo --config --name work                      (named, interactive provider picker)
+        #   altergo --config --name work --provider claude    (fully specified)
+        #   altergo --config --provider gemini                (interactive name, specified provider)
         remaining = args[1:]
         name = None
         provider_arg = None
@@ -4304,33 +4328,25 @@ def main():
             else:
                 name = "default"
 
-        # Resolve provider (single provider per account)
-        cfg_default_provider = None
+        # Resolve provider (exactly one)
         if provider_arg is not None:
-            provider_arg = provider_arg.strip()
-            if "," in provider_arg:
-                print("altergo: only one provider per account is supported. Pick one.", file=sys.stderr)
-                sys.exit(1)
             if provider_arg not in PROVIDERS:
                 print(f"altergo: unknown provider '{provider_arg}'. Known: {', '.join(PROVIDERS)}", file=sys.stderr)
                 sys.exit(1)
-            providers = [provider_arg]
-            cfg_default_provider = provider_arg
+            cfg_provider = provider_arg
         else:
             if sys.stdin.isatty():
                 account_home, _ = resolve_account(name)
                 meta = load_account_meta(account_home)
-                current = meta["providers"] if meta else None
-                current_def = meta.get("default_provider") if meta else None
-                providers, cfg_default_provider = _prompt_provider_selection(current, current_def)
+                current = meta["provider"] if meta else None
+                cfg_provider = _prompt_provider_picker(current)
             else:
                 # Non-interactive: default to claude (backwards compat)
                 account_home, _ = resolve_account(name)
                 meta = load_account_meta(account_home)
-                providers = meta["providers"] if meta else ["claude"]
-                cfg_default_provider = meta.get("default_provider") if meta else None
+                cfg_provider = meta["provider"] if meta else "claude"
 
-        do_config(name, providers, default_provider=cfg_default_provider)
+        do_config(name, cfg_provider)
         sys.exit(0)
 
     if args and args[0] == "--teardown":
@@ -4553,24 +4569,16 @@ def main():
     if args and args[0] == "shell":
         launch_shell(account)
 
-    # altergo <name> use <provider>  → switch account to a different provider
+    # 'use' subcommand removed — each account has exactly one provider
     if args and args[0] == "use":
-        if len(args) < 2:
-            print(
-                f"altergo: 'use' requires a provider id. Example: altergo {account} use gemini",
-                file=sys.stderr,
-            )
-            sys.exit(1)
-        new_provider = args[1]
-        if new_provider not in PROVIDERS:
-            print(
-                f"altergo: unknown provider '{new_provider}'. Known: {', '.join(PROVIDERS)}",
-                file=sys.stderr,
-            )
-            sys.exit(1)
-        # Run do_config to wire the new provider's symlinks and credentials
-        do_config(account, [new_provider], default_provider=new_provider)
-        sys.exit(0)
+        print(
+            "altergo: 'use' subcommand has been removed.\n"
+            "  Each account now has exactly one provider.\n"
+            "  Create a separate account instead:\n"
+            "    altergo --config --name <new-name> --provider <provider>",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     # altergo [<name>] -- <cmd> [args...]
     if args and args[0] == "--":

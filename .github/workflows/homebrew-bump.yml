@@ -23,9 +23,9 @@ name: Homebrew Tap Bump
 # block before merging.  See the "Open PR against tap" step below.
 
 on:
-  push:
-    tags:
-      - "v*.*.*"
+  workflow_run:
+    workflows: ["Release"]
+    types: [completed]
 
 # Deny all permissions at the workflow level; the job below grants only what
 # it needs.  Write access to the tap repo is handled via GH_TOKEN, not
@@ -36,23 +36,43 @@ permissions: {}
 # quick succession.  A second run will queue and then (if the branch already
 # exists) push --force-with-lease over the first commit.
 concurrency:
-  group: homebrew-bump-${{ github.ref }}
+  group: homebrew-bump-${{ github.run_id }}
   cancel-in-progress: false
 
 jobs:
   bump-tap:
     name: Bump tap formula
     runs-on: ubuntu-latest
+    # Only run when the Release workflow actually published a new release.
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     # This job reads nothing from this repo — it only checks out the tap.
     # No GITHUB_TOKEN permissions are needed; all GitHub API calls use GH_TOKEN.
-    permissions: {}
+    permissions:
+      actions: read   # needed to query the triggering workflow_run
 
     steps:
       - name: Extract version and build tarball URL
         id: meta
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
-          # Strip the leading 'v' from the tag ref  (refs/tags/v0.5.0 → 0.5.0)
-          VERSION="${GITHUB_REF_NAME#v}"
+          # Find the version tag that was created by the Release workflow run
+          # that triggered this workflow.  semantic-release always creates a tag
+          # of the form vX.Y.Z on the head commit of its run.
+          RUN_ID="${{ github.event.workflow_run.id }}"
+          REPO="${{ github.repository }}"
+
+          HEAD_SHA=$(gh api "repos/${REPO}/actions/runs/${RUN_ID}" --jq '.head_sha')
+          TAG=$(gh api "repos/${REPO}/tags" --jq \
+            --arg sha "${HEAD_SHA}" \
+            '[.[] | select(.commit.sha == $sha) | select(.name | test("^v[0-9]"))] | first | .name')
+
+          if [ -z "${TAG}" ] || [ "${TAG}" = "null" ]; then
+            echo "No version tag found on ${HEAD_SHA} — skipping (no release was made)."
+            exit 0
+          fi
+
+          VERSION="${TAG#v}"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
           TARBALL_URL="https://files.pythonhosted.org/packages/source/a/altergo/altergo-${VERSION}.tar.gz"
@@ -71,38 +91,19 @@ jobs:
         id: sha
         run: |
           TARBALL_URL="${{ steps.meta.outputs.tarball_url }}"
+          if [ -z "${TARBALL_URL}" ]; then
+            echo "No tarball URL — skipping (no release was made)."
+            exit 0
+          fi
           echo "Fetching: ${TARBALL_URL}"
 
-          # Retry loop: PyPI indexing can lag behind the publish API call by
-          # 30-120 seconds. homebrew-bump fires on tag push, which may race
-          # the release.yml PyPI publish step. Retry with backoff for up to
-          # ~10 minutes before giving up.
-          MAX_ATTEMPTS=20
-          SLEEP_SECONDS=30
-          ATTEMPT=0
-          HTTP_STATUS=0
-
-          while [ "${ATTEMPT}" -lt "${MAX_ATTEMPTS}" ]; do
-            ATTEMPT=$((ATTEMPT + 1))
-            HTTP_STATUS=$(curl --silent --output altergo.tar.gz \
-              --write-out "%{http_code}" \
-              --location "${TARBALL_URL}")
-
-            if [ "${HTTP_STATUS}" = "200" ]; then
-              echo "Attempt ${ATTEMPT}: tarball available (HTTP 200)."
-              break
-            fi
-
-            echo "Attempt ${ATTEMPT}/${MAX_ATTEMPTS}: HTTP ${HTTP_STATUS} from PyPI - waiting ${SLEEP_SECONDS}s before retry."
-            rm -f altergo.tar.gz
-            sleep "${SLEEP_SECONDS}"
-          done
+          HTTP_STATUS=$(curl --silent --output altergo.tar.gz \
+            --write-out "%{http_code}" \
+            --location "${TARBALL_URL}")
 
           if [ "${HTTP_STATUS}" != "200" ]; then
-            echo "ERROR: PyPI tarball not available after ${MAX_ATTEMPTS} attempts."
-            echo "Final HTTP status: ${HTTP_STATUS}"
+            echo "ERROR: PyPI tarball returned HTTP ${HTTP_STATUS}."
             echo "URL: ${TARBALL_URL}"
-            echo "Check that the release.yml PyPI publish step completed successfully."
             exit 1
           fi
 
@@ -111,6 +112,7 @@ jobs:
           echo "SHA256: ${SHA256}"
 
       - name: Checkout tap repo
+        if: steps.meta.outputs.version != ''
         uses: actions/checkout@v4
         with:
           repository: thepixelabs/homebrew-tap
@@ -118,6 +120,7 @@ jobs:
           path: tap
 
       - name: Patch formula
+        if: steps.meta.outputs.version != ''
         env:
           VERSION: ${{ steps.meta.outputs.version }}
           TARBALL_URL: ${{ steps.meta.outputs.tarball_url }}
@@ -145,6 +148,7 @@ jobs:
           grep -E "^\s+(url|sha256)\b" "${FORMULA}"
 
       - name: Open PR against tap
+        if: steps.meta.outputs.version != ''
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
           VERSION: ${{ steps.meta.outputs.version }}

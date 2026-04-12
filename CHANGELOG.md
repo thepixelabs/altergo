@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.22.0 (2026-04-12)
+
+### Features
+
+- Bidirectional mcpServers sync across accounts, preserves per-account oauthAccount
+  ([`eef91f6`](https://github.com/thepixelabs/altergo/commit/eef91f68c58de90588fb8f4b455e0f6ed235c1bc))
+
+
 ## v0.21.2 (2026-04-11)
 
 ### Bug Fixes

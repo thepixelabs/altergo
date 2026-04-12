@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Altergo — multi-account session manager for AI coding assistants (Claude Code, Gemini CLI, Codex, Copilot). Run 'altergo --help' for usage."""
+"""Altergo — multi-account session manager for AI coding assistants. Run 'altergo --help' for usage."""
 
 __version__ = "0.30.0"
 
@@ -282,12 +282,12 @@ def show_banner(
         return
     try:
         import pyfiglet
-        from rich_pyfiglet import RichFiglet
-        from rich.console import Console, Group
-        from rich.text import Text
-        from rich.table import Table
         from rich.align import Align
+        from rich.console import Console, Group
         from rich.spinner import Spinner
+        from rich.table import Table
+        from rich.text import Text
+        from rich_pyfiglet import RichFiglet
         console = Console()
         theme = THEMES.get(get_current_theme(), THEMES[_DEFAULT_THEME])
         theme_id = get_current_theme()
@@ -298,10 +298,8 @@ def show_banner(
         # (so the version sits right next to the figlet, not on the far edge
         # of the terminal) and for centering the account name underneath.
         rendered = pyfiglet.Figlet(font="smslant").renderText("altergo")
-        logo_lines = [l for l in rendered.splitlines() if l.strip()]
-        logo_left = min((len(l) - len(l.lstrip()) for l in logo_lines), default=0)
-        logo_right = max((len(l.rstrip()) for l in logo_lines), default=32)
-        logo_width = logo_right - logo_left
+        logo_lines = [ln for ln in rendered.splitlines() if ln.strip()]
+        logo_right = max((len(ln.rstrip()) for ln in logo_lines), default=32)
 
         # Re-sanitize the latest version string — the cache is trusted
         # territory but we double-check before interpolating into output.
@@ -348,7 +346,6 @@ def show_banner(
         # During the launch-handoff animation the static '*' is replaced by a
         # Rich Spinner so the symbol visibly ticks while the provider warms up.
         if account or greet_line:
-            DIM    = grad[-1]
             BRIGHT = f"bold {grad[0]}"
             MID    = grad[len(grad) // 2] if len(grad) > 2 else grad[0]
 
@@ -495,9 +492,18 @@ def show_help():
         "",
         sep(),
         h("Navigation"),
-        f"  {kw('↑↓')} {kw('jk')}    {dim('move')}    {kw('←→')} {kw('hl')}  {dim('switch account')}    {kw('Enter')}  {dim('launch')}",
-        f"  {kw('t')}       {dim('cycle theme')}   {kw('s')}      {dim('shell mode')}       {kw('d')}      {dim('set default')}",
-        f"  {kw('p')} {kw('Tab')}    {dim('preview')}   {kw('/')}      {dim('search')}           {kw('g')} {kw('G')}   {dim('top / bottom')}",
+        (
+            f"  {kw('↑↓')} {kw('jk')}    {dim('move')}    {kw('←→')} {kw('hl')}"
+            f"  {dim('switch account')}    {kw('Enter')}  {dim('launch')}"
+        ),
+        (
+            f"  {kw('t')}       {dim('cycle theme')}   {kw('s')}      {dim('shell mode')}"
+            f"       {kw('d')}      {dim('set default')}"
+        ),
+        (
+            f"  {kw('p')} {kw('Tab')}    {dim('preview')}   {kw('/')}      {dim('search')}"
+            f"           {kw('g')} {kw('G')}   {dim('top / bottom')}"
+        ),
         f"  {kw('q')} {kw('Esc')}    {dim('quit')}",
         "",
         dim("  altergo · open-source by pixelabs · not affiliated with Anthropic, Google, OpenAI, or GitHub"),
@@ -1234,8 +1240,8 @@ def _fetch_latest_version() -> None:
     version string allowlisted before caching.
     """
     try:
-        import urllib.request
         import urllib.error
+        import urllib.request
 
         class _CappedRedirect(urllib.request.HTTPRedirectHandler):
             """Redirect handler that caps at 3 hops."""
@@ -2440,7 +2446,6 @@ def _draw_picker(stdscr, sessions):
             real_idx_in_display = real_indices.index(di) if di in real_indices else -1
             is_sel = (real_idx_in_display == current)
 
-            project = _truncate(format_project_name(s["project"]), cols["proj"])
             when = _truncate(relative_time(s["modified"]), cols["time"])
             topic = s.get("topic") or ""
             topic_is_empty = not topic
@@ -2492,7 +2497,10 @@ def _draw_picker(stdscr, sessions):
                 cwd = s.get("cwd") or decode_project_path(s["project"])
                 foot = f" {sid}  ·  {cwd}"
                 _safe_addnstr(stdscr, footer_row, 0, _truncate(foot, max_x - 1), max_x - 1, attrs["topic"])
-        nav = " ↑↓/jk move  ·  / search  ·  G top  ·  p/Tab preview  ·  f filter  ·  s sort  ·  g group  ·  Enter resume  ·  q quit  ·  pixelabs"
+        nav = (
+            " ↑↓/jk move  ·  / search  ·  G top  ·  p/Tab preview"
+            "  ·  f filter  ·  s sort  ·  g group  ·  Enter resume  ·  q quit  ·  pixelabs"
+        )
         _draw_animated_nav(stdscr, footer_row + 1, nav, max_x - 1, phase, attrs)
 
         stdscr.refresh()
@@ -2912,7 +2920,9 @@ def _draw_search(stdscr, sessions):
             curses.curs_set(0)
             total_matches = sum(len(r["matches"]) for r in results)
             proj_label = project_input if project_input else "all projects"
-            summary = f"  {total_matches} match{'es' if total_matches != 1 else ''} in {len(results)} session{'s' if len(results) != 1 else ''}  ·  {proj_label}"
+            match_s = "es" if total_matches != 1 else ""
+            session_s = "s" if len(results) != 1 else ""
+            summary = f"  {total_matches} match{match_s} in {len(results)} session{session_s}  ·  {proj_label}"
             _safe_addnstr(stdscr, 2, 2, summary, max_x - 3, attrs["accent"])
 
             query_echo = f'  query: "{query_input}"'
@@ -3922,9 +3932,11 @@ def launch_command(account: str = "default", cmd_args=None):
 # --- Account name disambiguation helper ---
 
 
-_KNOWN_COMMANDS = frozenset(
-    ["shell", "use", "--resume", "--list", "--search", "--config", "--teardown", "--settings", "--version", "--use", "--launch", "--theme", "--update-check", "-h", "--help", "--"]
-)
+_KNOWN_COMMANDS = frozenset([
+    "shell", "use", "--resume", "--list", "--search", "--config",
+    "--teardown", "--settings", "--version", "--use", "--launch",
+    "--theme", "--update-check", "-h", "--help", "--",
+])
 
 
 def _looks_like_account(token: str) -> bool:
@@ -4186,7 +4198,9 @@ def _draw_launcher(stdscr, menu):
 
         # Header
         title = " altergo — launch"
-        right = f"{n_providers} provider{'s' if n_providers != 1 else ''} · {total_accounts} account{'s' if total_accounts != 1 else ''} "
+        prov_s = "s" if n_providers != 1 else ""
+        acct_s = "s" if total_accounts != 1 else ""
+        right = f"{n_providers} provider{prov_s} · {total_accounts} account{acct_s} "
         header = title.ljust(max_x - len(right)) + right
         _safe_addnstr(stdscr, 0, 0, header[:max_x], max_x - 1, attrs["title"])
 
@@ -4233,7 +4247,8 @@ def _draw_launcher(stdscr, menu):
         active_acct = get_active_account()
         if active_acct and max_y > 2:
             active_hint = f" active: {active_acct} "
-            _safe_addnstr(stdscr, 0, max(0, max_x - len(active_hint) - 1), active_hint, len(active_hint), attrs["accent"])
+            hint_col = max(0, max_x - len(active_hint) - 1)
+            _safe_addnstr(stdscr, 0, hint_col, active_hint, len(active_hint), attrs["accent"])
 
         # Nav footer
         theme_hint = f" · theme: {THEMES[get_current_theme()]['display_name']} (t)"
@@ -4309,8 +4324,8 @@ def _first_run_onboarding():
     # function is self-contained and mirrors the pattern in show_banner().
     try:
         from rich.console import Console
-        from rich.text import Text
         from rich.prompt import Prompt
+        from rich.text import Text
         console = Console()
     except Exception:
         # Extremely degraded environment — fall back to plain text and bail.
@@ -4329,7 +4344,7 @@ def _first_run_onboarding():
     try:
         import pyfiglet
         rendered = pyfiglet.Figlet(font="thin").renderText("altergo")
-        logo_lines = [l for l in rendered.splitlines() if l.strip()]
+        logo_lines = [ln for ln in rendered.splitlines() if ln.strip()]
     except Exception:
         logo_lines = ["altergo"]
 
@@ -4363,8 +4378,8 @@ def _first_run_onboarding():
         _spinner_name = "dots"
 
     from rich.live import Live
-    from rich.spinner import Spinner
     from rich.padding import Padding
+    from rich.spinner import Spinner
     from rich.table import Table as _Table
 
     _accent_hex = grad[0]

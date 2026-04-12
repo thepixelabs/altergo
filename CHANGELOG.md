@@ -1,19 +1,12 @@
 # CHANGELOG
 
 
-## v1.0.1 (2026-04-12)
+## v0.30.0 (2026-04-12)
 
 ### Bug Fixes
 
 - Resolve all ruff lint errors (E741, I001, F841, E501)
   ([`76165b9`](https://github.com/thepixelabs/altergo/commit/76165b9f0629cc5dc8e13a1c9eccf29dbd80bce0))
-
-Rename ambiguous variable `l` to `ln` in logo list comprehensions, sort Rich/urllib import blocks,
-  remove unused logo_left/logo_width/DIM/project variables, and wrap long lines in help text, nav
-  string, and frozenset literal.
-
-
-## v0.30.0 (2026-04-12)
 
 ### Documentation
 
@@ -21,7 +14,7 @@ Rename ambiguous variable `l` to `ln` in logo list comprehensions, sort Rich/url
   ([`a655cbf`](https://github.com/thepixelabs/altergo/commit/a655cbf6ebac0f503769dcec0fb6eceaa3546428))
 
 
-## v1.0.0 (2026-04-12)
+## v0.22.0 (2026-04-12)
 
 ### Features
 

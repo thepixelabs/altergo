@@ -307,6 +307,14 @@
       flex-wrap: nowrap;
     }
 
+    .nav-left {
+      display: flex;
+      align-items: center;
+      gap: 0; /* Handled by margins if needed, but flex gap is cleaner */
+      min-width: 0;
+      flex-shrink: 0;
+    }
+
     .nav-brand {
       font-family: var(--font-logo);
       font-size: 1.15rem;
@@ -361,6 +369,32 @@
       .brand-chop {
         transition: none;
       }
+    }
+
+    .nav-version-link {
+      text-decoration: none;
+      margin-left: 8px; /* Adjust as needed for spacing from the logo */
+      flex-shrink: 0;
+      line-height: 1; /* Align vertically with text */
+    }
+    .nav-version {
+      font-family: var(--font-sans); /* Use a more standard font for version */
+      font-size: 0.72rem; /* Smaller font size */
+      font-weight: 500;
+      color: var(--text-2); /* Muted color */
+      background: var(--bg-2);
+      border: 1px solid var(--border-subtle);
+      border-radius: 99px; /* Pill shape */
+      padding: 3px 8px;
+      transition: all var(--transition-fast);
+      display: inline-flex;
+      align-items: center;
+      height: 22px; /* Fixed height for consistency */
+    }
+    .nav-version:hover {
+      color: var(--text-0);
+      border-color: var(--border-glow);
+      background: var(--indigo-glow);
     }
 
     .nav-links {
@@ -1521,9 +1555,14 @@
   <nav id="nav" role="navigation" aria-label="Main navigation">
     <div class="container">
       <div class="nav-inner">
-        <a href="#hero" class="nav-brand" aria-label="altergo home">
-          <span class="brand-alt" aria-hidden="true">alt</span><span class="brand-chop" aria-hidden="true"></span><span class="brand-e" aria-hidden="true">e</span><span class="brand-r" aria-hidden="true">r</span><span class="brand-go" aria-hidden="true">go</span>
-        </a>
+        <div class="nav-left">
+          <a href="#hero" class="nav-brand" aria-label="altergo home">
+            <span class="brand-alt" aria-hidden="true">alt</span><span class="brand-chop" aria-hidden="true"></span><span class="brand-e" aria-hidden="true">e</span><span class="brand-r" aria-hidden="true">r</span><span class="brand-go" aria-hidden="true">go</span>
+          </a>
+          <a href="https://github.com/thepixelabs/altergo/releases" target="_blank" rel="noopener noreferrer" class="nav-version-link" aria-label="View current version v0.30.0 on GitHub">
+            <span class="nav-version">v0.30.0</span>
+          </a>
+        </div>
 
         <div class="nav-right">
           <ul class="nav-links" role="list">

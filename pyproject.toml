@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "altergo"
-version = "1.0.0"
+version = "0.30.0"
 description = "Switch AI identities. Keep your context. — N-account session manager for Claude Code, Gemini CLI, Codex, and Copilot"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -69,7 +69,7 @@ changelog_file = "CHANGELOG.md"
 #   revert     → patch
 # Everything else (docs, style, test, build, ci, chore) → no release
 minor_tags = ["feat"]
-major_tags = []
+major_tags = ["landmark"]
 patch_tags = ["fix", "perf", "refactor", "revert"]
 
 [tool.semantic_release.changelog]

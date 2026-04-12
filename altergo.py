@@ -652,9 +652,6 @@ PROVIDERS = {
             "shell-snapshots", "agents", "plans", "cache",
         ],
         "symlink_files": ["settings.json", "CLAUDE.md", "keybindings.json"],
-        # Top-level $HOME files shared across all accounts (MCP servers, global prefs).
-        # Distinct from symlink_files which live inside <dot_dir>/.
-        "symlink_home_files": [".claude.json"],
     },
     "gemini": {
         "display_name": "Gemini CLI",
@@ -1486,37 +1483,74 @@ def _ensure_symlinked_dir(name: str, src: Path, dst: Path, account_claude: Path)
         return False
 
 
-def _ensure_home_file_symlink(name: str, src: Path, dst: Path) -> None:
-    """Ensure dst (account_home/<name>) is a symlink pointing to src (MAIN_HOME/<name>).
+def _sync_claude_mcps(account_home: Path) -> None:
+    """Sync mcpServers between MAIN_HOME/.claude.json and account_home/.claude.json.
 
-    Migration cases:
-      (a) dst already symlinks to src   -> no-op
-      (b) dst absent, src exists        -> create symlink
-      (c) both absent                   -> do nothing (created on first use)
-      (d) dst real file, src absent     -> promote: move dst → src, then symlink
-      (e) dst real file, src exists     -> warn; leave both untouched
+    Bidirectional merge so MCP servers registered in any account context are
+    available everywhere, without sharing the entire .claude.json (which
+    contains per-account oauthAccount metadata).
+
+    Migration: if account_home/.claude.json is a symlink (from the v0.21.1
+    symlink_home_files approach), it is unsymlinked first.
     """
-    if dst.is_symlink():
-        if dst.resolve() == src.resolve():
-            print(f"  {_c(32, '✓')} {name} already symlinked")
-        else:
-            print(f"  {_c(33, '⚠')} {name} symlinked elsewhere — skipping")
+    main_cfg = MAIN_HOME / ".claude.json"
+    acct_cfg = account_home / ".claude.json"
+
+    # Migration from symlink_home_files (v0.21.1): unsymlink, preserving content
+    if acct_cfg.is_symlink():
+        try:
+            content = acct_cfg.read_text()
+        except (OSError, FileNotFoundError):
+            content = "{}"
+        acct_cfg.unlink()
+        acct_cfg.write_text(content)
+
+    def _load(p):
+        if not p.exists():
+            return {}
+        try:
+            return json.loads(p.read_text())
+        except (json.JSONDecodeError, OSError):
+            return {}
+
+    main_data = _load(main_cfg)
+    acct_data = _load(acct_cfg)
+
+    main_mcps = main_data.get("mcpServers", {})
+    acct_mcps = acct_data.get("mcpServers", {})
+
+    if not main_mcps and not acct_mcps:
         return
-    if not dst.exists():
-        if src.exists():
-            dst.symlink_to(src)
-            print(f"  {_c(32, '✓')} Symlinked {name}")
-        return
-    # dst is a real file
-    if not src.exists():
-        # (d) Promote account file to main home so all accounts share it
-        src.parent.mkdir(parents=True, exist_ok=True)
-        shutil.move(str(dst), str(src))
-        dst.symlink_to(src)
-        print(f"  {_c(32, '✓')} Promoted {name} to shared location")
-    else:
-        # (e) Conflict — both are real files; don't clobber either
-        print(f"  {_c(33, '⚠')} {name} exists in both account home and main home — remove one to share")
+
+    # Union: main provides the base, account overrides on key conflict
+    merged = {**main_mcps, **acct_mcps}
+
+    if merged == main_mcps and merged == acct_mcps:
+        return  # already in sync
+
+    changed = False
+    if main_mcps != merged:
+        main_data["mcpServers"] = merged
+        tmp = main_cfg.with_suffix(".tmp")
+        with open(tmp, "w") as f:
+            json.dump(main_data, f, indent=2)
+            f.write("\n")
+        os.replace(tmp, main_cfg)
+        changed = True
+
+    if acct_mcps != merged:
+        acct_data["mcpServers"] = merged
+        acct_cfg.parent.mkdir(parents=True, exist_ok=True)
+        tmp = acct_cfg.with_suffix(".tmp")
+        with open(tmp, "w") as f:
+            json.dump(acct_data, f, indent=2)
+            f.write("\n")
+        os.replace(tmp, acct_cfg)
+        changed = True
+
+    if changed:
+        count = len(merged)
+        print(f"  {_c(32, '✓')} Synced {count} MCP server{'s' if count != 1 else ''}")
 
 
 def do_config(account: str = "default", providers: list[str] | None = None, default_provider: str | None = None):
@@ -1592,10 +1626,6 @@ def do_config(account: str = "default", providers: list[str] | None = None, defa
             dst.symlink_to(src)
             print(f"  {_c(32, '✓')} Symlinked {name}")
 
-        # Symlink home-level files (live at $HOME/<name>, not inside <dot_dir>/)
-        for name in prov.get("symlink_home_files", []):
-            _ensure_home_file_symlink(name, MAIN_HOME / name, account_home / name)
-
         # Check credentials for this provider
         creds = acct_dot_dir / prov["credentials_file"]
         print()
@@ -1605,6 +1635,10 @@ def do_config(account: str = "default", providers: list[str] | None = None, defa
             print(f"  {_c(33, '⚠')} No {prov['display_name']} credentials found.")
             cmd = f"altergo {account}" if account != "default" else "altergo"
             print(f"     Run '{cmd}' to authenticate.\n")
+
+    # Sync MCP servers for Claude provider (bidirectional, keeps oauthAccount per-account)
+    if "claude" in providers:
+        _sync_claude_mcps(account_home)
 
     # 3. Apply catalog entries (shared CLI tool credentials) at account_home level
     overrides = load_settings()
@@ -1667,12 +1701,7 @@ def do_teardown(account: str = "default"):
                     dst.unlink()
                     print(f"  {_c(33, '✓')} Removed symlink: {prov['dot_dir']}/{name}")
 
-            for name in prov.get("symlink_home_files", []):
-                dst = account_home / name
-                src = MAIN_HOME / name
-                if dst.is_symlink() and dst.resolve() == src.resolve():
-                    dst.unlink()
-                    print(f"  {_c(33, '✓')} Removed symlink: {name}")
+
     else:
         # Legacy account (no account.json) — fall back to SYMLINK_DIRS + SYMLINK_FILES
         for name in SYMLINK_DIRS:
@@ -3585,6 +3614,7 @@ def launch_claude(account: str = "default", args=None, provider: str | None = No
         show_greeting=_load_bool_setting("show_greeting"),
         animate_duration=_anim,
     )
+    _sync_claude_mcps(account_home)
     result = subprocess.run(cmd, env=env)
     _print_launch_message()
     sys.exit(result.returncode)

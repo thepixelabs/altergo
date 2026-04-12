@@ -69,6 +69,7 @@ changelog_file = "CHANGELOG.md"
 #   revert     → patch
 # Everything else (docs, style, test, build, ci, chore) → no release
 minor_tags = ["feat"]
+major_tags = []
 patch_tags = ["fix", "perf", "refactor", "revert"]
 
 [tool.semantic_release.changelog]

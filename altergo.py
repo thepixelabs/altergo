@@ -1768,18 +1768,82 @@ def do_teardown(account: str = "default"):
 # --- Session Discovery ---
 
 
+def _build_provider_map() -> dict:
+    """Return a dict mapping session JSONL path → provider id string.
+
+    Scans every account under ACCOUNTS_DIR, reads its account.json for the
+    provider id, then walks that account's provider dot-dir/projects/ to
+    discover which session files it owns.  Sessions that cannot be attributed
+    to any account fall back to ``"claude"`` (the original behavior before
+    multi-provider support).
+
+    The walk is purely stat-based (no file reads beyond account.json) so it
+    stays cheap even for large session stores.
+    """
+    path_to_provider: dict = {}
+    if not ACCOUNTS_DIR.exists():
+        return path_to_provider
+
+    for acct_name in list_accounts():
+        acct_home = ACCOUNTS_DIR / acct_name
+        meta = load_account_meta(acct_home)
+        if meta is None:
+            provider_id = "claude"
+        else:
+            provider_id = meta.get("provider", "claude")
+
+        prov = PROVIDERS.get(provider_id)
+        if prov is None:
+            continue
+
+        # The provider's projects dir may be a symlink (the common case) or a
+        # real dir (unusual, but we handle it).  We resolve to the canonical
+        # path so comparisons against session paths work regardless.
+        acct_projects = acct_home / prov["dot_dir"] / "projects"
+        try:
+            resolved_projects = acct_projects.resolve()
+        except OSError:
+            continue
+        if not resolved_projects.is_dir():
+            continue
+
+        try:
+            for proj_dir in resolved_projects.iterdir():
+                if not proj_dir.is_dir():
+                    continue
+                try:
+                    for sf in proj_dir.iterdir():
+                        if sf.suffix == ".jsonl":
+                            try:
+                                path_to_provider[sf.resolve()] = provider_id
+                            except OSError:
+                                pass
+                except OSError:
+                    continue
+        except OSError:
+            continue
+
+    return path_to_provider
+
+
 def get_sessions():
     """Find all sessions across all projects, return sorted by modification time.
 
     Cheap pass: stat + first-user-message extraction only. Full preview content
     is loaded on demand by ``load_session_preview`` when the user opens the
     preview pane.
+
+    Each returned session dict includes a ``provider`` field (e.g. ``"claude"``,
+    ``"gemini"``) derived by matching the session file against account ownership
+    via :func:`_build_provider_map`.
     """
     sessions = []
     projects_dir = MAIN_CLAUDE / "projects"
 
     if not projects_dir.exists():
         return sessions
+
+    provider_map = _build_provider_map()
 
     for project_dir in projects_dir.iterdir():
         if not project_dir.is_dir():
@@ -1802,6 +1866,13 @@ def get_sessions():
 
             topic, cwd = _scan_session_head(f)
 
+            # Attribute to a provider; fall back to "claude" for unowned sessions
+            try:
+                resolved_path = f.resolve()
+            except OSError:
+                resolved_path = f
+            provider_id = provider_map.get(resolved_path, "claude")
+
             sessions.append(
                 {
                     "id": session_id,
@@ -1811,6 +1882,7 @@ def get_sessions():
                     "size_mb": size_mb,
                     "path": f,
                     "topic": topic,
+                    "provider": provider_id,
                 }
             )
 
@@ -2022,11 +2094,35 @@ def interactive_picker(sessions):
     return selected
 
 
-def _picker_attrs():
+# Per-page tint offsets: each page picks a different point on the theme's
+# banner gradient for its nav sweep base color, giving each screen a subtly
+# distinct shade while sharing the same palette.
+_PAGE_TINTS = {
+    "resume":      0.0,
+    "settings":    0.15,
+    "launcher":    0.3,
+    "onboarding":  0.45,
+    "search":      0.6,
+    "default":     0.0,
+}
+
+# Curses pair index reserved for the per-page nav tint (allocated once per
+# _picker_attrs call; safe to re-init because curses allows re-init of pairs).
+_NAV_TINT_PAIR = 10
+
+
+def _picker_attrs(page: str = "default"):
     """Initialize color pairs for the picker. Returns an attrs dict.
 
     Falls back to monochrome (A_BOLD/A_REVERSE/A_DIM) when colors aren't
     available so the picker degrades gracefully on dumb terminals.
+
+    Parameters
+    ----------
+    page
+        Logical page name used to select a tint offset from ``_PAGE_TINTS``
+        so each screen's nav sweep animation uses a slightly different shade
+        from the same theme palette.
     """
     has_color = False
     try:
@@ -2077,11 +2173,25 @@ def _picker_attrs():
         attrs["topic"] = curses.A_NORMAL
         attrs["dim"] = curses.A_DIM
         attrs["accent"] = curses.color_pair(2)
-        attrs["nav_base"] = curses.A_NORMAL
         attrs["brand"] = curses.color_pair(3) | curses.A_BOLD
         attrs["shine_peak"] = curses.color_pair(6) | curses.A_BOLD
         attrs["shine_mid"] = curses.color_pair(2) | curses.A_BOLD
         attrs["size_warn"] = curses.color_pair(7) | curses.A_DIM
+
+        # Per-page nav tint: pick a point on the gradient and approximate to
+        # the nearest xterm-256 color so the nav bar has a page-specific shade.
+        nav_base_attr = curses.A_NORMAL
+        if curses.COLORS >= 256:
+            tint_t = _PAGE_TINTS.get(page, 0.0)
+            theme_full = THEMES.get(get_current_theme(), THEMES[_DEFAULT_THEME])
+            tint_hex = _gradient_color(theme_full["banner"], tint_t)
+            try:
+                tint_idx = _hex_to_curses_256(tint_hex)
+                curses.init_pair(_NAV_TINT_PAIR, tint_idx, -1)
+                nav_base_attr = curses.color_pair(_NAV_TINT_PAIR)
+            except (curses.error, Exception):
+                pass
+        attrs["nav_base"] = nav_base_attr
     else:
         attrs["selected"] = curses.A_REVERSE | curses.A_BOLD
         attrs["header"] = curses.A_BOLD | curses.A_UNDERLINE
@@ -2198,9 +2308,38 @@ def _session_matches(s, query):
     return False
 
 
+_RESUME_PROVIDER_CYCLE = [None, "claude", "gemini", "codex", "copilot"]
+_RESUME_SORT_MODES = ["time", "project", "provider"]
+
+
+def _apply_resume_view(sessions, filter_provider, sort_mode, search_query):
+    """Return the sorted+filtered session list for the resume picker.
+
+    Applied in order: provider filter → search filter → sort.
+    """
+    result = sessions
+
+    # Provider filter
+    if filter_provider is not None:
+        result = [s for s in result if s.get("provider") == filter_provider]
+
+    # Text search filter
+    if search_query:
+        result = [s for s in result if _session_matches(s, search_query)]
+
+    # Sort
+    if sort_mode == "project":
+        result = sorted(result, key=lambda s: (format_project_name(s["project"]).lower(),
+                                               -s["modified"].timestamp()))
+    elif sort_mode == "provider":
+        result = sorted(result, key=lambda s: (s.get("provider", ""), -s["modified"].timestamp()))
+    # "time" is the default (already sorted by get_sessions)
+    return result
+
+
 def _draw_picker(stdscr, sessions):
     curses.curs_set(0)
-    attrs = _picker_attrs()
+    attrs = _picker_attrs("resume")
     stdscr.timeout(80)  # ~12fps animation tick — getch() returns -1 on timeout
 
     current = 0
@@ -2209,7 +2348,13 @@ def _draw_picker(stdscr, sessions):
     phase = 0
     search_query = ""     # active filter text ("" = show all)
     search_mode = False   # True while typing in the / search bar
-    filtered = sessions   # visible subset
+
+    # Provider filter + sort state (Feature 1)
+    filter_provider = None   # None = all; or a provider id string
+    sort_mode = "time"       # "time" | "project" | "provider"
+    group_mode = False       # True = insert divider lines between project+provider groups
+
+    filtered = _apply_resume_view(sessions, filter_provider, sort_mode, search_query)
 
     while True:
         stdscr.erase()
@@ -2217,13 +2362,25 @@ def _draw_picker(stdscr, sessions):
         cols = _compute_columns(max_x)
 
         # Title bar
+        n_all = len([s for s in sessions if (filter_provider is None or
+                                              s.get("provider") == filter_provider)])
         if search_query:
-            title = f" altergo — pick a session  ·  {len(filtered)}/{len(sessions)} matching"
+            title = f" altergo — pick a session  ·  {len(filtered)}/{n_all} matching"
+        elif filter_provider:
+            title = f" altergo — pick a session  ·  {len(filtered)} {filter_provider} sessions"
         else:
             title = f" altergo — pick a session  ·  {len(sessions)} total"
         _safe_addnstr(stdscr, 0, 0, title.ljust(max_x), max_x - 1, attrs["title"])
 
-        # Column header row
+        # Status bar: provider filter + sort mode + key hints (row 1)
+        prov_label = filter_provider if filter_provider else "all"
+        sort_label = sort_mode
+        group_label = "on" if group_mode else "off"
+        status = (f" provider: {prov_label}  sort: {sort_label}  group: {group_label}"
+                  f"  [f]ilter [s]ort [g]roup")
+        _safe_addnstr(stdscr, 1, 0, _truncate(status, max_x - 1), max_x - 1, attrs["dim"])
+
+        # Column header row (row 2)
         proj_h = "Project".ljust(cols["proj"])
         time_h = "When".ljust(cols["time"])
         size_h = "Size".rjust(cols["size"])
@@ -2231,21 +2388,57 @@ def _draw_picker(stdscr, sessions):
         col_header = f"  {proj_h}  {time_h}  {size_h}  {topic_h}"
         _safe_addnstr(stdscr, 2, 0, col_header.ljust(max_x), max_x - 1, attrs["header"])
 
-        # Visible area: title(1) + blank(1) + col_header(2) + footer(2)
-        visible_rows = max(1, max_y - 6)
+        # Visible area: title(1) + status(1) + col_header(1) + footer(2) = 5 used
+        visible_rows = max(1, max_y - 5)
 
-        if current < scroll_offset:
-            scroll_offset = current
-        elif current >= scroll_offset + visible_rows:
-            scroll_offset = current - visible_rows + 1
+        # Build display items: a session entry or a group divider string
+        # Dividers are only inserted when group_mode is on.
+        display_items = []  # list of session dict OR None (divider)
+        if group_mode and filtered:
+            last_group_key = None
+            for s in filtered:
+                gk = (s.get("provider", ""), format_project_name(s["project"]))
+                if gk != last_group_key:
+                    if last_group_key is not None:
+                        display_items.append(None)  # divider
+                    last_group_key = gk
+                display_items.append(s)
+        else:
+            display_items = list(filtered)
+
+        # Map cursor index (over real sessions only) to display_items index
+        real_indices = [i for i, item in enumerate(display_items) if item is not None]
+        # Clamp current to valid range
+        if not real_indices:
+            current = 0
+        else:
+            current = max(0, min(current, len(real_indices) - 1))
+
+        # Scroll: keep the display item for current in view
+        if real_indices:
+            display_cursor = real_indices[current]
+            if display_cursor < scroll_offset:
+                scroll_offset = display_cursor
+            elif display_cursor >= scroll_offset + visible_rows:
+                scroll_offset = display_cursor - visible_rows + 1
 
         for i in range(visible_rows):
-            idx = scroll_offset + i
-            if idx >= len(filtered):
+            di = scroll_offset + i
+            if di >= len(display_items):
                 break
-            s = filtered[idx]
+            item = display_items[di]
             row = i + 3
-            is_sel = idx == current
+
+            if item is None:
+                # Divider line
+                div = "  " + ("─" * max(0, max_x - 4))
+                _safe_addnstr(stdscr, row, 0, div[:max_x - 1], max_x - 1, attrs["dim"])
+                continue
+
+            s = item
+            # Determine if this display item is the cursor row
+            real_idx_in_display = real_indices.index(di) if di in real_indices else -1
+            is_sel = (real_idx_in_display == current)
 
             project = _truncate(format_project_name(s["project"]), cols["proj"])
             when = _truncate(relative_time(s["modified"]), cols["time"])
@@ -2258,13 +2451,17 @@ def _draw_picker(stdscr, sessions):
             size_str = f"{s.get('size_mb', 0):.1f}MB".rjust(cols["size"])
             size_attr = attrs["size_warn"] if s.get("size_mb", 0) > 10 else attrs["time"]
 
+            # Provider label suffix in project column (fits after project name if room)
+            prov_tag = f" [{s.get('provider', '')}]"
+            proj_with_tag = _truncate(format_project_name(s["project"]) + prov_tag, cols["proj"])
+
             if is_sel:
-                line = f"▸ {project.ljust(cols['proj'])}  {when.ljust(cols['time'])}  {size_str}  {topic}"
+                line = f"▸ {proj_with_tag.ljust(cols['proj'])}  {when.ljust(cols['time'])}  {size_str}  {topic}"
                 _safe_addnstr(stdscr, row, 0, line.ljust(max_x), max_x - 1, attrs["selected"])
             else:
-                # Render columns separately so each gets its own color
                 _safe_addnstr(stdscr, row, 0, "  ", 2)
-                _safe_addnstr(stdscr, row, 2, project.ljust(cols["proj"]), cols["proj"], attrs["project"])
+                _safe_addnstr(stdscr, row, 2, proj_with_tag.ljust(cols["proj"]),
+                              cols["proj"], attrs["project"])
                 x = 2 + cols["proj"] + 2
                 _safe_addnstr(stdscr, row, x, when.ljust(cols["time"]), cols["time"], attrs["time"])
                 x += cols["time"] + 2
@@ -2289,13 +2486,13 @@ def _draw_picker(stdscr, sessions):
             if search_query:
                 foot = f" /{search_query}"
                 _safe_addnstr(stdscr, footer_row, 0, _truncate(foot, max_x - 1), max_x - 1, attrs["topic"])
-            elif 0 <= current < len(filtered):
+            elif filtered and 0 <= current < len(filtered):
                 s = filtered[current]
                 sid = s["id"]
                 cwd = s.get("cwd") or decode_project_path(s["project"])
                 foot = f" {sid}  ·  {cwd}"
                 _safe_addnstr(stdscr, footer_row, 0, _truncate(foot, max_x - 1), max_x - 1, attrs["topic"])
-        nav = " ↑↓/jk move  ·  / search  ·  g/G top/bot  ·  p/Tab preview  ·  Enter resume  ·  q quit  ·  pixelabs"
+        nav = " ↑↓/jk move  ·  / search  ·  G top  ·  p/Tab preview  ·  f filter  ·  s sort  ·  g group  ·  Enter resume  ·  q quit  ·  pixelabs"
         _draw_animated_nav(stdscr, footer_row + 1, nav, max_x - 1, phase, attrs)
 
         stdscr.refresh()
@@ -2311,22 +2508,19 @@ def _draw_picker(stdscr, sessions):
             if key == 27:  # Esc — cancel search, restore full list
                 search_mode = False
                 search_query = ""
-                filtered = sessions
+                filtered = _apply_resume_view(sessions, filter_provider, sort_mode, "")
                 current = 0
                 scroll_offset = 0
             elif key in (curses.KEY_ENTER, 10, 13):  # Enter — accept filter
                 search_mode = False
             elif key in (curses.KEY_BACKSPACE, 127, 8):
                 search_query = search_query[:-1]
-                if search_query:
-                    filtered = [s for s in sessions if _session_matches(s, search_query)]
-                else:
-                    filtered = sessions
+                filtered = _apply_resume_view(sessions, filter_provider, sort_mode, search_query)
                 current = min(current, max(len(filtered) - 1, 0))
                 scroll_offset = 0
             elif 32 <= key <= 126:  # printable character
                 search_query += chr(key)
-                filtered = [s for s in sessions if _session_matches(s, search_query)]
+                filtered = _apply_resume_view(sessions, filter_provider, sort_mode, search_query)
                 current = min(current, max(len(filtered) - 1, 0))
                 scroll_offset = 0
             continue
@@ -2335,20 +2529,18 @@ def _draw_picker(stdscr, sessions):
         if key in (curses.KEY_UP, ord("k")):
             current = max(0, current - 1)
         elif key in (curses.KEY_DOWN, ord("j")):
-            current = min(len(filtered) - 1, current + 1)
+            current = min(max(len(filtered) - 1, 0), current + 1)
         elif key == curses.KEY_PPAGE:
             current = max(0, current - visible_rows)
         elif key == curses.KEY_NPAGE:
-            current = min(len(filtered) - 1, current + visible_rows)
-        elif key == ord("g"):
-            current = 0
+            current = min(max(len(filtered) - 1, 0), current + visible_rows)
         elif key == ord("G"):
-            current = max(len(filtered) - 1, 0)
+            current = 0  # go to top (vi-like: gg = top; G = bottom, but g taken for group)
         elif key in (curses.KEY_ENTER, 10, 13):
-            if filtered:
+            if filtered and 0 <= current < len(filtered):
                 return filtered[current]
         elif key in (ord("p"), ord(" "), 9):  # p, space, Tab → preview
-            if 0 <= current < len(filtered):
+            if filtered and 0 <= current < len(filtered):
                 s = filtered[current]
                 if s["id"] not in preview_cache:
                     preview_cache[s["id"]] = load_session_preview(s["path"])
@@ -2359,6 +2551,23 @@ def _draw_picker(stdscr, sessions):
         elif key == ord("/"):
             search_mode = True
             search_query = ""
+        elif key == ord("f"):
+            # Cycle provider filter: None → claude → gemini → codex → copilot → None
+            idx = _RESUME_PROVIDER_CYCLE.index(filter_provider) if filter_provider in _RESUME_PROVIDER_CYCLE else 0
+            filter_provider = _RESUME_PROVIDER_CYCLE[(idx + 1) % len(_RESUME_PROVIDER_CYCLE)]
+            filtered = _apply_resume_view(sessions, filter_provider, sort_mode, search_query)
+            current = 0
+            scroll_offset = 0
+        elif key == ord("s"):
+            # Cycle sort mode: time → project → provider → time
+            idx = _RESUME_SORT_MODES.index(sort_mode) if sort_mode in _RESUME_SORT_MODES else 0
+            sort_mode = _RESUME_SORT_MODES[(idx + 1) % len(_RESUME_SORT_MODES)]
+            filtered = _apply_resume_view(sessions, filter_provider, sort_mode, search_query)
+            current = 0
+            scroll_offset = 0
+        elif key == ord("g"):
+            group_mode = not group_mode
+            scroll_offset = 0
         elif key in (ord("q"), 27):
             return None
         elif key == curses.KEY_RESIZE:
@@ -2593,7 +2802,7 @@ def interactive_search(sessions):
 
 def _draw_search(stdscr, sessions):
     curses.curs_set(1)
-    attrs = _picker_attrs()
+    attrs = _picker_attrs("search")
     stdscr.timeout(80)
 
     # Phases: "project_filter" → "query_input" → "scanning" → "results"
@@ -2907,7 +3116,7 @@ def _hex_to_curses_256(hex_color: str) -> int:
 def _draw_settings(stdscr):
     """Multi-page settings TUI. Returns dict of all changes on save, None on cancel."""
     curses.curs_set(0)
-    attrs = _picker_attrs()
+    attrs = _picker_attrs("settings")
 
     # Snapshot original theme so we can restore on cancel
     original_theme = get_current_theme()
@@ -3324,7 +3533,7 @@ def _draw_settings(stdscr):
         max_y, max_x = stdscr.getmaxyx()
 
         # Reload attrs in case theme changed (live preview)
-        attrs = _picker_attrs()
+        attrs = _picker_attrs("settings")
 
         # Tab bar (row 0)
         _draw_tab_bar(max_x)
@@ -3375,7 +3584,7 @@ def _draw_settings(stdscr):
         elif key in (ord("q"), 27):  # Esc / q → cancel
             # Restore original theme on cancel
             set_current_theme(original_theme)
-            _picker_attrs()  # reinit color pairs for restored theme
+            _picker_attrs("settings")  # reinit color pairs for restored theme
             return None
 
         elif key == ord("s"):  # Save
@@ -3778,7 +3987,7 @@ def _prompt_provider_picker(current_provider: str | None = None) -> str:
     def _draw_picker(stdscr, state):
         """Inner curses draw loop. Mutates state dict in-place."""
         curses.curs_set(0)
-        attrs = _picker_attrs()
+        attrs = _picker_attrs("onboarding")
         stdscr.timeout(80)
         phase = 0
 
@@ -3955,7 +4164,7 @@ def build_launcher_menu() -> list:
 def _draw_launcher(stdscr, menu):
     """Two-axis curses TUI: ↑↓ providers, ←→ account chips. Returns (account, shell_mode)."""
     curses.curs_set(0)
-    attrs = _picker_attrs()
+    attrs = _picker_attrs("launcher")
     stdscr.timeout(80)
 
     cursor_row = 0
@@ -4077,7 +4286,7 @@ def _draw_launcher(stdscr, menu):
             nxt = theme_ids[(theme_ids.index(cur) + 1) % len(theme_ids)] if cur in theme_ids else theme_ids[0]
             set_current_theme(nxt)
             save_persisted_theme(nxt)
-            attrs = _picker_attrs()
+            attrs = _picker_attrs("launcher")
             confirm = f" ✓ theme: {THEMES[nxt]['display_name']} — {THEMES[nxt]['description']} "
             _safe_addnstr(stdscr, max_y - 1, 0, confirm[:max_x - 1].ljust(max_x - 1), max_x - 1, attrs["accent"])
             stdscr.refresh()

@@ -1,33 +1,7 @@
 # CHANGELOG
 
 
-## v1.1.0 (2026-04-12)
-
-### Features
-
-- Provider filter+sort in --resume, per-page gradient nav
-  ([`9c3b1e9`](https://github.com/thepixelabs/altergo/commit/9c3b1e9d0cc624c467c2690cb94fc6c3378ea4c3))
-
-Feature 1 — resume TUI: - `get_sessions()` now tags each session dict with a `provider` field by
-  scanning ACCOUNTS_DIR accounts via `_build_provider_map()`, which resolves each account's provider
-  dot-dir/projects/ tree to match JSONL files. Sessions not attributable to any alt-provider account
-  fall back to "claude". - New `_apply_resume_view()` helper applies provider filter → search → sort
-  in one pass, keeping all filter/sort logic out of the draw loop. - `_draw_picker()` gains: f key —
-  cycle provider filter (all → claude → gemini → codex → copilot → all) s key — cycle sort mode
-  (time → project → provider) g key — toggle group mode (inserts divider lines between
-  project+provider groups) status bar on row 1 showing active filter/sort/group + key hints provider
-  tag appended to the project column in each session row
-
-Feature 2 — per-page gradient nav tint: - Added `_PAGE_TINTS` dict mapping page names to gradient
-  t-offsets (0.0–1.0). - `_picker_attrs(page="default")` now accepts a page parameter and, on
-  256-color terminals, picks a point on the theme's banner gradient for `nav_base`, giving each
-  page's nav sweep a distinct shade. - All `_picker_attrs()` call sites updated with their page
-  name: resume, settings, launcher, search, onboarding.
-
-Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
-
-
-## v1.0.0 (2026-04-12)
+## v0.30.0 (2026-04-12)
 
 ### Features
 

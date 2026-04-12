@@ -63,8 +63,8 @@ jobs:
           REPO="${{ github.repository }}"
 
           HEAD_SHA=$(gh api "repos/${REPO}/actions/runs/${RUN_ID}" --jq '.head_sha')
-          TAG=$(gh api "repos/${REPO}/tags" --jq \
-            --arg sha "${HEAD_SHA}" \
+          TAG=$(gh api "repos/${REPO}/tags" | \
+            jq -r --arg sha "${HEAD_SHA}" \
             '[.[] | select(.commit.sha == $sha) | select(.name | test("^v[0-9]"))] | first | .name')
 
           if [ -z "${TAG}" ] || [ "${TAG}" = "null" ]; then

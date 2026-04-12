@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Altergo — multi-account session manager for AI coding assistants (Claude Code, Gemini CLI, Codex, Copilot). Run 'altergo --help' for usage."""
 
-__version__ = "1.0.0"
+__version__ = "0.30.0"
 
 import curses
 import json

@@ -1,13 +1,25 @@
 # CHANGELOG
 
 
+## v1.0.0 (2026-04-12)
+
+### Features
+
+- One account one provider — remove multi-provider bundling (v0.22.0)
+  ([`e635bf9`](https://github.com/thepixelabs/altergo/commit/e635bf9de1bdeaa4484964bc6e00f9301a80842e))
+
+- Strip providers list from account.json; each account now has exactly one provider - Replace
+  multi-select provider TUI with single-select picker - Remove 'use' subcommand (replaced with clear
+  error pointing to --config) - v2 account.json schema: {"version": 2, "provider": "<id>"} -
+  Auto-upgrade legacy accounts (no account.json) on first launch - Per-provider sweep in
+  _sweep_existing_accounts using v2 single-provider metadata - Restore _sync_claude_mcps for
+  bidirectional MCP server sync (from eef91f6) - Version bump to 0.22.0
+
+- Per-provider sweep in _sweep_existing_accounts, fix --provider help text
+  ([`0b31efc`](https://github.com/thepixelabs/altergo/commit/0b31efc532a631886fa69758c1c429ae0b8b208e))
+
+
 ## v0.22.0 (2026-04-12)
-
-### Breaking Changes
-
-- breaking: remove multi-provider-per-account — each account now has exactly one provider
-- remove: `altergo <name> use <provider>` subcommand — create separate accounts per provider instead
-- fix: v1 account.json files auto-upgrade to v2 schema on first run (silent, written to disk)
 
 ### Features
 

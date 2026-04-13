@@ -1589,13 +1589,13 @@ def home_change_notice_if_needed() -> None:
 
         # ── notice content ───────────────────────────────────────────────────
         NOTICE = [
-            ("Each account runs in its own HOME folder —",  False),
-            ("like a separate desk for each AI identity.",  False),
-            ("",                                            False),
+            ("Each account runs in its own HOME folder —", False),
+            ("like a separate desk for each AI identity.", False),
+            ("", False),
             ("Tools like pip, cargo, gem, and yarn won't", False),
-            ("see packages from your main account.",        False),
-            ("",                                            False),
-            ("altergo --settings  →  Credentials tab",     True),
+            ("see packages from your main account.", False),
+            ("", False),
+            ("altergo --settings  →  Credentials tab", True),
         ]
         HINT = "shown once  ·  press any key to continue"
 
@@ -1702,8 +1702,8 @@ def home_change_notice_if_needed() -> None:
             fade_sections.append({"type": "text", **item})
         fade_sections.append({"type": "hint", "row": hint_row})
 
-        WAVE_FRAMES = 32   # total frames for the whole wave
-        STAGGER = 3        # frames between each section starting its fade
+        WAVE_FRAMES = 32  # total frames for the whole wave
+        STAGGER = 3  # frames between each section starting its fade
         FRAME_DT = 0.038
 
         for frame in range(WAVE_FRAMES):
@@ -1748,7 +1748,8 @@ def home_change_notice_if_needed() -> None:
         print("  " + _c(dim, "Each account runs in its own HOME folder — tools like pip, cargo,"))
         print("  " + _c(dim, "gem, and yarn won't see packages from your main account."))
         print()
-        print("  " + _c(dim, "Fix:  ") + _c(cmd, "altergo --settings") + _c(dim, "  →  Credentials  →  Package Managers"))
+        suffix = _c(dim, "  →  Credentials  →  Package Managers")
+        print("  " + _c(dim, "Fix:  ") + _c(cmd, "altergo --settings") + suffix)
         print()
     finally:
         sys.stdout.write("\033[?25h")  # always restore cursor

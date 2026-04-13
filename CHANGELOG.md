@@ -1,6 +1,27 @@
 # CHANGELOG
 
 
+## v0.32.0 (2026-04-13)
+
+### Features
+
+- Tmux session persistence for SSH workflows ([#11](https://github.com/thepixelabs/altergo/pull/11),
+  [`8bc332a`](https://github.com/thepixelabs/altergo/commit/8bc332ad68528be4d91098ba15ca30bef3153849))
+
+* feat: tmux session persistence for SSH workflows
+
+Add a tmux_session setting (default off) that wraps every provider session in a named tmux window.
+  Sessions survive SSH disconnects and can be reattached with tmux attach -t <name>. Detects $TMUX
+  to avoid nesting; falls back gracefully with a brew install hint if tmux is absent.
+
+- _tmux_available(), _tmux_session_name(), _build_tmux_cmd() helpers - launch_claude, launch_shell,
+  launch_command all honour the setting - Behavior page in settings TUI gains a tmux sessions toggle
+  - docs/settings.md: new tmux persistence section + key reference - 9 new tests covering defaults,
+  persistence, name format, cmd structure
+
+* fix: ruff formatting
+
+
 ## v0.31.1 (2026-04-13)
 
 ### Bug Fixes

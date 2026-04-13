@@ -94,12 +94,6 @@ curl -fsSL \
 chmod +x ~/.local/bin/altergo
 ```
 
-**Homebrew**
-
-```bash
-brew install thepixelabs/tap/altergo
-```
-
 **Requirements:** Python 3.10+, one or more supported AI CLI tools installed (Claude Code, Gemini CLI, Codex, or GitHub Copilot), macOS or Linux.
 
 ---

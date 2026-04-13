@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.33.2 (2026-04-13)
+
+### Bug Fixes
+
+- **cli**: Validate arguments before launch and add launch messages
+  ([`ae71297`](https://github.com/thepixelabs/altergo/commit/ae71297f9a98ec906fa6d38da2c464b886d7099c))
+
+
 ## v0.33.1 (2026-04-13)
 
 ### Bug Fixes

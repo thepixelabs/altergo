@@ -829,6 +829,10 @@
       background: #0a0c1a;
       border: 1px solid rgba(255,255,255,0.07);
       position: relative;
+      /* Promote the terminal to its own compositing layer so the canvas
+         rAF loop, shimmer animations, and cursor blink cannot trigger
+         repaints of this subtree and vice-versa. */
+      will-change: transform;
     }
 
     .term-titlebar {
@@ -861,6 +865,10 @@
       background: #090b18;
       overflow: hidden;
       position: relative;
+      /* Paint/layout containment: changes inside the terminal body cannot
+         affect layout or paint outside it, preventing the whole page from
+         repainting when characters are typed or lines are appended. */
+      contain: layout paint;
     }
 
     /* Terminal output lines */
@@ -896,6 +904,9 @@
       animation: cursor-blink 1.1s step-end infinite;
       opacity: 0;
       transition: opacity 0.15s;
+      /* Keep blink animation on the GPU so it never invalidates the
+         surrounding text paint. */
+      will-change: opacity;
     }
     .term-cursor.active { opacity: 1; }
     @keyframes cursor-blink {
@@ -1128,11 +1139,13 @@
     @media (max-width: 900px) { .features-grid { grid-template-columns: repeat(2, 1fr); } }
     @media (max-width: 540px) { .features-grid { grid-template-columns: 1fr; } }
 
+    /* Shimmer uses transform (compositor-only) instead of background-position
+       (paint property) so the animation never invalidates surrounding paint. */
     @keyframes shimmer-card {
-      0%, 75%   { background-position: 150% 150%; opacity: 0; }
+      0%, 75%   { transform: translateX(200%) translateY(200%) rotate(-45deg); opacity: 0; }
       78%        { opacity: 1; }
-      88%        { background-position: -50% -50%; opacity: 1; }
-      92%, 100%  { background-position: -50% -50%; opacity: 0; }
+      88%        { transform: translateX(-200%) translateY(-200%) rotate(-45deg); opacity: 1; }
+      92%, 100%  { transform: translateX(-200%) translateY(-200%) rotate(-45deg); opacity: 0; }
     }
 
     .feature-item {
@@ -1150,7 +1163,10 @@
     .feature-item::before {
       content: '';
       position: absolute;
-      inset: 0;
+      /* Oversized stripe so it fully covers the card as it sweeps across */
+      inset: -100%;
+      width: 300%;
+      height: 300%;
       background: linear-gradient(
         225deg,
         transparent 30%,
@@ -1159,12 +1175,13 @@
         rgba(255, 255, 255, 0.07) 60%,
         transparent 70%
       );
-      background-size: 300% 300%;
-      background-position: 150% 150%;
+      transform: translateX(200%) translateY(200%) rotate(-45deg);
       animation: shimmer-card var(--shimmer-duration, 8s) var(--shimmer-delay, 0s) infinite;
       pointer-events: none;
       z-index: 1;
       border-radius: inherit;
+      /* GPU-composited — no paint invalidation on surrounding content. */
+      will-change: transform, opacity;
     }
     .feature-item:hover {
       border-color: var(--border-glow);
@@ -1402,6 +1419,22 @@
       color: var(--rose);
       border-color: rgba(244, 63, 94, 0.2);
     }
+    .pypi-dl {
+      font-size: 0.65rem;
+      color: var(--text-3);
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      cursor: pointer;
+      opacity: 0.7;
+      transition: opacity 0.15s;
+      user-select: none;
+      white-space: nowrap;
+    }
+    .pypi-dl:hover { opacity: 1; }
+    .pypi-dl.loading { opacity: 0.4; cursor: default; }
+    .pypi-dl:empty { display: none; }
 
     .code-block {
       background: var(--bg-0);
@@ -2042,6 +2075,7 @@
               <div class="install-method-label">
                 pip
                 <span class="badge">Recommended</span>
+                <span class="pypi-dl" id="pypi-downloads" role="status" aria-label="PyPI monthly downloads" title="Click to refresh download count"></span>
               </div>
               <div class="code-block">
                 <code><span class="comment"># Install from PyPI</span>
@@ -2718,8 +2752,9 @@
 
           case 'output': {
             const el = appendLine(step.html || '&nbsp;');
-            // Scroll to bottom
-            body.scrollTop = body.scrollHeight;
+            // Note: .term-body has overflow:hidden so scrollTop is always 0;
+            // the assignment was a no-op but still forced a style flush on
+            // every output step — removed to eliminate unnecessary reflows.
             // Start next prompt line if html is empty (blank gap before next prompt)
             if (step.html === '') startPromptLine();
             timer = setTimeout(run, step.delay || 100);
@@ -2777,6 +2812,48 @@
         clearTerminal();
         run();
       }, 900);
+
+      // PyPI download count
+      (function () {
+        const el = document.getElementById('pypi-downloads');
+        if (!el) return;
+
+        function fmt(n) {
+          return n >= 1000 ? (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k' : String(n);
+        }
+
+        function load() {
+          el.classList.add('loading');
+          el.setAttribute('title', 'Refreshing…');
+          fetch('https://pypistats.org/api/packages/altergo/recent', { cache: 'no-cache' })
+            .then(r => r.json())
+            .then(({ data }) => {
+              const n = data && data.last_month;
+              if (typeof n !== 'number') throw new Error('no data');
+              el.textContent = '';
+              // arrow icon
+              const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+              svg.setAttribute('width', '9'); svg.setAttribute('height', '9');
+              svg.setAttribute('viewBox', '0 0 24 24'); svg.setAttribute('fill', 'none');
+              svg.setAttribute('stroke', 'currentColor'); svg.setAttribute('stroke-width', '2.5');
+              svg.setAttribute('stroke-linecap', 'round'); svg.setAttribute('stroke-linejoin', 'round');
+              svg.setAttribute('aria-hidden', 'true');
+              svg.innerHTML = '<path d="M12 4v16m-7-7 7 7 7-7"/>';
+              el.appendChild(svg);
+              el.appendChild(document.createTextNode('\u202f' + fmt(n) + '/mo'));
+              el.classList.remove('loading');
+              el.setAttribute('title', n.toLocaleString() + ' downloads last month — click to refresh');
+            })
+            .catch(() => {
+              el.textContent = '';
+              el.classList.remove('loading');
+              el.setAttribute('title', 'Click to refresh download count');
+            });
+        }
+
+        el.addEventListener('click', load);
+        load();
+      })();
 
       // Pause / resume when tab visibility changes
       document.addEventListener('visibilitychange', () => {

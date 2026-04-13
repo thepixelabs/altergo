@@ -34,6 +34,7 @@ Toggle switches for launch and session messages:
 | Update checker | On | Check PyPI for new altergo versions daily |
 | Greeting messages | On | Show a time-of-day greeting beneath the banner on launch |
 | Goodbye messages | On | Print a witty one-liner to stderr after each session ends |
+| tmux sessions | Off | Wrap every session in a named tmux window so it survives SSH disconnects and can be reattached later |
 
 ### Credentials
 
@@ -58,6 +59,27 @@ Items marked with a warning icon have security implications — the warning is s
 | `s` | Save all changes and exit |
 | `q` / `Esc` | Cancel — discard all changes and exit |
 | `PgUp` / `PgDn` | Scroll (Credentials page) |
+
+---
+
+## tmux session persistence
+
+When **tmux sessions** is enabled, every `altergo` invocation wraps the provider session in a dedicated tmux window. This means:
+
+- **SSH disconnects are safe** — the AI session keeps running on the host machine even if your terminal app closes or the connection drops.
+- **Reattach from anywhere** — open a new SSH session, run `tmux ls` to list active sessions, and `tmux attach -t <session-name>` to reconnect.
+- **Session names** follow the pattern `altergo-<account>-<provider>-<id>` (e.g. `altergo-work-claude-a3f9b2`) so they are easy to identify.
+- **Already inside tmux?** altergo detects the `$TMUX` environment variable and skips the wrapper to avoid nesting sessions.
+- **tmux not installed?** altergo falls back to a plain session and prints an install hint (`brew install tmux`).
+
+Quick reference once inside a tmux session:
+
+| Key | Action |
+|---|---|
+| `Ctrl-b d` | Detach — leave the session running, return to shell |
+| `Ctrl-b [` | Scroll mode — use arrow keys to scroll back |
+| `tmux ls` | List all running sessions (run from any shell) |
+| `tmux attach -t <name>` | Reattach to a session by name |
 
 ---
 
@@ -91,6 +113,7 @@ All settings are stored in `~/.altergo/.altergo.json`. This file is above the `a
   "show_greeting": true,
   "show_goodbye": true,
   "launch_animation": true,
+  "tmux_session": false,
   "active_account": "work",
   "shared": {
     "ssh": true,
@@ -99,6 +122,6 @@ All settings are stored in `~/.altergo/.altergo.json`. This file is above the `a
 }
 ```
 
-Missing keys fall back to their defaults (all boolean settings default to `true`, theme defaults to `"ocean"`). The `shared` dict only stores entries that differ from catalog defaults — an empty `shared` object means everything is at its default.
+Missing keys fall back to their defaults (`tmux_session` defaults to `false`; all other boolean settings default to `true`; theme defaults to `"ocean"`). The `shared` dict only stores entries that differ from catalog defaults — an empty `shared` object means everything is at its default.
 
 Editing this file by hand is supported. Changes take effect on the next `altergo` invocation.

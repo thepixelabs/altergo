@@ -8,6 +8,7 @@ import json
 import os
 import pwd
 import re
+import secrets
 import shutil
 import subprocess
 import sys
@@ -493,6 +494,8 @@ def show_help():
         f"  {kw('altergo --resume')} {arg('<id>')}             {dim('Resume by session ID')}",
         f"  {kw('altergo --search')}                   {dim('Search conversation history')}",
         f"  {kw('altergo --list')}                     {dim('List recent sessions')}",
+        f"  {kw('altergo --star')}                     {dim('Star the last exited session')}",
+        f"  {kw('altergo --star')} {arg('<id>')}               {dim('Star a session by ID')}",
         "",
         sep(),
         h("Customization"),
@@ -560,6 +563,12 @@ _RESERVED_NAMES = frozenset(
 
 # Settings file — global (shared across all accounts)
 SETTINGS_FILE = MAIN_HOME / ".altergo" / ".altergo.json"
+
+# Starred conversations — separate from main config
+STARRED_FILE = MAIN_HOME / ".altergo" / "starred.json"
+
+# Last exited session — written after each provider subprocess exits
+LAST_SESSION_FILE = MAIN_HOME / ".altergo" / "last_session.json"
 
 
 # --- Account helpers ---
@@ -1005,6 +1014,144 @@ def save_settings(overrides):
     tmp = SETTINGS_FILE.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(data, indent=2))
     os.replace(str(tmp), str(SETTINGS_FILE))
+
+
+# --- Starred conversations ---
+
+
+def load_starred_entries() -> list:
+    """Return the full list of starred session entry dicts."""
+    if not STARRED_FILE.exists():
+        return []
+    try:
+        data = json.loads(STARRED_FILE.read_text())
+        return [e for e in data.get("starred", []) if isinstance(e.get("id"), str)]
+    except Exception:
+        return []
+
+
+def load_starred_ids() -> set:
+    """Return the set of starred session IDs (cheap for membership tests)."""
+    return {e["id"] for e in load_starred_entries()}
+
+
+def _save_starred(entries: list) -> None:
+    """Atomically persist starred entries to STARRED_FILE."""
+    STARRED_FILE.parent.mkdir(parents=True, exist_ok=True)
+    data = {"version": 1, "starred": entries}
+    tmp = STARRED_FILE.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(data, indent=2))
+    os.replace(str(tmp), str(STARRED_FILE))
+
+
+def star_session(session_id: str, provider: str, project: str, topic: str) -> None:
+    """Add a session to the starred list (no-op if already starred)."""
+    entries = load_starred_entries()
+    if any(e["id"] == session_id for e in entries):
+        return
+    entries.append(
+        {
+            "id": session_id,
+            "provider": provider,
+            "project": project,
+            "topic": topic or "",
+            "starred_at": datetime.now().isoformat(timespec="seconds"),
+        }
+    )
+    _save_starred(entries)
+
+
+def unstar_session(session_id: str) -> None:
+    """Remove a session from the starred list."""
+    _save_starred([e for e in load_starred_entries() if e["id"] != session_id])
+
+
+def toggle_starred_session(session_id: str, provider: str, project: str, topic: str) -> bool:
+    """Toggle star on a session. Returns True if now starred, False if now unstarred."""
+    entries = load_starred_entries()
+    if any(e["id"] == session_id for e in entries):
+        _save_starred([e for e in entries if e["id"] != session_id])
+        return False
+    entries.append(
+        {
+            "id": session_id,
+            "provider": provider,
+            "project": project,
+            "topic": topic or "",
+            "starred_at": datetime.now().isoformat(timespec="seconds"),
+        }
+    )
+    _save_starred(entries)
+    return True
+
+
+# --- Last-session tracking ---
+
+
+def save_last_session(session_id: str, provider: str, project: str, topic: str) -> None:
+    """Persist the last exited session info for ``altergo --star`` to read."""
+    data = {
+        "id": session_id,
+        "provider": provider,
+        "project": project,
+        "topic": topic or "",
+        "timestamp": datetime.now().isoformat(timespec="seconds"),
+    }
+    LAST_SESSION_FILE.parent.mkdir(parents=True, exist_ok=True)
+    tmp = LAST_SESSION_FILE.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(data, indent=2))
+    os.replace(str(tmp), str(LAST_SESSION_FILE))
+
+
+def load_last_session() -> dict | None:
+    """Return the last exited session dict, or None if unavailable."""
+    if not LAST_SESSION_FILE.exists():
+        return None
+    try:
+        return json.loads(LAST_SESSION_FILE.read_text())
+    except Exception:
+        return None
+
+
+def _record_last_session_after_exit(provider: str) -> None:
+    """Scan for the newest JSONL session file and write it to LAST_SESSION_FILE.
+
+    Called immediately after the provider subprocess exits so that
+    ``altergo --star`` can star the session without needing its ID.
+    """
+    projects_dir = MAIN_CLAUDE / "projects"
+    if not projects_dir.exists():
+        return
+
+    newest_path = None
+    newest_mtime = 0.0
+
+    try:
+        for proj_dir in projects_dir.iterdir():
+            if not proj_dir.is_dir():
+                continue
+            try:
+                for f in proj_dir.iterdir():
+                    if f.suffix != ".jsonl" or f.parent.name == "subagents":
+                        continue
+                    try:
+                        mtime = f.stat().st_mtime
+                        if mtime > newest_mtime:
+                            newest_mtime = mtime
+                            newest_path = f
+                    except OSError:
+                        pass
+            except OSError:
+                pass
+    except OSError:
+        return
+
+    if newest_path is None:
+        return
+
+    session_id = newest_path.stem
+    topic, _ = _scan_session_head(newest_path)
+    save_last_session(session_id, provider, newest_path.parent.name, topic or "")
 
 
 def load_persisted_theme() -> str:
@@ -2030,6 +2177,37 @@ def _sync_claude_mcps(account_home: Path) -> None:
         print(f"  {_c(32, '✓')} Synced {count} MCP server{'s' if count != 1 else ''}")
 
 
+def do_star(session_id: str | None = None) -> None:
+    """Star a session by ID, or the last exited session if no ID given."""
+    if session_id is not None:
+        # Look the session up in the live session list so we have full metadata.
+        sessions = get_sessions()
+        match = next((s for s in sessions if s["id"] == session_id), None)
+        if match is None:
+            print(f"altergo: session '{session_id}' not found.", file=sys.stderr)
+            sys.exit(1)
+        star_session(match["id"], match.get("provider", "claude"), match["project"], match.get("topic") or "")
+        topic_hint = match.get("topic") or "(no topic)"
+        print(f"  {_c(C('accent'), '★')} Starred {_c(C('command'), match['id'])} [{match.get('provider', 'claude')}]")
+        print(_c(C("dim"), f"  {topic_hint}"))
+        return
+
+    last = load_last_session()
+    if last is None:
+        print(
+            "altergo: no recent session found.\n"
+            "  Run a conversation first, or provide a session ID:\n"
+            "  altergo --star <session-id>",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    star_session(last["id"], last.get("provider", "claude"), last.get("project", ""), last.get("topic") or "")
+    topic_hint = last.get("topic") or "(no topic)"
+    print(f"  {_c(C('accent'), '★')} Starred {_c(C('command'), last['id'])} [{last.get('provider', 'claude')}]")
+    print(_c(C("dim"), f"  {topic_hint}"))
+
+
 def do_config(account: str = "default", provider: str = "claude"):
     account_home, account_claude = resolve_account(account)
     show_banner(account)
@@ -2286,6 +2464,7 @@ def get_sessions():
         return sessions
 
     provider_map = _build_provider_map()
+    starred_ids = load_starred_ids()
 
     for project_dir in projects_dir.iterdir():
         if not project_dir.is_dir():
@@ -2325,6 +2504,7 @@ def get_sessions():
                     "path": f,
                     "topic": topic,
                     "provider": provider_id,
+                    "starred": session_id in starred_ids,
                 }
             )
 
@@ -2796,6 +2976,9 @@ def _draw_picker(stdscr, sessions):
 
     filtered = _apply_resume_view(sessions, filter_provider, sort_mode, search_query)
 
+    # Starred state is live-edited inside the picker without restarting.
+    # sessions dicts carry a "starred" bool that we mutate in place on toggle.
+
     while True:
         stdscr.erase()
         max_y, max_x = stdscr.getmaxyx()
@@ -2892,11 +3075,15 @@ def _draw_picker(stdscr, sessions):
             prov_tag = f" [{s.get('provider', '')}]"
             proj_with_tag = _truncate(format_project_name(s["project"]) + prov_tag, cols["proj"])
 
+            is_starred_row = s.get("starred", False)
+            star_ch = "★" if is_starred_row else " "
+
             if is_sel:
-                line = f"▸ {proj_with_tag.ljust(cols['proj'])}  {when.ljust(cols['time'])}  {size_str}  {topic}"
+                gutter = f"▸{star_ch}"
+                line = f"{gutter}{proj_with_tag.ljust(cols['proj'])}  {when.ljust(cols['time'])}  {size_str}  {topic}"
                 _safe_addnstr(stdscr, row, 0, line.ljust(max_x), max_x - 1, attrs["selected"])
             else:
-                _safe_addnstr(stdscr, row, 0, "  ", 2)
+                _safe_addnstr(stdscr, row, 0, f" {star_ch}", 2)
                 _safe_addnstr(stdscr, row, 2, proj_with_tag.ljust(cols["proj"]), cols["proj"], attrs["project"])
                 x = 2 + cols["proj"] + 2
                 _safe_addnstr(stdscr, row, x, when.ljust(cols["time"]), cols["time"], attrs["time"])
@@ -2930,7 +3117,7 @@ def _draw_picker(stdscr, sessions):
                 _safe_addnstr(stdscr, footer_row, 0, _truncate(foot, max_x - 1), max_x - 1, attrs["topic"])
         nav = (
             " ↑↓/jk move  ·  / search  ·  G top  ·  p/Tab preview"
-            "  ·  f filter  ·  s sort  ·  g group  ·  Enter resume  ·  q quit  ·  pixelabs"
+            "  ·  f filter  ·  s sort  ·  g group  ·  * star  ·  Enter resume  ·  q quit  ·  pixelabs"
         )
         _draw_animated_nav(stdscr, footer_row + 1, nav, max_x - 1, phase, attrs)
 
@@ -3007,6 +3194,19 @@ def _draw_picker(stdscr, sessions):
         elif key == ord("g"):
             group_mode = not group_mode
             scroll_offset = 0
+        elif key == ord("*"):
+            if filtered and 0 <= current < len(filtered):
+                s = filtered[current]
+                now_starred = toggle_starred_session(
+                    s["id"], s.get("provider", "claude"), s["project"], s.get("topic") or ""
+                )
+                # Update the starred flag in-place on the shared session dict so
+                # the gutter indicator updates immediately without a full reload.
+                s["starred"] = now_starred
+                for sess in sessions:
+                    if sess["id"] == s["id"]:
+                        sess["starred"] = now_starred
+                        break
         elif key in (ord("q"), 27):
             return None
         elif key == curses.KEY_RESIZE:
@@ -3580,6 +3780,7 @@ def _draw_settings(stdscr):
     update_check = load_update_check_enabled()
     show_greeting = _load_bool_setting("show_greeting")
     show_goodbye = _load_bool_setting("show_goodbye")
+    tmux_session = _load_bool_setting("tmux_session", default=False)
 
     # Page 2: Credentials
     cred_overrides = dict(load_settings())
@@ -3605,9 +3806,9 @@ def _draw_settings(stdscr):
     page0_cursor = current_theme_idx
     page0_n = len(theme_names) + 3  # themes + launch_anim + random toggle + freq slider
 
-    # Page 1: rows = [update_check, show_greeting, show_goodbye]
+    # Page 1: rows = [update_check, show_greeting, show_goodbye, tmux_session]
     page1_cursor = 0
-    page1_n = 3
+    page1_n = 4
 
     # Page 2: credential entries (selectable positions in cred_selectable)
     page2_cursor = 0
@@ -3842,6 +4043,7 @@ def _draw_settings(stdscr):
             ("update_check", update_check, "Update check", "Check PyPI for new altergo versions"),
             ("show_greeting", show_greeting, "Greeting messages", "Time-of-day greeting on launch"),
             ("show_goodbye", show_goodbye, "Goodbye messages", "Witty message after each session"),
+            ("tmux_session", tmux_session, "tmux sessions", "Wrap sessions in tmux for SSH persistence"),
         ]
 
         for ti, (key, val, label, hint) in enumerate(toggles):
@@ -3950,6 +4152,7 @@ def _draw_settings(stdscr):
                 "  Default on. Checks PyPI daily — can be disabled for air-gapped setups",
                 "  Friendly time-of-day line shown beneath the banner on launch",
                 "  Witty one-liner printed to stderr after every session ends",
+                "  Each session runs inside a named tmux window — survive SSH drops, reattach anytime",
             ]
             if 0 <= page1_cursor < len(hints_behavior):
                 _safe_addnstr(stdscr, footer_row, 0, hints_behavior[page1_cursor][: max_x - 1], max_x - 1, attrs["dim"])
@@ -4036,6 +4239,7 @@ def _draw_settings(stdscr):
                 "update_check": update_check,
                 "show_greeting": show_greeting,
                 "show_goodbye": show_goodbye,
+                "tmux_session": tmux_session,
                 "random_theme_enabled": random_theme_on,
                 "random_theme_frequency": random_theme_freq,
                 "shared": {k: v for k, v in cred_overrides.items() if cred_defaults.get(k) != v},
@@ -4094,6 +4298,8 @@ def _draw_settings(stdscr):
                     show_greeting = not show_greeting
                 elif page1_cursor == 2:
                     show_goodbye = not show_goodbye
+                elif page1_cursor == 3:
+                    tmux_session = not tmux_session
 
         elif current_page == 2:
             if key in (curses.KEY_UP, ord("k")):
@@ -4139,6 +4345,7 @@ def interactive_settings():
     data["update_check"] = result.get("update_check", True)
     data["show_greeting"] = result.get("show_greeting", True)
     data["show_goodbye"] = result.get("show_goodbye", True)
+    data["tmux_session"] = result.get("tmux_session", False)
     data["random_theme_enabled"] = result.get("random_theme_enabled", False)
     data["random_theme_frequency"] = result.get("random_theme_frequency", 3)
     # random_theme_counter is managed by maybe_rotate_random_theme — do not touch it here
@@ -4257,6 +4464,37 @@ def _sweep_existing_accounts() -> bool:
     return changed
 
 
+def _tmux_available() -> bool:
+    """Return True if tmux is installed and reachable on PATH."""
+    return shutil.which("tmux") is not None
+
+
+def _tmux_session_name(account: str, provider: str) -> str:
+    """Return a unique, human-readable tmux session name for an altergo session.
+
+    Format: ``altergo-<account>-<provider>-<6-hex-chars>``
+    The random suffix ensures each invocation gets its own session so sessions
+    accumulate independently and can be listed/attached by the companion TUI.
+    """
+    safe = account.replace(".", "-").replace(":", "-")
+    return f"altergo-{safe}-{provider}-{secrets.token_hex(3)}"
+
+
+def _build_tmux_cmd(inner_cmd: list, env: dict, session_name: str) -> list:
+    """Wrap *inner_cmd* in a ``tmux new-session`` call.
+
+    The altered HOME and PATH from the altergo account env are forwarded into
+    the tmux window via ``-e`` flags so the account context is fully preserved
+    inside the session.  tmux itself runs in the caller's real environment.
+    """
+    tmux_cmd = ["tmux", "new-session", "-s", session_name]
+    for key in ("HOME", "PATH"):
+        if key in env:
+            tmux_cmd += ["-e", f"{key}={env[key]}"]
+    tmux_cmd += ["--"] + inner_cmd
+    return tmux_cmd
+
+
 def launch_claude(account: str = "default", args=None, provider: str | None = None):
     """Launch a provider CLI with account HOME, passing args through unchanged.
 
@@ -4306,7 +4544,31 @@ def launch_claude(account: str = "default", args=None, provider: str | None = No
     )
     if provider == "claude":
         _sync_claude_mcps(account_home)
-    result = subprocess.run(cmd, env=env)
+
+    # Wrap in a tmux session when the setting is on and we're not already inside tmux.
+    run_env = env
+    if _load_bool_setting("tmux_session", default=False) and not os.environ.get("TMUX"):
+        if _tmux_available():
+            sname = _tmux_session_name(account, provider)
+            cmd = _build_tmux_cmd(cmd, env, sname)
+            run_env = None  # tmux runs in the caller's real env; account env is in -e flags
+            print(_c(C("dim"), f"  tmux session: {sname}  (detach with Ctrl-b d)"))
+        else:
+            print(
+                _c(
+                    C("dim"),
+                    "  altergo: tmux not found — running without session persistence.\n"
+                    "  Install with: brew install tmux",
+                ),
+                file=sys.stderr,
+            )
+
+    result = subprocess.run(cmd, env=run_env)
+    # Record the last session so `altergo --star` works with no ID argument.
+    try:
+        _record_last_session_after_exit(provider)
+    except Exception:
+        pass  # never fail the user's exit due to tracking
     _print_launch_message()
     sys.exit(result.returncode)
 
@@ -4338,7 +4600,26 @@ def launch_shell(account: str = "default"):
     )
     print(_c(C("command"), f"Entering altergo shell [{account}] (HOME={account_home})"))
     print(_c(C("dim"), "Run 'exit' or Ctrl-D to return to your primary account.\n"))
-    result = subprocess.run([shell], env=env)
+
+    shell_cmd = [shell]
+    run_env = env
+    if _load_bool_setting("tmux_session", default=False) and not os.environ.get("TMUX"):
+        if _tmux_available():
+            sname = _tmux_session_name(account, "shell")
+            shell_cmd = _build_tmux_cmd(shell_cmd, env, sname)
+            run_env = None
+            print(_c(C("dim"), f"  tmux session: {sname}  (detach with Ctrl-b d)"))
+        else:
+            print(
+                _c(
+                    C("dim"),
+                    "  altergo: tmux not found — running without session persistence.\n"
+                    "  Install with: brew install tmux",
+                ),
+                file=sys.stderr,
+            )
+
+    result = subprocess.run(shell_cmd, env=run_env)
     _print_launch_message()
     sys.exit(result.returncode)
 
@@ -4354,7 +4635,26 @@ def launch_command(account: str = "default", cmd_args=None):
         sys.exit(1)
     env = _build_alt_env(account)
     home_change_notice_if_needed()
-    result = subprocess.run([cmd_path] + cmd_args[1:], env=env)
+
+    inner_cmd = [cmd_path] + cmd_args[1:]
+    run_env = env
+    if _load_bool_setting("tmux_session", default=False) and not os.environ.get("TMUX"):
+        if _tmux_available():
+            sname = _tmux_session_name(account, Path(cmd_path).name)
+            inner_cmd = _build_tmux_cmd(inner_cmd, env, sname)
+            run_env = None
+            print(_c(C("dim"), f"  tmux session: {sname}  (detach with Ctrl-b d)"))
+        else:
+            print(
+                _c(
+                    C("dim"),
+                    "  altergo: tmux not found — running without session persistence.\n"
+                    "  Install with: brew install tmux",
+                ),
+                file=sys.stderr,
+            )
+
+    result = subprocess.run(inner_cmd, env=run_env)
     _print_launch_message()
     sys.exit(result.returncode)
 
@@ -4377,6 +4677,7 @@ _KNOWN_COMMANDS = frozenset(
         "--launch",
         "--theme",
         "--update-check",
+        "--star",
         "-h",
         "--help",
         "--",
@@ -5148,6 +5449,12 @@ def main():
         set_active_account(use_name)
         print(f"altergo: active account set to {_c(C('command'), use_name)}")
         print(_c(C("dim"), f"  Bare 'altergo' will now launch '{use_name}' by default."))
+        sys.exit(0)
+
+    # --star [<id>] → star the last or specified session
+    if args and args[0] == "--star":
+        session_id = args[1] if len(args) > 1 else None
+        do_star(session_id)
         sys.exit(0)
 
     # --search → full-text conversation search

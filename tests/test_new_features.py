@@ -236,3 +236,105 @@ def test_greeting_copy_guardrails():
 def test_known_commands_includes_update_check():
     mod = _load_altergo()
     assert "--update-check" in mod._KNOWN_COMMANDS
+
+
+# --- tmux_session setting -------------------------------------------------
+
+
+def test_tmux_session_defaults_to_false(tmp_path, monkeypatch):
+    """tmux_session must default to False — we never silently enable tmux."""
+    mod = _load_altergo()
+    fake_settings = tmp_path / "settings.json"
+    monkeypatch.setattr(mod, "SETTINGS_FILE", fake_settings)
+
+    # No file → False
+    assert mod._load_bool_setting("tmux_session", default=False) is False
+
+    # File without the key → still False
+    fake_settings.write_text(json.dumps({"theme": "ocean"}))
+    assert mod._load_bool_setting("tmux_session", default=False) is False
+
+
+def test_tmux_session_persists(tmp_path, monkeypatch):
+    """Enabling tmux_session is preserved across reads and sibling keys survive."""
+    mod = _load_altergo()
+    fake_settings = tmp_path / "settings.json"
+    monkeypatch.setattr(mod, "SETTINGS_FILE", fake_settings)
+
+    # Seed existing settings
+    fake_settings.write_text(json.dumps({"theme": "forest", "show_greeting": True}))
+
+    # Write tmux_session=True via a direct settings write (simulate save path)
+    data = json.loads(fake_settings.read_text())
+    data["tmux_session"] = True
+    fake_settings.write_text(json.dumps(data, indent=2))
+
+    assert mod._load_bool_setting("tmux_session", default=False) is True
+    # Sibling keys intact
+    reloaded = json.loads(fake_settings.read_text())
+    assert reloaded["theme"] == "forest"
+    assert reloaded["show_greeting"] is True
+
+
+def test_tmux_session_name_format():
+    """Session names follow the altergo-<account>-<provider>-<hex> pattern."""
+    mod = _load_altergo()
+    name = mod._tmux_session_name("work", "claude")
+    parts = name.split("-")
+    assert parts[0] == "altergo"
+    assert parts[1] == "work"
+    assert parts[2] == "claude"
+    # Hex suffix: 6 chars, all hex digits
+    assert len(parts[3]) == 6
+    assert all(c in "0123456789abcdef" for c in parts[3])
+
+
+def test_tmux_session_name_sanitizes_dots_and_colons():
+    """Dots and colons in account names are replaced with dashes."""
+    mod = _load_altergo()
+    name = mod._tmux_session_name("my.account:v2", "gemini")
+    assert "." not in name
+    assert ":" not in name
+    assert name.startswith("altergo-my-account-v2-gemini-")
+
+
+def test_tmux_session_names_are_unique():
+    """Each call to _tmux_session_name returns a distinct name."""
+    mod = _load_altergo()
+    names = {mod._tmux_session_name("default", "claude") for _ in range(20)}
+    assert len(names) == 20
+
+
+def test_build_tmux_cmd_structure():
+    """_build_tmux_cmd wraps the inner command correctly."""
+    mod = _load_altergo()
+    env = {"HOME": "/tmp/fake-home", "PATH": "/usr/bin:/bin"}
+    inner = ["claude", "--resume", "abc"]
+    result = mod._build_tmux_cmd(inner, env, "altergo-default-claude-aabbcc")
+
+    assert result[0] == "tmux"
+    assert result[1] == "new-session"
+    assert "-s" in result
+    assert result[result.index("-s") + 1] == "altergo-default-claude-aabbcc"
+    # HOME and PATH forwarded via -e flags
+    assert "-e" in result
+    env_flags = [result[i + 1] for i, v in enumerate(result) if v == "-e"]
+    assert any(f.startswith("HOME=") for f in env_flags)
+    assert any(f.startswith("PATH=") for f in env_flags)
+    # Inner command follows --
+    sep = result.index("--")
+    assert result[sep + 1 :] == inner
+
+
+def test_tmux_available_false_when_not_in_path(monkeypatch):
+    """_tmux_available returns False when tmux is not on PATH."""
+    mod = _load_altergo()
+    monkeypatch.setattr(mod.shutil, "which", lambda name: None)
+    assert mod._tmux_available() is False
+
+
+def test_tmux_available_true_when_in_path(monkeypatch):
+    """_tmux_available returns True when tmux is on PATH."""
+    mod = _load_altergo()
+    monkeypatch.setattr(mod.shutil, "which", lambda name: "/usr/bin/tmux" if name == "tmux" else None)
+    assert mod._tmux_available() is True

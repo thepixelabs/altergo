@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.31.1 (2026-04-13)
+
+### Bug Fixes
+
+- Wrap long line in home-change notice print
+  ([`7370288`](https://github.com/thepixelabs/altergo/commit/73702885b34ea22cda5f8652f5ce817e35d21f86))
+
+
 ## v0.31.0 (2026-04-13)
 
 ### Features

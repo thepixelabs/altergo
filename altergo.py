@@ -4545,6 +4545,8 @@ def launch_claude(account: str = "default", args=None, provider: str | None = No
     if provider == "claude":
         _sync_claude_mcps(account_home)
 
+    print(_c(C("dim"), f"  Launching {PROVIDERS[provider]['display_name']}..."))
+
     # Wrap in a tmux session when the setting is on and we're not already inside tmux.
     run_env = env
     if _load_bool_setting("tmux_session", default=False) and not os.environ.get("TMUX"):
@@ -4602,6 +4604,7 @@ def launch_shell(account: str = "default"):
     print(_c(C("dim"), "Run 'exit' or Ctrl-D to return to your primary account.\n"))
 
     shell_cmd = [shell]
+    print(_c(C("dim"), f"  Starting shell ({shell_name})..."))
     run_env = env
     if _load_bool_setting("tmux_session", default=False) and not os.environ.get("TMUX"):
         if _tmux_available():
@@ -4637,6 +4640,7 @@ def launch_command(account: str = "default", cmd_args=None):
     home_change_notice_if_needed()
 
     inner_cmd = [cmd_path] + cmd_args[1:]
+    print(_c(C("dim"), f"  Running {Path(cmd_path).name}..."))
     run_env = env
     if _load_bool_setting("tmux_session", default=False) and not os.environ.get("TMUX"):
         if _tmux_available():
@@ -5502,6 +5506,12 @@ def main():
             print("Cancelled.")
         sys.exit(0)
 
+    # Generic check for unhandled top-level flags starting with '--'
+    if args and args[0].startswith("--") and args[0] not in _KNOWN_COMMANDS:
+        print(f"altergo: unrecognized command or flag: '{args[0]}'", file=sys.stderr)
+        print("  Run 'altergo --help' for usage.", file=sys.stderr)
+        sys.exit(1)
+
     # ── Account name as first positional arg ──────────────────────────────────
     # altergo <name> [sub-command | claude flags...]
     account = None
@@ -5568,11 +5578,11 @@ def main():
     if args and args[0] == "--":
         launch_command(account, args[1:])
 
-    # ── Everything else → pass straight through to claude ────────────────────
-    # altergo                    → claude (active account)
-    # altergo work               → claude (work account, args=[])
-    # altergo --resume x         → claude --resume x
-    # altergo --dangerously-...  → claude --dangerously-...
+    # ── Everything else → pass straight through to provider ──────────────────
+    # altergo                    → provider (active account)
+    # altergo work               → provider (work account, args=[])
+    # altergo --resume x         → provider --resume x
+    # altergo --dangerously-...  → provider --dangerously-...
 
     # Extract positional provider name if present (consumed by altergo, not passed to provider CLI)
     # Syntax: altergo <account> <provider> [args...]
@@ -5580,6 +5590,14 @@ def main():
     if args and args[0] in PROVIDERS:
         provider = args[0]
         args = args[1:]
+
+    # Final validation: if the first arg is not a provider and doesn't start with '-',
+    # it might be a typo for an altergo command (e.g. 'altergo help' instead of '--help').
+    if args and not args[0].startswith("-"):
+        print(f"altergo: unrecognized command or provider: '{args[0]}'", file=sys.stderr)
+        print("  Run 'altergo --help' for usage.", file=sys.stderr)
+        sys.exit(1)
+
     launch_claude(account, args, provider=provider)
 
 

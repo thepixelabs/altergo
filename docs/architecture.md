@@ -32,7 +32,6 @@ altergo/
             release.yml     ← PyPI publish on tag push
             pages.yml       ← GitHub Pages deploy
             security.yml    ← Dependency security scan
-            homebrew-bump.yml ← Homebrew formula bump on release
 ```
 
 altergo depends on `rich`, `pyfiglet`, and `rich-pyfiglet` for the banner and TUI chrome. Everything else — `curses`, `json`, `os`, `pwd`, `re`, `shutil`, `sys`, `pathlib`, `datetime`, `threading` — is Python standard library.

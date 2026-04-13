@@ -373,9 +373,15 @@ def show_banner(
                     acct_inner = Table.grid(padding=(0, 0), expand=False)
                     acct_inner.add_column(no_wrap=True)
                     acct_inner.add_column(no_wrap=True)
+                    acct_label = Text()
+                    acct_label.append(f"  {account}", style=BRIGHT)
+                    _email = _read_account_email(account)
+                    if _email:
+                        acct_label.append("  ", style=MID)
+                        acct_label.append(_email, style=f"dim {MID}")
                     acct_inner.add_row(
                         Spinner(spinner_name, style=BRIGHT),
-                        Text(f"  {account}", style=BRIGHT),
+                        acct_label,
                     )
                     bottom = Table.grid(padding=(0, 0), expand=False)
                     bottom.add_column(min_width=logo_right, no_wrap=True)
@@ -388,6 +394,10 @@ def show_banner(
                     left_text.append("*", style=BRIGHT)
                     left_text.append("  ", style=MID)
                     left_text.append(account, style=BRIGHT)
+                    _email = _read_account_email(account)
+                    if _email:
+                        left_text.append("  ", style=MID)
+                        left_text.append(_email, style=f"dim {MID}")
                     if greet_line:
                         bottom = Table.grid(padding=(0, 0), expand=False)
                         bottom.add_column(min_width=logo_right, no_wrap=True)
@@ -774,6 +784,81 @@ CATALOG = [
         "paths": [".npmrc"],
         "default_on": False,
     },
+    {
+        "id": "pip",
+        "name": "pip (Python)",
+        "category": "Package Managers",
+        "paths": [".pip", ".config/pip", ".pypirc", ".local/lib", ".local/bin"],
+        "default_on": False,
+        "warning": "Shares pip config, PyPI credentials, and user-installed packages/scripts (~/.local/lib & bin).",
+    },
+    {
+        "id": "cargo",
+        "name": "cargo (Rust)",
+        "category": "Package Managers",
+        "paths": [".cargo"],
+        "default_on": False,
+        "warning": "Shares the entire ~/.cargo dir: registry cache, installed binaries, and credentials.",
+    },
+    {
+        "id": "gem",
+        "name": "gem (Ruby)",
+        "category": "Package Managers",
+        "paths": [".gem", ".gemrc"],
+        "default_on": False,
+    },
+    {
+        "id": "yarn",
+        "name": "yarn",
+        "category": "Package Managers",
+        "paths": [".yarn", ".yarnrc.yml", ".yarnrc"],
+        "default_on": False,
+    },
+    {
+        "id": "pnpm",
+        "name": "pnpm",
+        "category": "Package Managers",
+        "paths": [".pnpmrc", ".local/share/pnpm"],
+        "default_on": False,
+    },
+    {
+        "id": "composer",
+        "name": "composer (PHP)",
+        "category": "Package Managers",
+        "paths": [".composer"],
+        "default_on": False,
+        "warning": "Shares Composer auth tokens, config, and globally installed packages.",
+    },
+    {
+        "id": "go",
+        "name": "go modules",
+        "category": "Package Managers",
+        "paths": ["go", ".config/go"],
+        "default_on": False,
+        "warning": "Shares the Go module cache (~/go) and go env config. Can be large.",
+    },
+    {
+        "id": "maven",
+        "name": "Maven (Java)",
+        "category": "Package Managers",
+        "paths": [".m2"],
+        "default_on": False,
+        "warning": "Shares the ~/.m2 directory including settings.xml credentials and local repo cache.",
+    },
+    {
+        "id": "gradle",
+        "name": "Gradle (Java)",
+        "category": "Package Managers",
+        "paths": [".gradle"],
+        "default_on": False,
+    },
+    {
+        "id": "bundler",
+        "name": "Bundler (Ruby)",
+        "category": "Package Managers",
+        "paths": [".bundle"],
+        "default_on": False,
+    },
     # Identity — off by default, high security/identity impact
     {
         "id": "ssh",
@@ -830,6 +915,57 @@ def load_account_meta(account_home: Path) -> dict:
     # Legacy account: .claude dir exists but no account.json
     if (account_home / ".claude").exists():
         return {"version": 2, "provider": "claude"}
+    return None
+
+
+def _read_account_email(account_name: str) -> str | None:
+    """Return the email address for *account_name*, or None if unavailable.
+
+    Checks provider credential files in order: Claude (.claude.json), then
+    Codex (JWT in auth.json). Gemini and Copilot don't store email on disk.
+    Silently returns None on any read/parse error.
+    """
+    try:
+        account_home = ACCOUNTS_DIR / account_name
+        # Claude: oauthAccount.emailAddress in .claude.json
+        claude_json = account_home / ".claude.json"
+        if claude_json.exists():
+            data = json.loads(claude_json.read_text())
+            email = data.get("oauthAccount", {}).get("emailAddress")
+            if email and isinstance(email, str) and "@" in email:
+                return email
+        # Codex / OpenAI: email claim inside the id_token JWT in auth.json
+        codex_auth = account_home / ".codex" / "auth.json"
+        if codex_auth.exists():
+            import base64
+
+            auth = json.loads(codex_auth.read_text())
+            id_token = auth.get("tokens", {}).get("id_token", "")
+            if id_token:
+                parts = id_token.split(".")
+                if len(parts) >= 2:
+                    padding = (-len(parts[1])) % 4
+                    payload = json.loads(base64.urlsafe_b64decode(parts[1] + "=" * padding))
+                    email = payload.get("email")
+                    if email and isinstance(email, str) and "@" in email:
+                        return email
+        # Gemini: id_token in oauth_creds.json (same JWT pattern)
+        gemini_creds = account_home / ".gemini" / "oauth_creds.json"
+        if gemini_creds.exists():
+            import base64
+
+            creds = json.loads(gemini_creds.read_text())
+            id_token = creds.get("id_token", "")
+            if id_token:
+                parts = id_token.split(".")
+                if len(parts) >= 2:
+                    padding = (-len(parts[1])) % 4
+                    payload = json.loads(base64.urlsafe_b64decode(parts[1] + "=" * padding))
+                    email = payload.get("email")
+                    if email and isinstance(email, str) and "@" in email:
+                        return email
+    except Exception:
+        pass
     return None
 
 
@@ -1333,6 +1469,290 @@ def first_launch_notice_if_needed() -> None:
     if sys.stdout.isatty():
         print("  " + _c(C("dim"), "Version checks are enabled by default. Disable with: altergo --update-check off"))
     _mark_intro_shown()
+
+
+def _get_home_notice_shown() -> bool:
+    if not SETTINGS_FILE.exists():
+        return False
+    try:
+        data = json.loads(SETTINGS_FILE.read_text())
+        return bool(data.get("home_notice_shown"))
+    except Exception:
+        return False
+
+
+def _mark_home_notice_shown() -> None:
+    SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    data = {}
+    if SETTINGS_FILE.exists():
+        try:
+            data = json.loads(SETTINGS_FILE.read_text())
+        except Exception:
+            data = {}
+    data["home_notice_shown"] = True
+    tmp = SETTINGS_FILE.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(data, indent=2))
+    os.replace(str(tmp), str(SETTINGS_FILE))
+
+
+def home_change_notice_if_needed() -> None:
+    """One-time animated notice explaining the HOME isolation model.
+
+    Sequence:
+      1. Clear screen; big pyfiglet "Welcome" fades in slowly with an orange gradient.
+      2. Notice copy fades in line by line beneath it.
+      3. Screen holds for ~8 s (or until keypress) so the user can read.
+      4. Cascading top-to-bottom fade-out: emoji → figlet → notice → hint.
+      5. Screen clears; normal banner renders as usual.
+    Falls back to a plain print if any import or tty operation fails.
+    """
+    if _get_home_notice_shown():
+        return
+    if not sys.stdout.isatty():
+        _mark_home_notice_shown()
+        return
+
+    # Mark immediately so a crash or Ctrl-C never replays the animation.
+    _mark_home_notice_shown()
+
+    def _animated():
+        import pyfiglet
+        from rich.console import Console
+
+        console = Console()
+        cols = console.width
+        rows = console.height
+
+        # Fixed warm-orange gradient — intentionally theme-independent.
+        GRAD = ["#ff6600", "#ffcc00"]
+
+        # ── colour helpers ──────────────────────────────────────────────────
+        def _rgb(h):
+            return int(h[1:3], 16), int(h[3:5], 16), int(h[5:7], 16)
+
+        _DARK = (5, 2, 0)  # warm near-black
+
+        def _blend(hex_col, alpha):
+            r2, g2, b2 = _rgb(hex_col)
+            return (
+                int(_DARK[0] + (r2 - _DARK[0]) * alpha),
+                int(_DARK[1] + (g2 - _DARK[1]) * alpha),
+                int(_DARK[2] + (b2 - _DARK[2]) * alpha),
+            )
+
+        def _render_text(text, stops, alpha, bold=False):
+            n = len(text)
+            pfx = "1;" if bold else ""
+            parts = []
+            for i, ch in enumerate(text):
+                col = _gradient_color(stops, i / max(n - 1, 1))
+                r, g, b = _blend(col, alpha)
+                parts.append(f"\033[{pfx}38;2;{r};{g};{b}m{ch}")
+            return "".join(parts) + "\033[0m"
+
+        def _cpad(w):
+            """Spaces to visually centre text of display-width w."""
+            return " " * max(0, (cols - w) // 2)
+
+        def _w(s):
+            sys.stdout.write(s)
+            sys.stdout.flush()
+
+        # ── build figlet "Welcome" ───────────────────────────────────────────
+        raw = None
+        for font in ("slant", "standard", "smslant"):
+            try:
+                raw = pyfiglet.Figlet(font=font).renderText("Welcome")
+                break
+            except Exception:
+                pass
+        fig_lines = [ln for ln in (raw or "Welcome\n").splitlines() if ln.strip()]
+        fig_w = max(len(ln.rstrip()) for ln in fig_lines)
+        fig_total = sum(1 for ln in fig_lines for ch in ln if ch != " ")
+
+        def _render_figlet(alpha):
+            idx = 0
+            out = []
+            for ln in fig_lines:
+                s = _cpad(fig_w)
+                for ch in ln.rstrip():
+                    if ch == " ":
+                        s += " "
+                    else:
+                        t = idx / max(fig_total - 1, 1)
+                        col = _gradient_color(GRAD, t)
+                        r, g, b = _blend(col, alpha)
+                        s += f"\033[1;38;2;{r};{g};{b}m{ch}\033[0m"
+                        idx += 1
+                out.append(s)
+            return out
+
+        # ── notice content ───────────────────────────────────────────────────
+        NOTICE = [
+            ("Each account runs in its own HOME folder —",  False),
+            ("like a separate desk for each AI identity.",  False),
+            ("",                                            False),
+            ("Tools like pip, cargo, gem, and yarn won't", False),
+            ("see packages from your main account.",        False),
+            ("",                                            False),
+            ("altergo --settings  →  Credentials tab",     True),
+        ]
+        HINT = "shown once  ·  press any key to continue"
+
+        # ── vertical layout ──────────────────────────────────────────────────
+        # rows: 1 emoji + 2 blank + figlet + 1 blank + NOTICE + 2 blank+hint
+        content_h = 3 + len(fig_lines) + 1 + len(NOTICE) + 2
+        top = max(1, (rows - content_h) // 2)
+
+        # ── clear + hide cursor ──────────────────────────────────────────────
+        _w("\033[2J\033[H\033[?25l")
+
+        # ── track terminal row (1-indexed) of every section for fade-out ────
+        cur = 1
+
+        if top > 0:
+            _w("\n" * top)
+            cur += top
+
+        emoji_row = cur
+        _w(f"\r{_cpad(2)}🏠\n\n")
+        cur += 2  # emoji line + two \n → cursor now two below
+
+        fig_row = cur
+
+        # Print initial dark figlet (alpha=0) so lines occupy their rows.
+        for ln in _render_figlet(0.0):
+            _w(f"\r{ln}\033[K\n")
+        cur += len(fig_lines)
+
+        _w("\n")  # blank between figlet and notice
+        cur += 1
+
+        # Print blank placeholder rows for notice (filled by fade-in loop).
+        notice_items = []
+        n_lines = len(NOTICE)
+        for li, (text, bold) in enumerate(NOTICE):
+            item_row = cur
+            cur += 1
+            if not text:
+                _w("\n")
+                notice_items.append(None)
+                continue
+            t0 = 0.05 + 0.85 * (li / max(n_lines - 1, 1))
+            stops = [
+                _gradient_color(GRAD, max(0.0, t0 - 0.2)),
+                _gradient_color(GRAD, min(1.0, t0 + 0.2)),
+            ]
+            notice_items.append({"row": item_row, "text": text, "stops": stops, "bold": bold})
+            _w(f"\r{_cpad(len(text))}\033[K\n")  # blank placeholder
+
+        _w("\n")
+        cur += 1
+
+        hint_row = cur
+        hr, hg, hb = _blend(_gradient_color(GRAD, 0.5), 0.20)
+        _w(f"\r{_cpad(len(HINT))}\033[38;2;{hr};{hg};{hb}m{HINT}\033[0m\n")
+        cur += 1
+
+        # ── Phase 1: figlet fades in (slow — 36 frames × 30 ms ≈ 1.1 s) ─────
+        FIG_IN = 36
+        for step in range(1, FIG_IN + 1):
+            alpha = step / FIG_IN
+            _w(f"\033[{fig_row};1H")
+            for ln in _render_figlet(alpha):
+                _w(f"\r{ln}\033[K\n")
+            time.sleep(0.030)
+
+        # ── Phase 2: notice lines fade in one by one ─────────────────────────
+        LINE_IN = 14
+        for item in notice_items:
+            if item is None:
+                continue
+            _w(f"\033[{item['row']};1H")
+            for step in range(LINE_IN + 1):
+                alpha = step / LINE_IN
+                rendered = _render_text(item["text"], item["stops"], alpha, item["bold"])
+                _w(f"\r{_cpad(len(item['text']))}{rendered}\033[K")
+                time.sleep(0.018)
+
+        # ── Phase 3: hold — wait up to 8 s for keypress ──────────────────────
+        import select
+        import termios
+        import tty
+
+        fd = sys.stdin.fileno()
+        try:
+            old = termios.tcgetattr(fd)
+            tty.setraw(fd)
+            try:
+                rdy, _, _ = select.select([sys.stdin], [], [], 8.0)
+                if rdy:
+                    sys.stdin.read(1)
+            finally:
+                termios.tcsetattr(fd, termios.TCSADRAIN, old)
+        except Exception:
+            time.sleep(8.0)
+
+        # ── Phase 4: cascading top-to-bottom fade-out ─────────────────────────
+        # Build ordered section list (top → bottom).
+        fade_sections = [{"type": "emoji", "row": emoji_row}, {"type": "figlet"}]
+        for item in notice_items:
+            if item is None:
+                continue
+            fade_sections.append({"type": "text", **item})
+        fade_sections.append({"type": "hint", "row": hint_row})
+
+        WAVE_FRAMES = 32   # total frames for the whole wave
+        STAGGER = 3        # frames between each section starting its fade
+        FRAME_DT = 0.038
+
+        for frame in range(WAVE_FRAMES):
+            for si, sec in enumerate(fade_sections):
+                start = si * STAGGER
+                if frame < start:
+                    continue
+                alpha = max(0.0, 1.0 - (frame - start) / max(WAVE_FRAMES - start, 1))
+
+                if sec["type"] == "emoji":
+                    # Emoji colour can't be faded, so dim then blank it.
+                    if alpha < 0.5:
+                        _w(f"\033[{sec['row']};1H\r{_cpad(2)}  \033[K")
+                    # else leave it visible
+
+                elif sec["type"] == "figlet":
+                    _w(f"\033[{fig_row};1H")
+                    for ln in _render_figlet(alpha):
+                        _w(f"\r{ln}\033[K\n")
+
+                elif sec["type"] == "text":
+                    rendered = _render_text(sec["text"], sec["stops"], alpha, sec["bold"])
+                    _w(f"\033[{sec['row']};1H\r{_cpad(len(sec['text']))}{rendered}\033[K")
+
+                elif sec["type"] == "hint":
+                    hr2, hg2, hb2 = _blend(_gradient_color(GRAD, 0.5), 0.20 * alpha)
+                    hint_s = f"\033[38;2;{hr2};{hg2};{hb2}m{HINT}\033[0m"
+                    _w(f"\033[{sec['row']};1H\r{_cpad(len(HINT))}{hint_s}\033[K")
+
+            time.sleep(FRAME_DT)
+
+        # ── clear → banner ────────────────────────────────────────────────────
+        _w("\033[2J\033[H")
+
+    try:
+        _animated()
+    except Exception:
+        # Plain fallback — never let the notice crash the launch path.
+        dim, warn, cmd = C("dim"), C("warn"), C("command")
+        print()
+        print("  " + _c(warn, "Heads up (shown once):"))
+        print("  " + _c(dim, "Each account runs in its own HOME folder — tools like pip, cargo,"))
+        print("  " + _c(dim, "gem, and yarn won't see packages from your main account."))
+        print()
+        print("  " + _c(dim, "Fix:  ") + _c(cmd, "altergo --settings") + _c(dim, "  →  Credentials  →  Package Managers"))
+        print()
+    finally:
+        sys.stdout.write("\033[?25h")  # always restore cursor
+        sys.stdout.flush()
 
 
 def get_active_account() -> str | None:
@@ -3875,6 +4295,7 @@ def launch_claude(account: str = "default", args=None, provider: str | None = No
     # BEFORE the banner so the cache from a previous run drives the nag.
     maybe_refresh_update_cache()
     first_launch_notice_if_needed()
+    home_change_notice_if_needed()
     _anim = _handoff_duration(provider) if _load_bool_setting("launch_animation") else 0.0
     show_banner(
         account,
@@ -3906,6 +4327,7 @@ def launch_shell(account: str = "default"):
         env["PROMPT"] = f"({label}) {env.get('PROMPT', '%n@%m %~ %# ')}"
     maybe_refresh_update_cache()
     first_launch_notice_if_needed()
+    home_change_notice_if_needed()
     # Shell starts effectively instantly, so no twinkle animation — but
     # keep the greeting + update nag for consistency with other launch paths.
     show_banner(
@@ -3930,6 +4352,7 @@ def launch_command(account: str = "default", cmd_args=None):
         print(_c(31, f"altergo: '{cmd_args[0]}' not found in PATH"), file=sys.stderr)
         sys.exit(1)
     env = _build_alt_env(account)
+    home_change_notice_if_needed()
     result = subprocess.run([cmd_path] + cmd_args[1:], env=env)
     _print_launch_message()
     sys.exit(result.returncode)

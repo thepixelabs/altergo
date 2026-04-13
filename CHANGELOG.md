@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.33.0 (2026-04-13)
+
+### Features
+
+- Add tmux session persistence section to landing page
+  ([`2678b17`](https://github.com/thepixelabs/altergo/commit/2678b17948dc773b096d8bd3ccdfaab9829ab811))
+
+
 ## v0.32.0 (2026-04-13)
 
 ### Features

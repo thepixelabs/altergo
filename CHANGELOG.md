@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.31.0 (2026-04-13)
+
+### Features
+
+- Show account email in banner, add package manager catalog entries, home change notice
+  ([`101bd33`](https://github.com/thepixelabs/altergo/commit/101bd331cdf5cb70d21558f035c8e63de1e8aa25))
+
+- Display email address next to account name in the banner (reads from .claude.json, Codex JWT, or
+  Gemini oauth_creds) - Add pip, cargo, gem, yarn, pnpm, composer, go modules, Maven, Gradle,
+  Bundler to CATALOG - Add one-time animated home isolation notice (home_change_notice_if_needed)
+  shown on first launch
+
+
 ## v0.30.0 (2026-04-12)
 
 ### Bug Fixes
@@ -8,13 +21,14 @@
 - Resolve all ruff lint errors (E741, I001, F841, E501)
   ([`76165b9`](https://github.com/thepixelabs/altergo/commit/76165b9f0629cc5dc8e13a1c9eccf29dbd80bce0))
 
+Rename ambiguous variable `l` to `ln` in logo list comprehensions, sort Rich/urllib import blocks,
+  remove unused logo_left/logo_width/DIM/project variables, and wrap long lines in help text, nav
+  string, and frozenset literal.
+
 ### Documentation
 
 - Add version badge next to logo in nav
   ([`a655cbf`](https://github.com/thepixelabs/altergo/commit/a655cbf6ebac0f503769dcec0fb6eceaa3546428))
-
-
-## v0.22.0 (2026-04-12)
 
 ### Features
 

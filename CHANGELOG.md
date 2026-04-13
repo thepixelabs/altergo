@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.33.1 (2026-04-13)
+
+### Bug Fixes
+
+- Slow down card shimmer effect, spread delays to avoid simultaneous triggers
+  ([`dbbf5bb`](https://github.com/thepixelabs/altergo/commit/dbbf5bbd5c4b8f28740bf0b61c09e72f9c2a2d5b))
+
+
 ## v0.33.0 (2026-04-13)
 
 ### Features

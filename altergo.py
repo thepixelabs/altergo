@@ -5027,6 +5027,34 @@ def _tmux_session_name(account: str, provider: str) -> str:
     return f"{safe}/{provider}"
 
 
+def _tmux_unique_session_name(base: str) -> str:
+    """Return a tmux session name that does not collide with any existing session.
+
+    If *base* is free, returns it unchanged.  If ``hocus/claude`` already
+    exists, tries ``hocus/claude-2``, ``hocus/claude-3``, … until a free
+    slot is found.
+    """
+    try:
+        result = subprocess.run(
+            ["tmux", "list-sessions", "-F", "#{session_name}"],
+            capture_output=True,
+            text=True,
+        )
+        existing = set(result.stdout.splitlines())
+    except Exception:
+        return base
+
+    if base not in existing:
+        return base
+
+    n = 2
+    while True:
+        candidate = f"{base}-{n}"
+        if candidate not in existing:
+            return candidate
+        n += 1
+
+
 def _build_tmux_cmd(inner_cmd: list, env: dict, session_name: str) -> list:
     """Wrap *inner_cmd* in a ``tmux new-session`` call.
 
@@ -5148,7 +5176,7 @@ def launch_claude(account: str = "default", args=None, provider: str | None = No
         print(_c(C("dim"), "  altergo portal: already inside a tmux session — launching directly"))
     if use_tmux and not os.environ.get("TMUX"):
         if _tmux_available():
-            sname = _tmux_session_name(account, provider)
+            sname = _tmux_unique_session_name(_tmux_session_name(account, provider))
             cmd = _build_tmux_cmd(cmd, env, sname)
             run_env = None  # tmux runs in the caller's real env; account env is in -e flags
             print(_c(C("dim"), f"  tmux session: {sname}  (detach: Ctrl-b d  ·  quit: type 'exit' or Ctrl-C)"))
@@ -5212,7 +5240,7 @@ def launch_shell(account: str = "default"):
     run_env = env
     if _load_bool_setting("tmux_session", default=False) and not os.environ.get("TMUX"):
         if _tmux_available():
-            sname = _tmux_session_name(account, "shell")
+            sname = _tmux_unique_session_name(_tmux_session_name(account, "shell"))
             shell_cmd = _build_tmux_cmd(shell_cmd, env, sname)
             run_env = None
             print(_c(C("dim"), f"  tmux session: {sname}  (detach: Ctrl-b d  ·  quit: type 'exit' or Ctrl-C)"))
@@ -5251,7 +5279,7 @@ def launch_command(account: str = "default", cmd_args=None):
     run_env = env
     if _load_bool_setting("tmux_session", default=False) and not os.environ.get("TMUX"):
         if _tmux_available():
-            sname = _tmux_session_name(account, Path(cmd_path).name)
+            sname = _tmux_unique_session_name(_tmux_session_name(account, Path(cmd_path).name))
             inner_cmd = _build_tmux_cmd(inner_cmd, env, sname)
             run_env = None
             print(_c(C("dim"), f"  tmux session: {sname}  (detach: Ctrl-b d  ·  quit: type 'exit' or Ctrl-C)"))

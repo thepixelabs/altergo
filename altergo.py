@@ -563,11 +563,6 @@ def show_help():
             f"{kw('altergo --theme')} {arg('<name>')}",
             f"Set theme  ({', '.join(THEMES.keys())})",
         ),
-        row(
-            "altergo --update-check on|off",
-            f"{kw('altergo --update-check')} {arg('on|off')}",
-            "Enable or disable update checker",
-        ),
         "",
         sep(),
         h("Advanced"),
@@ -685,49 +680,6 @@ def validate_account_name(name: str) -> None:
 
 
 # --- Migration ---
-
-
-def detect_legacy() -> bool:
-    """Return True if the old ~/.altergo/.claude/ layout exists and new layout does not."""
-    old_claude = MAIN_HOME / ".altergo" / ".claude"
-    return old_claude.exists() and not ACCOUNTS_DIR.exists()
-
-
-def migrate_legacy() -> None:
-    """Migrate old single-account layout to N-account layout. Runs at most once."""
-    if not detect_legacy():
-        return
-    old_root = MAIN_HOME / ".altergo"
-    # Step 1: take a backup BEFORE any rename so it is never self-referential.
-    # The backup lives outside the altergo tree at ~/.altergo-legacy-backup/.
-    backup_path = MAIN_HOME / ".altergo-legacy-backup"
-    if backup_path.exists():
-        print("altergo: backup already exists at ~/.altergo-legacy-backup — skipping backup step")
-    else:
-        shutil.copytree(str(old_root), str(backup_path), symlinks=True)
-    tmp_path = Path(f"/tmp/altergo-migrate-{os.getpid()}")
-    # Step 2: rename ~/.altergo → /tmp/altergo-migrate-{pid}
-    old_root.rename(tmp_path)
-    # Step 3: mkdir -p ~/.altergo/accounts/
-    ACCOUNTS_DIR.mkdir(parents=True, exist_ok=True)
-    # Step 4: rename /tmp/... → ~/.altergo/accounts/default/
-    default_home = ACCOUNTS_DIR / "default"
-    tmp_path.rename(default_home)
-    # Step 5: write audit trail so users can verify what happened
-    migrated_marker = default_home / "MIGRATED.txt"
-    migrated_marker.write_text(
-        f"Migrated by altergo v{__version__} on {datetime.now().isoformat(timespec='seconds')}\n"
-        f"Old layout: ~/.altergo/\n"
-        f"New layout: ~/.altergo/accounts/default/\n"
-        f"Backup:     ~/.altergo-legacy-backup/\n"
-        f"Rollback:   remove ~/.altergo/accounts/ and rename ~/.altergo-legacy-backup back to ~/.altergo\n"
-        f"See:        https://altergo.pixelabs.net/docs/migration-0.5\n"
-    )
-    # Step 6: print a visible block — this is a one-time destructive rename, silence is wrong
-    print("altergo: layout migrated for v0.5.0 N-account support")
-    print("  ~/.altergo/  →  ~/.altergo/accounts/default/")
-    print("  Backup preserved at ~/.altergo-legacy-backup/")
-    print("  See https://altergo.pixelabs.net/docs/migration-0.5 for details")
 
 
 # --- Symlink catalogs ---
@@ -1904,8 +1856,6 @@ def first_launch_notice_if_needed() -> None:
     """
     if _get_intro_shown():
         return
-    if sys.stdout.isatty():
-        print("  " + _c(C("dim"), "Version checks are enabled by default. Disable with: altergo --update-check off"))
     _mark_intro_shown()
 
 
@@ -2325,18 +2275,15 @@ def _ensure_symlinked_dir(name: str, src: Path, dst: Path, account_claude: Path)
     src_exists_and_nonempty = src.exists() and any(True for _ in src.iterdir())
 
     if not src_exists_and_nonempty:
-        # (d) src absent or empty — move dst content wholesale
-        src.parent.mkdir(parents=True, exist_ok=True)
-        if not src.exists():
-            shutil.move(str(dst), str(src))
-        else:
-            # src exists but is empty: move each entry in
-            for entry in list(dst.iterdir()):
-                shutil.move(str(entry), str(src / entry.name))
-            dst.rmdir()
-        dst.symlink_to(src)
-        print(f"  Promoted {name}/ to shared store")
-        return True
+        # (d) dst is real non-empty but src is absent/empty.
+        # This should not happen for correctly set-up accounts (--config always
+        # creates src first, then symlinks dst).  Silently moving would risk
+        # data loss.  Warn and leave both untouched — run --config to repair.
+        print(
+            f"  warning: {name}/ is a real directory but shared store ({src}) is absent/empty. "
+            f"Run 'altergo --config' to repair."
+        )
+        return False
 
     # (e) Both src and dst have content — merge with conflict quarantine
     quarantine_base = account_claude / f"{name}.altergo-conflict"
@@ -4973,9 +4920,8 @@ def _sweep_existing_accounts() -> bool:
     sweeps the correct dot-dir.  Falls back to Claude-only for legacy accounts
     (no account.json).
 
-    Runs automatically after migrate_legacy() and at the start of launch_claude()
-    so that existing 0.6.0 users are repaired on next launch without needing
-    to run --config manually.  Silent unless something actually changes.
+    Called from --config to repair accounts that still have real dirs where
+    symlinks are expected.  Silent unless something actually changes.
     """
     changed = False
     for acct in list_accounts():
@@ -5100,8 +5046,6 @@ def launch_claude(account: str = "default", args=None, provider: str | None = No
     If provider is None, reads account.json to determine which provider to use.
     Falls back to "claude" for legacy accounts with no metadata.
     """
-    _sweep_existing_accounts()
-
     account_home, _ = resolve_account(account)
 
     # Resolve provider
@@ -5320,7 +5264,6 @@ _KNOWN_COMMANDS = frozenset(
         "--use",
         "--launch",
         "--theme",
-        "--update-check",
         "--star",
         "-h",
         "--help",
@@ -5920,13 +5863,6 @@ def main():
     # character onward.
     set_current_theme(load_persisted_theme())
     maybe_rotate_random_theme()
-    # Auto-migrate legacy layout before any other processing
-    migrate_legacy()
-    # Repair any accounts that still have real dirs instead of symlinks
-    # (covers the default account after legacy migration, and any 0.6.0 users
-    # whose accounts/default/.claude/projects/ was left as a real dir).
-    _sweep_existing_accounts()
-
     args = sys.argv[1:]
 
     # ── Altergo-owned commands (not passed to claude) ──────────────────────────
@@ -6012,42 +5948,6 @@ def main():
 
     if args and args[0] == "--launch":
         interactive_launcher()
-        sys.exit(0)
-
-    if args and args[0] == "--update-check":
-        # `altergo --update-check`          → show current state + last known
-        # `altergo --update-check on|off`   → persist
-        show_banner()
-        if len(args) == 1:
-            enabled = load_update_check_enabled()
-            state = _c(C("success"), "on") if enabled else _c(C("warn"), "off")
-            print(f"  update check: {state}")
-            cache = _read_update_cache()
-            if cache:
-                last = cache.get("last_check", 0)
-                if last:
-                    ago = int(time.time() - last)
-                    print(_c(C("dim"), f"  last checked: {ago // 60} min ago"))
-                latest = _sanitize_version(cache.get("latest_version"))
-                if latest:
-                    marker = _c(C("warn"), "newer") if _is_newer(latest, __version__) else _c(C("success"), "current")
-                    print(_c(C("dim"), f"  latest known: v{latest}  ({marker})") if latest else "")
-            print()
-            print(_c(C("dim"), "  Toggle with: altergo --update-check on|off"))
-            sys.exit(0)
-        choice = args[1].lower()
-        if choice in ("on", "true", "1", "yes"):
-            save_update_check_enabled(True)
-            print(_c(C("success"), "  update check enabled"))
-        elif choice in ("off", "false", "0", "no"):
-            save_update_check_enabled(False)
-            print(_c(C("warn"), "  update check disabled"))
-        else:
-            print(
-                f"altergo: --update-check takes 'on' or 'off', got '{args[1]}'",
-                file=sys.stderr,
-            )
-            sys.exit(1)
         sys.exit(0)
 
     if args and args[0] == "--theme":

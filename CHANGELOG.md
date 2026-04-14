@@ -1,6 +1,27 @@
 # CHANGELOG
 
 
+## v0.35.3 (2026-04-14)
+
+### Bug Fixes
+
+- Remove legacy migration, startup sweep, and --update-check arg
+  ([#14](https://github.com/thepixelabs/altergo/pull/14),
+  [`94f22ad`](https://github.com/thepixelabs/altergo/commit/94f22add4d2ed3fd28399ec4b7a638c674e61279))
+
+* fix: remove legacy migration, startup sweep, and --update-check arg
+
+- Remove detect_legacy() and migrate_legacy() — all users are already on the N-account layout; the
+  migration code is dead weight - Remove unconditional _sweep_existing_accounts() calls from main()
+  and launch_claude() — sweep now only runs from --config where it is actually needed - Harden
+  _ensure_symlinked_dir case (d): warn and skip instead of silently moving account data to the
+  shared store, which was the mechanism that could cause account data loss on upgrade - Remove
+  --update-check CLI argument entirely; update check toggle is now only accessible via the settings
+  panel (altergo --settings)
+
+* test: remove tests for deleted migrate_legacy and --update-check arg
+
+
 ## v0.35.2 (2026-04-14)
 
 ### Bug Fixes

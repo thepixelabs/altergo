@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.35.1 (2026-04-14)
+
+### Bug Fixes
+
+- **tmux**: Avoid session name collisions by appending -N suffix
+  ([`8e01bd4`](https://github.com/thepixelabs/altergo/commit/8e01bd4ed53780a9de88ef6947747bce11b1eaa3))
+
+
 ## v0.35.0 (2026-04-14)
 
 ### Features

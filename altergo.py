@@ -571,6 +571,12 @@ def show_help():
         "",
         sep(),
         h("Advanced"),
+        row("altergo native", f"{kw('altergo')} {arg('native')}", "Launch with real $HOME (no isolation)"),
+        row(
+            "altergo native <provider>",
+            f"{kw('altergo')} {arg('native')} {arg('<provider>')}",
+            "Launch specific provider with real $HOME",
+        ),
         row(
             "altergo <name> shell", f"{kw('altergo')} {arg('<name>')} {kw('shell')}", "Open a shell inside account HOME"
         ),
@@ -604,6 +610,12 @@ MAIN_HOME = _pw_home
 MAIN_CLAUDE = MAIN_HOME / ".claude"
 ACCOUNTS_DIR = MAIN_HOME / ".altergo" / "accounts"
 
+# The "native" account launches the provider with the real $HOME unchanged —
+# no HOME isolation, no altergo-managed dot-dirs.  Useful when the user's
+# real home already has a provider installed (e.g. the claude they normally
+# use) and they want to reach it from altergo (e.g. via portal/tmux).
+_NATIVE_ACCOUNT = "native"
+
 # Reserved account names — blocked at --config time
 _RESERVED_NAMES = frozenset(
     [
@@ -621,6 +633,7 @@ _RESERVED_NAMES = frozenset(
         "backup",
         "migrate",
         "use",
+        "native",
     ]
 )
 
@@ -638,7 +651,13 @@ LAST_SESSION_FILE = MAIN_HOME / ".altergo" / "last_session.json"
 
 
 def resolve_account(name: str) -> tuple:
-    """Return (account_home, account_claude) for the given account name."""
+    """Return (account_home, account_claude) for the given account name.
+
+    For the special "native" account, returns the real MAIN_HOME and
+    MAIN_CLAUDE so the provider runs with $HOME unmodified.
+    """
+    if name == _NATIVE_ACCOUNT:
+        return MAIN_HOME, MAIN_CLAUDE
     account_home = ACCOUNTS_DIR / name
     account_claude = account_home / ".claude"
     return account_home, account_claude
@@ -2481,6 +2500,13 @@ def do_star(session_id: str | None = None) -> None:
 
 
 def do_config(account: str = "default", provider: str = "claude"):
+    if account == _NATIVE_ACCOUNT:
+        print(
+            f"altergo: '{_NATIVE_ACCOUNT}' is a reserved passthrough account that uses the real $HOME. "
+            "It cannot be configured.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
     account_home, account_claude = resolve_account(account)
     show_banner(account)
     header = f"altergo v{__version__} · " + _link("https://pixelabs.net", "pixelabs.net")
@@ -2597,6 +2623,12 @@ def do_config(account: str = "default", provider: str = "claude"):
 
 
 def do_teardown(account: str = "default"):
+    if account == _NATIVE_ACCOUNT:
+        print(
+            f"altergo: '{_NATIVE_ACCOUNT}' is a reserved passthrough account — there is nothing to tear down.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
     account_home, account_claude = resolve_account(account)
     header = f"altergo v{__version__} · " + _link("https://pixelabs.net", "pixelabs.net")
     print(_c(2, header))
@@ -4887,6 +4919,9 @@ def interactive_settings():
 def _build_alt_env(account: str = "default") -> dict:
     """Return a copy of the environment with HOME set to the account home.
 
+    For the "native" account, $HOME is left unchanged — the provider runs in
+    the real user home without any altergo isolation.
+
     If account_home/.local/bin exists, it is prepended to PATH so that Claude
     Code's startup PATH check (which resolves relative to $HOME) doesn't warn
     about a missing native-installation directory.  The guard on existence is
@@ -4895,6 +4930,8 @@ def _build_alt_env(account: str = "default") -> dict:
     Without the guard we would prepend a ghost path on every launch and give
     an uncontrolled write target higher precedence than all system binaries.
     """
+    if account == _NATIVE_ACCOUNT:
+        return os.environ.copy()
     account_home, _ = resolve_account(account)
     env = os.environ.copy()
     env["HOME"] = str(account_home)
@@ -5038,8 +5075,25 @@ def launch_claude(account: str = "default", args=None, provider: str | None = No
 
     # Resolve provider
     if provider is None:
-        meta = load_account_meta(account_home)
-        provider = meta["provider"] if meta is not None else "claude"
+        if account == _NATIVE_ACCOUNT:
+            # For native, detect from the real home: pick the first provider whose
+            # binary is on PATH and whose dot-dir exists in MAIN_HOME.  This matches
+            # the same presence check used in build_launcher_menu so the launcher and
+            # CLI are consistent.  Avoids reading ~/account.json which belongs to the
+            # user, not to altergo.
+            for _pid, _prov in PROVIDERS.items():
+                if (MAIN_HOME / _prov["dot_dir"]).exists() and shutil.which(_prov["binary"]):
+                    provider = _pid
+                    break
+            if provider is None:
+                sys.exit(
+                    "altergo: no provider detected in the real $HOME.\n"
+                    "  Specify one explicitly: altergo native <provider>\n"
+                    f"  Known providers: {', '.join(PROVIDERS)}"
+                )
+        else:
+            meta = load_account_meta(account_home)
+            provider = meta["provider"] if meta is not None else "claude"
 
     # Find the binary
     if provider == "claude":
@@ -5065,7 +5119,10 @@ def launch_claude(account: str = "default", args=None, provider: str | None = No
     # BEFORE the banner so the cache from a previous run drives the nag.
     maybe_refresh_update_cache()
     first_launch_notice_if_needed()
-    home_change_notice_if_needed()
+    # Native account runs with the real $HOME — the HOME isolation notice
+    # doesn't apply and would be misleading.
+    if account != _NATIVE_ACCOUNT:
+        home_change_notice_if_needed()
     _pack_name = load_animation_pack()
     _pack_cfg = _ANIM_PACKS.get(_pack_name, _ANIM_PACKS[_DEFAULT_ANIM_PACK])
     # "off" or providers that don't support animation (codex) → no twinkle
@@ -5077,7 +5134,9 @@ def launch_claude(account: str = "default", args=None, provider: str | None = No
         animate_duration=_anim,
         spinner_override=_pack_cfg.get("spinner"),
     )
-    if provider == "claude":
+    # For native, account_home == MAIN_HOME, so _sync_claude_mcps would merge
+    # a file with itself — skip it.
+    if provider == "claude" and account != _NATIVE_ACCOUNT:
         _sync_claude_mcps(account_home)
 
     print(_c(C("dim"), f"  Launching {PROVIDERS[provider]['display_name']}..."))
@@ -5131,7 +5190,10 @@ def launch_shell(account: str = "default"):
         env["PROMPT"] = f"({label}) {env.get('PROMPT', '%n@%m %~ %# ')}"
     maybe_refresh_update_cache()
     first_launch_notice_if_needed()
-    home_change_notice_if_needed()
+    # Native account runs with the real $HOME — the HOME isolation notice
+    # doesn't apply and would be misleading.
+    if account != _NATIVE_ACCOUNT:
+        home_change_notice_if_needed()
     # Shell starts effectively instantly, so no twinkle animation — but
     # keep the greeting + update nag for consistency with other launch paths.
     show_banner(
@@ -5139,7 +5201,10 @@ def launch_shell(account: str = "default"):
         latest_version=get_cached_latest_version(),
         show_greeting=_load_bool_setting("show_greeting"),
     )
-    print(_c(C("command"), f"Entering altergo shell [{account}] (HOME={account_home})"))
+    if account == _NATIVE_ACCOUNT:
+        print(_c(C("command"), "Entering altergo shell [native] — real $HOME, no isolation"))
+    else:
+        print(_c(C("command"), f"Entering altergo shell [{account}] (HOME={account_home})"))
     print(_c(C("dim"), "Run 'exit' or Ctrl-D to return to your primary account.\n"))
 
     shell_cmd = [shell]
@@ -5176,7 +5241,10 @@ def launch_command(account: str = "default", cmd_args=None):
         print(_c(31, f"altergo: '{cmd_args[0]}' not found in PATH"), file=sys.stderr)
         sys.exit(1)
     env = _build_alt_env(account)
-    home_change_notice_if_needed()
+    # Native account runs with the real $HOME — the HOME isolation notice
+    # doesn't apply and would be misleading.
+    if account != _NATIVE_ACCOUNT:
+        home_change_notice_if_needed()
 
     inner_cmd = [cmd_path] + cmd_args[1:]
     print(_c(C("dim"), f"  Running {Path(cmd_path).name}..."))
@@ -5443,6 +5511,21 @@ def build_launcher_menu() -> list:
                 acct_ages[acct] = relative_time(s["modified"])
         if len(acct_ages) == len(accounts):
             break
+
+    # Inject "native" chips for every provider whose binary and dot-dir both
+    # exist in the real MAIN_HOME.  This lets the user reach their unmanaged
+    # home installation from the launcher without any $HOME change.
+    for lp in _LAUNCHER_PROVIDERS:
+        pid = lp["id"]
+        prov = PROVIDERS.get(pid)
+        if prov is None:
+            continue
+        binary_available = bool(shutil.which(lp["binary"]))
+        dot_dir_exists = (MAIN_HOME / prov["dot_dir"]).exists()
+        if binary_available and dot_dir_exists:
+            provider_accounts.setdefault(pid, [])
+            if _NATIVE_ACCOUNT not in provider_accounts[pid]:
+                provider_accounts[pid].append(_NATIVE_ACCOUNT)
 
     # Build ordered menu following _LAUNCHER_PROVIDERS order, then any extras
     seen_providers = set()
@@ -5886,6 +5969,9 @@ def main():
         name = "default"
         if len(args) >= 3 and args[1] == "--name":
             name = args[2]
+            if name in _RESERVED_NAMES:
+                print(f"altergo: '{name}' is a reserved name and cannot be torn down.", file=sys.stderr)
+                sys.exit(1)
         do_teardown(name)
         sys.exit(0)
 
@@ -6067,6 +6153,8 @@ def main():
             elif seen_flag:
                 # Value following a flag (e.g. session ID after --resume) — pass through
                 p_remaining.append(tok)
+            elif p_account is None and tok == _NATIVE_ACCOUNT:
+                p_account = tok
             elif p_account is None and (ACCOUNTS_DIR / tok).is_dir():
                 p_account = tok
             elif p_provider is None and tok in PROVIDERS:
@@ -6105,15 +6193,20 @@ def main():
     account = None
     if args and _looks_like_account(args[0]):
         candidate = args[0]
-        acct_home = ACCOUNTS_DIR / candidate
-        if not acct_home.is_dir():
-            print(
-                f"altergo: account '{candidate}' not found. Run 'altergo --config {candidate}' to create it.",
-                file=sys.stderr,
-            )
-            sys.exit(1)
-        account = candidate
-        args = args[1:]
+        if candidate == _NATIVE_ACCOUNT:
+            # Native account: no managed directory — runs with the real $HOME.
+            account = candidate
+            args = args[1:]
+        else:
+            acct_home = ACCOUNTS_DIR / candidate
+            if not acct_home.is_dir():
+                print(
+                    f"altergo: account '{candidate}' not found. Run 'altergo --config {candidate}' to create it.",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            account = candidate
+            args = args[1:]
 
     # ── Implicit account resolution (no positional name given) ───────────────
     if account is None:

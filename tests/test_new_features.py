@@ -703,3 +703,395 @@ def test_portal_tmux_not_installed_prints_warning_and_launches(tmp_path, monkeyp
     assert run_calls[0][0] != "tmux", (
         "Expected a direct launch without tmux, but the command started with 'tmux'"
     )
+
+
+# =============================================================================
+# Native account
+# =============================================================================
+#
+# The "native" account is a special passthrough that launches the provider
+# with the real $HOME unchanged — no HOME isolation, no managed dot-dirs.
+# These tests cover:
+#   1. Constant and reservation
+#   2. resolve_account returns MAIN_HOME / MAIN_CLAUDE
+#   3. _build_alt_env does NOT change HOME
+#   4. validate_account_name rejects "native"
+#   5. main() accepts "altergo native" without a managed account directory
+#   6. build_launcher_menu injects native chip when binary + dot-dir present
+# =============================================================================
+
+
+def test_native_constant_exists():
+    mod = _load_altergo()
+    assert hasattr(mod, "_NATIVE_ACCOUNT")
+    assert mod._NATIVE_ACCOUNT == "native"
+
+
+def test_native_is_reserved():
+    mod = _load_altergo()
+    assert "native" in mod._RESERVED_NAMES
+
+
+def test_native_validate_account_name_raises(tmp_path, monkeypatch):
+    """validate_account_name must reject 'native' as a reserved name."""
+    import sys
+
+    mod = _load_altergo()
+    monkeypatch.setattr(mod, "ACCOUNTS_DIR", tmp_path / "accounts")
+    monkeypatch.setattr(mod, "SETTINGS_FILE", tmp_path / "settings.json")
+
+    with pytest.raises(SystemExit):
+        mod.validate_account_name("native")
+
+
+def test_native_resolve_account_returns_main_home(tmp_path, monkeypatch):
+    """resolve_account('native') must return (MAIN_HOME, MAIN_CLAUDE)."""
+    mod = _load_altergo()
+    fake_home = tmp_path / "home"
+    fake_claude = fake_home / ".claude"
+    monkeypatch.setattr(mod, "MAIN_HOME", fake_home)
+    monkeypatch.setattr(mod, "MAIN_CLAUDE", fake_claude)
+
+    account_home, account_claude = mod.resolve_account("native")
+
+    assert account_home == fake_home
+    assert account_claude == fake_claude
+
+
+def test_native_resolve_account_non_native_unchanged(tmp_path, monkeypatch):
+    """resolve_account for a normal account still maps to ACCOUNTS_DIR/<name>."""
+    mod = _load_altergo()
+    accounts_dir = tmp_path / "accounts"
+    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
+
+    account_home, account_claude = mod.resolve_account("work")
+
+    assert account_home == accounts_dir / "work"
+    assert account_claude == accounts_dir / "work" / ".claude"
+
+
+def test_native_build_alt_env_does_not_change_home(monkeypatch):
+    """_build_alt_env('native') must return env with HOME unchanged."""
+    mod = _load_altergo()
+    original_home = "/original/home"
+    monkeypatch.setenv("HOME", original_home)
+
+    env = mod._build_alt_env("native")
+
+    assert env["HOME"] == original_home
+
+
+def test_native_build_alt_env_regular_account_changes_home(tmp_path, monkeypatch):
+    """_build_alt_env for a regular account sets HOME to the account dir."""
+    mod = _load_altergo()
+    accounts_dir = tmp_path / "accounts"
+    accounts_dir.mkdir()
+    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
+    monkeypatch.setenv("HOME", "/original/home")
+
+    env = mod._build_alt_env("work")
+
+    assert env["HOME"] == str(accounts_dir / "work")
+
+
+def test_native_main_dispatch_no_account_dir_required(tmp_path, monkeypatch):
+    """'altergo native' must succeed even when no accounts/ subdir named 'native' exists."""
+    import sys, io
+
+    mod = _load_altergo()
+    accounts_dir = tmp_path / "accounts"
+    accounts_dir.mkdir()
+    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
+    monkeypatch.setattr(mod, "SETTINGS_FILE", tmp_path / "settings.json")
+    monkeypatch.setattr(mod, "show_banner", lambda *a, **kw: None)
+
+    calls = []
+
+    def fake_launch(account, args=None, provider=None, force_tmux=False):
+        calls.append({"account": account, "args": list(args or []), "provider": provider})
+        raise SystemExit(0)
+
+    monkeypatch.setattr(mod, "launch_claude", fake_launch)
+    monkeypatch.setattr(sys, "argv", ["altergo", "native"])
+    monkeypatch.setattr(sys, "stderr", io.StringIO())
+
+    with pytest.raises(SystemExit) as exc:
+        mod.main()
+
+    assert exc.value.code == 0
+    assert len(calls) == 1
+    assert calls[0]["account"] == "native"
+
+
+def test_native_main_dispatch_with_provider(tmp_path, monkeypatch):
+    """'altergo native gemini' must pass provider='gemini' to launch_claude."""
+    import sys, io
+
+    mod = _load_altergo()
+    accounts_dir = tmp_path / "accounts"
+    accounts_dir.mkdir()
+    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
+    monkeypatch.setattr(mod, "SETTINGS_FILE", tmp_path / "settings.json")
+    monkeypatch.setattr(mod, "show_banner", lambda *a, **kw: None)
+
+    calls = []
+
+    def fake_launch(account, args=None, provider=None, force_tmux=False):
+        calls.append({"account": account, "provider": provider})
+        raise SystemExit(0)
+
+    monkeypatch.setattr(mod, "launch_claude", fake_launch)
+    monkeypatch.setattr(sys, "argv", ["altergo", "native", "gemini"])
+    monkeypatch.setattr(sys, "stderr", io.StringIO())
+
+    with pytest.raises(SystemExit) as exc:
+        mod.main()
+
+    assert exc.value.code == 0
+    assert calls[0]["account"] == "native"
+    assert calls[0]["provider"] == "gemini"
+
+
+def test_native_build_launcher_menu_injects_chip(tmp_path, monkeypatch):
+    """build_launcher_menu must add a 'native' chip for each provider whose
+    binary and dot-dir both exist in MAIN_HOME."""
+    mod = _load_altergo()
+
+    # Set up a fake MAIN_HOME with a .claude dot-dir so native is detected.
+    fake_home = tmp_path / "home"
+    (fake_home / ".claude").mkdir(parents=True)
+    monkeypatch.setattr(mod, "MAIN_HOME", fake_home)
+
+    # No managed accounts.
+    accounts_dir = tmp_path / "accounts"
+    accounts_dir.mkdir()
+    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
+
+    # Stub expensive helpers.
+    monkeypatch.setattr(mod, "_status_wrap", lambda msg, fn: fn())
+    monkeypatch.setattr(mod, "get_sessions", lambda: [])
+
+    # Make 'claude' appear to be on PATH, nothing else.
+    monkeypatch.setattr(mod.shutil, "which", lambda name: "/usr/bin/claude" if name == "claude" else None)
+
+    menu = mod.build_launcher_menu()
+
+    # There must be exactly one provider row — claude.
+    assert len(menu) == 1
+    claude_row = menu[0]
+    assert claude_row["provider_id"] == "claude"
+
+    # The native chip must be present.
+    chip_names = [c["name"] for c in claude_row["accounts"]]
+    assert "native" in chip_names
+
+
+def test_native_build_launcher_menu_no_chip_when_dot_dir_absent(tmp_path, monkeypatch):
+    """build_launcher_menu must NOT add a native chip when the provider dot-dir
+    does not exist in MAIN_HOME (even if the binary is on PATH)."""
+    mod = _load_altergo()
+
+    # MAIN_HOME exists but has NO .claude subdir.
+    fake_home = tmp_path / "home"
+    fake_home.mkdir()
+    monkeypatch.setattr(mod, "MAIN_HOME", fake_home)
+
+    accounts_dir = tmp_path / "accounts"
+    accounts_dir.mkdir()
+    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
+
+    monkeypatch.setattr(mod, "_status_wrap", lambda msg, fn: fn())
+    monkeypatch.setattr(mod, "get_sessions", lambda: [])
+    monkeypatch.setattr(mod.shutil, "which", lambda name: "/usr/bin/claude" if name == "claude" else None)
+
+    menu = mod.build_launcher_menu()
+
+    # No accounts and no detectable native dot-dir → empty menu.
+    assert menu == []
+
+
+def test_native_build_launcher_menu_no_chip_when_binary_absent(tmp_path, monkeypatch):
+    """build_launcher_menu must NOT add a native chip when the binary is absent
+    from PATH (even if the dot-dir exists)."""
+    mod = _load_altergo()
+
+    fake_home = tmp_path / "home"
+    (fake_home / ".claude").mkdir(parents=True)
+    monkeypatch.setattr(mod, "MAIN_HOME", fake_home)
+
+    accounts_dir = tmp_path / "accounts"
+    accounts_dir.mkdir()
+    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
+
+    monkeypatch.setattr(mod, "_status_wrap", lambda msg, fn: fn())
+    monkeypatch.setattr(mod, "get_sessions", lambda: [])
+    # No binaries available at all.
+    monkeypatch.setattr(mod.shutil, "which", lambda name: None)
+
+    menu = mod.build_launcher_menu()
+
+    assert menu == []
+
+
+# --- do_config and do_teardown guards ----------------------------------------
+
+
+def test_native_do_config_is_rejected(tmp_path, monkeypatch):
+    """do_config('native') must exit 1 with an explanatory message."""
+    import sys, io
+
+    mod = _load_altergo()
+    monkeypatch.setattr(mod, "ACCOUNTS_DIR", tmp_path / "accounts")
+    monkeypatch.setattr(mod, "SETTINGS_FILE", tmp_path / "settings.json")
+    monkeypatch.setattr(mod, "show_banner", lambda *a, **kw: None)
+
+    stderr_buf = io.StringIO()
+    monkeypatch.setattr(sys, "stderr", stderr_buf)
+
+    with pytest.raises(SystemExit) as exc:
+        mod.do_config("native", "claude")
+
+    assert exc.value.code == 1
+    assert "native" in stderr_buf.getvalue()
+
+
+def test_native_do_teardown_is_rejected(tmp_path, monkeypatch):
+    """do_teardown('native') must exit 1 without touching any home directories."""
+    import sys, io
+
+    mod = _load_altergo()
+    fake_home = tmp_path / "home"
+    (fake_home / ".claude").mkdir(parents=True)
+    monkeypatch.setattr(mod, "MAIN_HOME", fake_home)
+    monkeypatch.setattr(mod, "MAIN_CLAUDE", fake_home / ".claude")
+    monkeypatch.setattr(mod, "ACCOUNTS_DIR", tmp_path / "accounts")
+
+    stderr_buf = io.StringIO()
+    monkeypatch.setattr(sys, "stderr", stderr_buf)
+
+    with pytest.raises(SystemExit) as exc:
+        mod.do_teardown("native")
+
+    assert exc.value.code == 1
+    assert "native" in stderr_buf.getvalue()
+    # Critically: the dot-dir must be untouched.
+    assert (fake_home / ".claude").exists()
+
+
+def test_native_teardown_dispatch_blocked(tmp_path, monkeypatch):
+    """'altergo --teardown --name native' must exit 1 before reaching do_teardown."""
+    import sys, io
+
+    mod = _load_altergo()
+    monkeypatch.setattr(mod, "ACCOUNTS_DIR", tmp_path / "accounts")
+    monkeypatch.setattr(mod, "SETTINGS_FILE", tmp_path / "settings.json")
+    monkeypatch.setattr(mod, "show_banner", lambda *a, **kw: None)
+
+    stderr_buf = io.StringIO()
+    monkeypatch.setattr(sys, "stderr", stderr_buf)
+    monkeypatch.setattr(sys, "argv", ["altergo", "--teardown", "--name", "native"])
+
+    teardown_called = []
+    monkeypatch.setattr(mod, "do_teardown", lambda name: teardown_called.append(name))
+
+    with pytest.raises(SystemExit) as exc:
+        mod.main()
+
+    assert exc.value.code == 1
+    assert teardown_called == []  # do_teardown must NOT have been called
+
+
+# --- portal dispatch with native -----------------------------------------------
+
+
+def test_native_portal_dispatch_accepted(tmp_path, monkeypatch):
+    """'altergo portal native' must resolve to account='native' not exit 1."""
+    mod = _portal_mod(tmp_path, monkeypatch)
+
+    result = _run_portal(mod, monkeypatch, ["portal", "native"])
+
+    assert result["exit_code"] == 0
+    assert result["calls"][0]["account"] == "native"
+    assert result["calls"][0]["force_tmux"] is True
+
+
+def test_native_portal_dispatch_with_provider(tmp_path, monkeypatch):
+    """'altergo portal native gemini' must pass provider='gemini' to launch_claude."""
+    mod = _portal_mod(tmp_path, monkeypatch)
+
+    result = _run_portal(mod, monkeypatch, ["portal", "native", "gemini"])
+
+    assert result["exit_code"] == 0
+    call = result["calls"][0]
+    assert call["account"] == "native"
+    assert call["provider"] == "gemini"
+
+
+# --- Provider auto-detection for native ----------------------------------------
+
+
+def test_native_provider_detected_from_dot_dir(tmp_path, monkeypatch):
+    """launch_claude('native') with no explicit provider must detect the provider
+    from the presence of the dot-dir + binary in the real home."""
+    import sys, io, subprocess, types
+
+    mod = _load_altergo()
+
+    fake_home = tmp_path / "home"
+    (fake_home / ".claude").mkdir(parents=True)
+    monkeypatch.setattr(mod, "MAIN_HOME", fake_home)
+    monkeypatch.setattr(mod, "MAIN_CLAUDE", fake_home / ".claude")
+
+    run_calls = []
+
+    def fake_run(cmd, env=None, **kw):
+        run_calls.append(cmd)
+        return types.SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(mod.subprocess, "run", fake_run)
+    monkeypatch.setattr(mod, "_sweep_existing_accounts", lambda: None)
+    monkeypatch.setattr(mod.shutil, "which", lambda name: f"/usr/bin/{name}" if name == "claude" else None)
+    monkeypatch.setattr(mod, "maybe_refresh_update_cache", lambda: None)
+    monkeypatch.setattr(mod, "first_launch_notice_if_needed", lambda: None)
+    monkeypatch.setattr(mod, "home_change_notice_if_needed", lambda: None)
+    monkeypatch.setattr(mod, "load_animation_pack", lambda: "off")
+    monkeypatch.setattr(mod, "get_cached_latest_version", lambda: None)
+    monkeypatch.setattr(mod, "_load_bool_setting", lambda key, default=False: False)
+    monkeypatch.setattr(mod, "_sync_claude_mcps", lambda path: None)
+    monkeypatch.setattr(mod, "_record_last_session_after_exit", lambda *a: None)
+    monkeypatch.setattr(mod, "_print_launch_message", lambda: None)
+    monkeypatch.setattr(mod, "show_banner", lambda *a, **kw: None)
+
+    monkeypatch.setattr(sys, "stdout", io.StringIO())
+    monkeypatch.setattr(sys, "stderr", io.StringIO())
+
+    with pytest.raises(SystemExit) as exc:
+        mod.launch_claude("native")
+
+    assert exc.value.code == 0
+    assert len(run_calls) == 1
+    # Must have launched claude, not some other binary.
+    assert run_calls[0][0] == "/usr/bin/claude"
+
+
+def test_native_provider_no_detection_exits_with_message(tmp_path, monkeypatch):
+    """launch_claude('native') with no provider and no detectable dot-dir must
+    exit 1 with a clear error."""
+    import sys, io
+
+    mod = _load_altergo()
+
+    fake_home = tmp_path / "home"
+    fake_home.mkdir()  # Empty — no .claude, no .gemini, etc.
+    monkeypatch.setattr(mod, "MAIN_HOME", fake_home)
+    monkeypatch.setattr(mod, "MAIN_CLAUDE", fake_home / ".claude")
+
+    monkeypatch.setattr(mod, "_sweep_existing_accounts", lambda: None)
+    monkeypatch.setattr(mod.shutil, "which", lambda name: None)  # no binaries
+
+    monkeypatch.setattr(sys, "stderr", io.StringIO())
+
+    with pytest.raises(SystemExit) as exc:
+        mod.launch_claude("native")
+
+    assert exc.value.code != 0

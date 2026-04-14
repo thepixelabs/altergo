@@ -1,6 +1,22 @@
 # CHANGELOG
 
 
+## v0.34.0 (2026-04-14)
+
+### Features
+
+- **cli**: Add --rename command and make account name positional in --config
+  ([`19dd994`](https://github.com/thepixelabs/altergo/commit/19dd994580717b6a34e34bfe8e0c973c2e273eab))
+
+* feat(cli): add --rename command and make account name positional in --config
+
+- `altergo --config <name>` replaces `altergo --config --name <name>` - New `altergo --rename <old>
+  <new>` command renames an account directory - All help text, hints, and error messages updated to
+  use new syntax
+
+* test: update tmux session name and --config syntax assertions
+
+
 ## v0.33.2 (2026-04-13)
 
 ### Bug Fixes

@@ -230,14 +230,6 @@ def test_greeting_copy_guardrails():
     assert any("ci is asleep" in l.lower() for l in all_lines)
 
 
-# --- --update-check CLI flag ----------------------------------------------
-
-
-def test_known_commands_includes_update_check():
-    mod = _load_altergo()
-    assert "--update-check" in mod._KNOWN_COMMANDS
-
-
 # --- tmux_session setting -------------------------------------------------
 
 

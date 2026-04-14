@@ -5070,6 +5070,9 @@ def _build_tmux_cmd(inner_cmd: list, env: dict, session_name: str) -> list:
     # the user dismisses it. Signal exits (130/131) skip the prompt.
     inner_shell = " ".join(shlex.quote(arg) for arg in inner_cmd)
     wrapper = (
+        # Disable tmux mouse capture so clicks/scrolls pass through to the UI
+        # behind the terminal (e.g. browser-based Claude chat).
+        "tmux set-option mouse off 2>/dev/null; "
         f"{inner_shell}; _ret=$?; "
         # On clean exit (0): pause so the provider's exit page stays visible
         # before tmux tears down the alternate screen and returns to the caller.

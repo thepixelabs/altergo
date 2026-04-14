@@ -1,6 +1,33 @@
 # CHANGELOG
 
 
+## v0.35.0 (2026-04-14)
+
+### Features
+
+- **account**: Add native passthrough account that launches with real $HOME
+  ([`46255fe`](https://github.com/thepixelabs/altergo/commit/46255fe4e05c577fd7ab2ba7fd514412d51e36ec))
+
+* feat(account): add native passthrough account that launches with real \$HOME
+
+Introduces the reserved account name 'native' as a zero-isolation launch path. Running 'altergo
+  native' (or 'altergo native <provider>') launches the provider using the real \$HOME without any
+  directory change, symlinks, or altergo-managed dot-dirs.
+
+Key behaviours: - resolve_account('native') returns (MAIN_HOME, MAIN_CLAUDE) -
+  _build_alt_env('native') returns os.environ.copy() unchanged - Provider is auto-detected from
+  binary + dot-dir presence in MAIN_HOME - 'altergo portal native' works correctly in tmux mode -
+  HOME-change notice is suppressed (no HOME change is happening) - _sync_claude_mcps skipped
+  (account_home == MAIN_HOME, self-merge) - do_config/do_teardown reject 'native' with a clear error
+  - Launcher injects a native chip for each provider whose binary and dot-dir exist in MAIN_HOME -
+  Help menu documents 'altergo native' and 'altergo native <provider>' - 19 new tests; 127 total
+  passing
+
+* fix(lint): remove spurious f-prefix from shell native banner string
+
+* fix(lint): apply ruff format
+
+
 ## v0.34.0 (2026-04-14)
 
 ### Features

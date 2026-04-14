@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.35.2 (2026-04-14)
+
+### Bug Fixes
+
+- **tmux**: Disable mouse capture so UI scroll works behind terminal
+  ([`853236b`](https://github.com/thepixelabs/altergo/commit/853236b2512f097dc51a2010df577abb8a5d0f1f))
+
+
 ## v0.35.1 (2026-04-14)
 
 ### Bug Fixes

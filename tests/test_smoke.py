@@ -112,7 +112,7 @@ def test_unknown_account_error(tmp_path):
     assert result.returncode == 1
     assert "wokr" in result.stderr
     assert "not found" in result.stderr
-    assert "--config --name wokr" in result.stderr
+    assert "--config wokr" in result.stderr
 
 
 def test_validate_account_name_valid():

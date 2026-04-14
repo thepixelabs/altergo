@@ -277,16 +277,12 @@ def test_tmux_session_persists(tmp_path, monkeypatch):
 
 
 def test_tmux_session_name_format():
-    """Session names follow the altergo-<account>-<provider>-<hex> pattern."""
+    """Session names follow the <account>/<provider> pattern."""
     mod = _load_altergo()
     name = mod._tmux_session_name("work", "claude")
-    parts = name.split("-")
-    assert parts[0] == "altergo"
-    assert parts[1] == "work"
-    assert parts[2] == "claude"
-    # Hex suffix: 6 chars, all hex digits
-    assert len(parts[3]) == 6
-    assert all(c in "0123456789abcdef" for c in parts[3])
+    parts = name.split("/")
+    assert parts[0] == "work"
+    assert parts[1] == "claude"
 
 
 def test_tmux_session_name_sanitizes_dots_and_colons():
@@ -295,35 +291,37 @@ def test_tmux_session_name_sanitizes_dots_and_colons():
     name = mod._tmux_session_name("my.account:v2", "gemini")
     assert "." not in name
     assert ":" not in name
-    assert name.startswith("altergo-my-account-v2-gemini-")
+    assert name == "my-account-v2/gemini"
 
 
 def test_tmux_session_names_are_unique():
-    """Each call to _tmux_session_name returns a distinct name."""
+    """Session name is deterministic for the same account/provider pair."""
     mod = _load_altergo()
     names = {mod._tmux_session_name("default", "claude") for _ in range(20)}
-    assert len(names) == 20
+    # Deterministic: all 20 calls return the same name
+    assert len(names) == 1
 
 
 def test_build_tmux_cmd_structure():
-    """_build_tmux_cmd wraps the inner command correctly."""
+    """_build_tmux_cmd wraps the inner command via sh -c."""
     mod = _load_altergo()
     env = {"HOME": "/tmp/fake-home", "PATH": "/usr/bin:/bin"}
     inner = ["claude", "--resume", "abc"]
-    result = mod._build_tmux_cmd(inner, env, "altergo-default-claude-aabbcc")
+    result = mod._build_tmux_cmd(inner, env, "default/claude")
 
     assert result[0] == "tmux"
     assert result[1] == "new-session"
     assert "-s" in result
-    assert result[result.index("-s") + 1] == "altergo-default-claude-aabbcc"
+    assert result[result.index("-s") + 1] == "default/claude"
     # HOME and PATH forwarded via -e flags
     assert "-e" in result
     env_flags = [result[i + 1] for i, v in enumerate(result) if v == "-e"]
     assert any(f.startswith("HOME=") for f in env_flags)
     assert any(f.startswith("PATH=") for f in env_flags)
-    # Inner command follows --
+    # Inner command is wrapped in sh -c after --
     sep = result.index("--")
-    assert result[sep + 1 :] == inner
+    assert result[sep + 1] == "sh"
+    assert result[sep + 2] == "-c"
 
 
 def test_tmux_available_false_when_not_in_path(monkeypatch):
@@ -338,3 +336,370 @@ def test_tmux_available_true_when_in_path(monkeypatch):
     mod = _load_altergo()
     monkeypatch.setattr(mod.shutil, "which", lambda name: "/usr/bin/tmux" if name == "tmux" else None)
     assert mod._tmux_available() is True
+
+
+# --- portal argument routing --------------------------------------------------
+#
+# These tests exercise the portal argument-parsing block in main() in isolation.
+# They monkeypatch launch_claude so no real process is spawned and no account
+# directories need to exist on disk (beyond what each test creates with tmp_path).
+#
+# Design note: we call mod.main() directly after wiring up monkeypatches.
+# SystemExit is expected on every code path (portal always calls sys.exit(0)
+# or sys.exit(1)).  We catch it and inspect the recorded launch_claude call
+# or stderr output.
+
+
+def _portal_mod(tmp_path, monkeypatch):
+    """Return an altergo module with ACCOUNTS_DIR, SETTINGS_FILE, and the
+    PROVIDERS / KNOWN_COMMANDS globals pointed at a temp directory.
+
+    Callers are responsible for creating the account subdirectories they need.
+    """
+    mod = _load_altergo()
+    accounts_dir = tmp_path / "accounts"
+    accounts_dir.mkdir()
+    settings_file = tmp_path / "settings.json"
+
+    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
+    monkeypatch.setattr(mod, "SETTINGS_FILE", settings_file)
+    # Prevent banner / animation from writing to stdout during tests.
+    monkeypatch.setattr(mod, "show_banner", lambda *a, **kw: None)
+    return mod
+
+
+def _make_account(tmp_path, mod, name: str) -> None:
+    """Create a minimal account directory that the portal routing accepts."""
+    (mod.ACCOUNTS_DIR / name).mkdir(parents=True, exist_ok=True)
+
+
+def _run_portal(mod, monkeypatch, argv: list, *, active: str | None = None) -> dict:
+    """Drive main() with the given argv and return a dict with:
+        "calls"     — list of (account, args, provider, force_tmux) tuples
+        "exit_code" — integer exit code from SystemExit
+        "stderr"    — captured text written to sys.stderr
+    """
+    import io
+    import sys
+
+    calls = []
+
+    def fake_launch(account, args=None, provider=None, force_tmux=False):
+        calls.append({
+            "account": account,
+            "args": list(args or []),
+            "provider": provider,
+            "force_tmux": force_tmux,
+        })
+        sys.exit(0)
+
+    monkeypatch.setattr(mod, "launch_claude", fake_launch)
+    monkeypatch.setattr(mod, "sys", sys)
+
+    # Wire active account if requested.
+    if active is not None:
+        import json
+        mod.SETTINGS_FILE.write_text(json.dumps({"active_account": active}))
+
+    monkeypatch.setattr(sys, "argv", ["altergo"] + argv)
+
+    stderr_buf = io.StringIO()
+    monkeypatch.setattr(sys, "stderr", stderr_buf)
+
+    exit_code = 0
+    try:
+        mod.main()
+    except SystemExit as exc:
+        exit_code = exc.code if isinstance(exc.code, int) else 1
+
+    return {"calls": calls, "exit_code": exit_code, "stderr": stderr_buf.getvalue()}
+
+
+# -- happy path: no args, active account set -----------------------------------
+
+
+def test_portal_no_args_uses_active_account(tmp_path, monkeypatch):
+    """Given an active account, `altergo portal` launches that account."""
+    mod = _portal_mod(tmp_path, monkeypatch)
+    _make_account(tmp_path, mod, "work")
+
+    result = _run_portal(mod, monkeypatch, ["portal"], active="work")
+
+    assert result["exit_code"] == 0
+    assert len(result["calls"]) == 1
+    call = result["calls"][0]
+    assert call["account"] == "work"
+    assert call["force_tmux"] is True
+
+
+# -- happy path: explicit account name -----------------------------------------
+
+
+def test_portal_named_account_launches_that_account(tmp_path, monkeypatch):
+    """Given `altergo portal work`, launches the work account."""
+    mod = _portal_mod(tmp_path, monkeypatch)
+    _make_account(tmp_path, mod, "work")
+
+    result = _run_portal(mod, monkeypatch, ["portal", "work"])
+
+    assert result["exit_code"] == 0
+    call = result["calls"][0]
+    assert call["account"] == "work"
+    assert call["force_tmux"] is True
+
+
+# -- routing: unrecognised positional token is rejected with a clear error -----
+
+
+def test_portal_unrecognised_token_exits_with_error(tmp_path, monkeypatch):
+    """A positional token before any flags that is neither an account dir nor a known
+    provider produces exit 1 rather than being silently forwarded to the provider.
+    """
+    mod = _portal_mod(tmp_path, monkeypatch)
+    _make_account(tmp_path, mod, "work")
+
+    result = _run_portal(mod, monkeypatch, ["portal", "ghost"])
+
+    assert result["exit_code"] == 1
+
+
+# -- error: no accounts at all -------------------------------------------------
+
+
+def test_portal_no_accounts_exits_1_with_message(tmp_path, monkeypatch):
+    """When no accounts exist at all, `altergo portal` exits 1 with a clear error."""
+    mod = _portal_mod(tmp_path, monkeypatch)
+    # ACCOUNTS_DIR exists but is empty.
+
+    result = _run_portal(mod, monkeypatch, ["portal"])
+
+    assert result["exit_code"] == 1
+    assert "no accounts" in result["stderr"].lower()
+
+
+# -- error: multiple accounts, no active ---------------------------------------
+
+
+def test_portal_multiple_accounts_no_active_exits_1(tmp_path, monkeypatch):
+    """When multiple accounts exist and none is active, `altergo portal` exits 1."""
+    mod = _portal_mod(tmp_path, monkeypatch)
+    _make_account(tmp_path, mod, "work")
+    _make_account(tmp_path, mod, "personal")
+    # No active account — SETTINGS_FILE absent.
+
+    result = _run_portal(mod, monkeypatch, ["portal"])
+
+    assert result["exit_code"] == 1
+    assert "multiple" in result["stderr"].lower()
+    # Both account names should appear in the error so the user knows what to pick.
+    assert "work" in result["stderr"]
+    assert "personal" in result["stderr"]
+
+
+# -- provider pass-through -----------------------------------------------------
+
+
+def test_portal_with_provider_passes_provider_to_launch(tmp_path, monkeypatch):
+    """Given `altergo portal work gemini`, provider='gemini' reaches launch_claude."""
+    mod = _portal_mod(tmp_path, monkeypatch)
+    _make_account(tmp_path, mod, "work")
+
+    result = _run_portal(mod, monkeypatch, ["portal", "work", "gemini"])
+
+    assert result["exit_code"] == 0
+    call = result["calls"][0]
+    assert call["account"] == "work"
+    assert call["provider"] == "gemini"
+    assert call["force_tmux"] is True
+
+
+# -- --resume flag -------------------------------------------------------------
+
+
+def test_portal_resume_flag_in_remaining_args(tmp_path, monkeypatch):
+    """Given `altergo portal work --resume`, --resume appears in args passed to launch_claude."""
+    mod = _portal_mod(tmp_path, monkeypatch)
+    _make_account(tmp_path, mod, "work")
+
+    result = _run_portal(mod, monkeypatch, ["portal", "work", "--resume"])
+
+    assert result["exit_code"] == 0
+    call = result["calls"][0]
+    assert "--resume" in call["args"]
+
+
+def test_portal_resume_with_id_in_remaining_args(tmp_path, monkeypatch):
+    """Given `altergo portal work --resume abc123`, both flags appear in args."""
+    mod = _portal_mod(tmp_path, monkeypatch)
+    _make_account(tmp_path, mod, "work")
+
+    result = _run_portal(mod, monkeypatch, ["portal", "work", "--resume", "abc123"])
+
+    assert result["exit_code"] == 0
+    call = result["calls"][0]
+    assert "--resume" in call["args"]
+    assert "abc123" in call["args"]
+    # Ordering must be preserved — --resume immediately before its ID.
+    resume_idx = call["args"].index("--resume")
+    assert call["args"][resume_idx + 1] == "abc123"
+
+
+# -- force_tmux is always True -------------------------------------------------
+
+
+def test_portal_always_passes_force_tmux_true(tmp_path, monkeypatch):
+    """force_tmux=True is passed to launch_claude regardless of user tmux settings."""
+    import json
+
+    mod = _portal_mod(tmp_path, monkeypatch)
+    _make_account(tmp_path, mod, "work")
+    # Explicitly set tmux_session=False so we know force_tmux comes from portal,
+    # not from the user's setting.
+    mod.SETTINGS_FILE.write_text(json.dumps({"active_account": "work", "tmux_session": False}))
+
+    result = _run_portal(mod, monkeypatch, ["portal", "work"])
+
+    assert result["exit_code"] == 0
+    assert result["calls"][0]["force_tmux"] is True
+
+
+# -- single account, no active — resolve automatically -------------------------
+
+
+def test_portal_single_account_no_active_resolves_automatically(tmp_path, monkeypatch):
+    """When exactly one account exists and none is active, portal uses it without error."""
+    mod = _portal_mod(tmp_path, monkeypatch)
+    _make_account(tmp_path, mod, "solo")
+    # No SETTINGS_FILE → no active account.
+
+    result = _run_portal(mod, monkeypatch, ["portal"])
+
+    assert result["exit_code"] == 0
+    assert result["calls"][0]["account"] == "solo"
+
+
+# -- already inside tmux -------------------------------------------------------
+
+
+def test_portal_inside_tmux_prints_warning_and_launches(tmp_path, monkeypatch):
+    """When $TMUX is set, portal prints the 'already inside tmux' warning and still launches."""
+    import os
+
+    mod = _portal_mod(tmp_path, monkeypatch)
+    _make_account(tmp_path, mod, "work")
+    monkeypatch.setenv("TMUX", "/tmp/tmux-1234/default,1234,0")
+
+    # launch_claude itself is not monkeypatched here; we need the real
+    # force_tmux/TMUX branch to execute.  Monkeypatch subprocess.run so the
+    # provider binary is never actually exec'd.
+    import subprocess as _subprocess
+    import types
+
+    fake_result = types.SimpleNamespace(returncode=0)
+    run_calls = []
+
+    def fake_run(cmd, env=None, **kw):
+        run_calls.append(cmd)
+        return fake_result
+
+    monkeypatch.setattr(mod.subprocess, "run", fake_run)
+    # Prevent side-effect helpers from failing (no real HOME / binary).
+    monkeypatch.setattr(mod, "_sweep_existing_accounts", lambda: None)
+    monkeypatch.setattr(mod, "resolve_account", lambda name: (tmp_path / name, name))
+    monkeypatch.setattr(mod, "load_account_meta", lambda path: {"provider": "claude"})
+    monkeypatch.setattr(mod, "_find_claude", lambda: "/usr/bin/claude")
+    monkeypatch.setattr(mod, "_build_alt_env", lambda name: {"HOME": str(tmp_path / name), "PATH": "/usr/bin"})
+    monkeypatch.setattr(mod, "maybe_refresh_update_cache", lambda: None)
+    monkeypatch.setattr(mod, "first_launch_notice_if_needed", lambda: None)
+    monkeypatch.setattr(mod, "home_change_notice_if_needed", lambda: None)
+    monkeypatch.setattr(mod, "load_animation_pack", lambda: "off")
+    monkeypatch.setattr(mod, "get_cached_latest_version", lambda: None)
+    monkeypatch.setattr(mod, "_load_bool_setting", lambda key, default=False: False)
+    monkeypatch.setattr(mod, "_sync_claude_mcps", lambda path: None)
+    monkeypatch.setattr(mod, "_record_last_session_after_exit", lambda *a: None)
+    monkeypatch.setattr(mod, "_print_launch_message", lambda: None)
+
+    import io, sys
+    stdout_buf = io.StringIO()
+    monkeypatch.setattr(sys, "stdout", stdout_buf)
+    monkeypatch.setattr(sys, "argv", ["altergo", "portal", "work"])
+
+    stderr_buf = io.StringIO()
+    monkeypatch.setattr(sys, "stderr", stderr_buf)
+
+    try:
+        mod.main()
+    except SystemExit:
+        pass
+
+    combined_output = stdout_buf.getvalue() + stderr_buf.getvalue()
+    assert "already inside a tmux session" in combined_output, (
+        f"Expected 'already inside a tmux session' warning; got: {combined_output!r}"
+    )
+    # A command should still have been launched (subprocess.run called).
+    assert len(run_calls) == 1
+
+
+# -- tmux not installed --------------------------------------------------------
+
+
+def test_portal_tmux_not_installed_prints_warning_and_launches(tmp_path, monkeypatch):
+    """When tmux is absent from PATH, portal warns and launches the provider directly."""
+    import os
+
+    mod = _portal_mod(tmp_path, monkeypatch)
+    _make_account(tmp_path, mod, "work")
+    # Ensure we are NOT inside tmux so the availability branch is reached.
+    monkeypatch.delenv("TMUX", raising=False)
+    # Make tmux unavailable.
+    monkeypatch.setattr(mod.shutil, "which", lambda name: None)
+
+    import subprocess as _subprocess
+    import types
+
+    fake_result = types.SimpleNamespace(returncode=0)
+    run_calls = []
+
+    def fake_run(cmd, env=None, **kw):
+        run_calls.append(cmd)
+        return fake_result
+
+    monkeypatch.setattr(mod.subprocess, "run", fake_run)
+    monkeypatch.setattr(mod, "_sweep_existing_accounts", lambda: None)
+    monkeypatch.setattr(mod, "resolve_account", lambda name: (tmp_path / name, name))
+    monkeypatch.setattr(mod, "load_account_meta", lambda path: {"provider": "claude"})
+    monkeypatch.setattr(mod, "_find_claude", lambda: "/usr/bin/claude")
+    monkeypatch.setattr(mod, "_build_alt_env", lambda name: {"HOME": str(tmp_path / name), "PATH": "/usr/bin"})
+    monkeypatch.setattr(mod, "maybe_refresh_update_cache", lambda: None)
+    monkeypatch.setattr(mod, "first_launch_notice_if_needed", lambda: None)
+    monkeypatch.setattr(mod, "home_change_notice_if_needed", lambda: None)
+    monkeypatch.setattr(mod, "load_animation_pack", lambda: "off")
+    monkeypatch.setattr(mod, "get_cached_latest_version", lambda: None)
+    monkeypatch.setattr(mod, "_load_bool_setting", lambda key, default=False: False)
+    monkeypatch.setattr(mod, "_sync_claude_mcps", lambda path: None)
+    monkeypatch.setattr(mod, "_record_last_session_after_exit", lambda *a: None)
+    monkeypatch.setattr(mod, "_print_launch_message", lambda: None)
+
+    import io, sys
+    stdout_buf = io.StringIO()
+    monkeypatch.setattr(sys, "stdout", stdout_buf)
+    monkeypatch.setattr(sys, "argv", ["altergo", "portal", "work"])
+
+    stderr_buf = io.StringIO()
+    monkeypatch.setattr(sys, "stderr", stderr_buf)
+
+    try:
+        mod.main()
+    except SystemExit:
+        pass
+
+    combined_output = stdout_buf.getvalue() + stderr_buf.getvalue()
+    assert "tmux not found" in combined_output, (
+        f"Expected 'tmux not found' warning; got: {combined_output!r}"
+    )
+    # Despite no tmux, the provider should still be launched.
+    assert len(run_calls) == 1
+    # The command must NOT start with "tmux" — direct launch.
+    assert run_calls[0][0] != "tmux", (
+        "Expected a direct launch without tmux, but the command started with 'tmux'"
+    )

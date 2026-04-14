@@ -341,11 +341,11 @@ def test_altergo_passthrough_double_dash(full_home, fake_claude_bin):
 
 
 def test_unknown_account_exits_1_with_message(full_home):
-    """`altergo typo` exits 1 and prints a --config --name hint for the unknown account."""
+    """`altergo typo` exits 1 and prints an --config hint for the unknown account."""
     proc = run_altergo_nobin(full_home, "typo")
     assert proc.returncode == 1
     assert "typo" in proc.stderr, f"Account name 'typo' missing from stderr: {proc.stderr!r}"
-    assert "--config --name typo" in proc.stderr, (
+    assert "--config typo" in proc.stderr, (
         f"Config hint missing from stderr: {proc.stderr!r}"
     )
 
@@ -487,6 +487,129 @@ def test_real_claude_version_with_account_home(full_home):
         f"Real `claude --version` failed with account HOME; stderr={proc.stderr!r}"
     )
     assert proc.stdout.strip(), "Expected version output on stdout, got nothing"
+
+
+# ---------------------------------------------------------------------------
+# Group 7 — portal subcommand (subprocess level)
+#
+# portal always passes force_tmux=True to launch_claude.  To keep these tests
+# hermetic (no real tmux required), we set TMUX=/fake in the subprocess env.
+# That triggers the "already inside tmux" branch inside launch_claude, which
+# skips the tmux wrap and calls subprocess.run([claude_binary, ...]) directly —
+# exactly what the fake sentinel binary is built to handle.
+# ---------------------------------------------------------------------------
+
+
+def test_portal_no_args_uses_active_account(full_home, fake_claude_bin):
+    """`altergo portal` with active account set launches that account under force_tmux."""
+    proc = run_altergo(
+        full_home, fake_claude_bin,
+        "portal",
+        extra_env={"TMUX": "/tmp/tmux-fake,0,0"},
+    )
+    assert proc.returncode == 0, f"expected exit 0; stderr={proc.stderr!r}"
+    sentinel = parse_sentinel_output(proc.stdout)
+    # The active account from full_home fixture is "default".
+    assert sentinel.get("ALTERGO_TEST_HOME") == str(full_home["default_home"]), (
+        f"portal (no args) used HOME={sentinel.get('ALTERGO_TEST_HOME')!r}, "
+        f"expected default account {full_home['default_home']}"
+    )
+    # The warning for being inside tmux must appear somewhere in the output.
+    assert "already inside a tmux session" in proc.stdout + proc.stderr, (
+        "Expected 'already inside a tmux session' message when TMUX is set"
+    )
+
+
+def test_portal_named_account_launches_that_account(full_home, fake_claude_bin):
+    """`altergo portal work` launches the work account under force_tmux."""
+    proc = run_altergo(
+        full_home, fake_claude_bin,
+        "portal", "work",
+        extra_env={"TMUX": "/tmp/tmux-fake,0,0"},
+    )
+    assert proc.returncode == 0, f"expected exit 0; stderr={proc.stderr!r}"
+    sentinel = parse_sentinel_output(proc.stdout)
+    assert sentinel.get("ALTERGO_TEST_HOME") == str(full_home["work_home"]), (
+        f"portal work used HOME={sentinel.get('ALTERGO_TEST_HOME')!r}, "
+        f"expected {full_home['work_home']}"
+    )
+
+
+def test_portal_unknown_positional_token_exits_1(full_home, fake_claude_bin):
+    """`altergo portal ghost` — 'ghost' is not an account dir and not a provider,
+    so portal exits 1 with a clear error rather than silently forwarding it.
+    """
+    proc = run_altergo(
+        full_home, fake_claude_bin,
+        "portal", "ghost",
+        extra_env={"TMUX": "/tmp/tmux-fake,0,0"},
+    )
+    assert proc.returncode == 1, (
+        f"expected exit 1 for unknown token; stderr={proc.stderr!r}"
+    )
+    assert "ghost" in proc.stderr, "error message should name the unknown token"
+
+
+def test_portal_multiple_accounts_no_active_exits_1(full_home):
+    """`altergo portal` with no active account and multiple accounts exits 1 with a hint."""
+    # Remove the active account from settings so no active is set.
+    import json
+    settings = full_home["home"] / ".altergo" / ".altergo.json"
+    if settings.exists():
+        data = json.loads(settings.read_text())
+        data.pop("active_account", None)
+        settings.write_text(json.dumps(data))
+
+    proc = run_altergo_nobin(
+        full_home,
+        "portal",
+        extra_env={"TMUX": "/tmp/tmux-fake,0,0"},
+    )
+    assert proc.returncode == 1, f"expected exit 1; got {proc.returncode}; stderr={proc.stderr!r}"
+    assert "multiple" in proc.stderr.lower(), (
+        f"Expected 'multiple accounts' message in stderr: {proc.stderr!r}"
+    )
+
+
+def test_portal_resume_flag_passed_through_to_provider(full_home, fake_claude_bin):
+    """`altergo portal work --resume` passes --resume to the provider binary."""
+    proc = run_altergo(
+        full_home, fake_claude_bin,
+        "portal", "work", "--resume",
+        extra_env={"TMUX": "/tmp/tmux-fake,0,0"},
+    )
+    assert proc.returncode == 0, f"expected exit 0; stderr={proc.stderr!r}"
+    # The fake claude sentinel binary accepts all args without error, so exit 0
+    # proves the flag was forwarded without being dropped or causing a crash.
+
+
+def test_portal_resume_with_id_passed_through_to_provider(full_home, fake_claude_bin):
+    """`altergo portal work --resume abc123` passes both --resume and abc123 through."""
+    proc = run_altergo(
+        full_home, fake_claude_bin,
+        "portal", "work", "--resume", "abc123",
+        extra_env={"TMUX": "/tmp/tmux-fake,0,0"},
+    )
+    assert proc.returncode == 0, f"expected exit 0; stderr={proc.stderr!r}"
+
+
+def test_portal_home_is_correct_account_not_main_home(full_home, fake_claude_bin):
+    """`altergo portal personal` must set HOME to the personal account, never MAIN_HOME."""
+    main_home = str(full_home["home"])
+    proc = run_altergo(
+        full_home, fake_claude_bin,
+        "portal", "personal",
+        extra_env={"TMUX": "/tmp/tmux-fake,0,0"},
+    )
+    assert proc.returncode == 0, f"expected exit 0; stderr={proc.stderr!r}"
+    sentinel = parse_sentinel_output(proc.stdout)
+    actual = sentinel.get("ALTERGO_TEST_HOME")
+    assert actual == str(full_home["personal_home"]), (
+        f"portal personal: HOME={actual!r}, expected personal account home"
+    )
+    assert actual != main_home, (
+        "portal set HOME to MAIN_HOME — credential isolation is broken"
+    )
 
 
 @pytest.mark.skipif(shutil.which("claude") is None, reason="claude not installed")

@@ -8,7 +8,7 @@ import json
 import os
 import pwd
 import re
-import secrets
+import shlex
 import shutil
 import subprocess
 import sys
@@ -139,7 +139,7 @@ THEMES = {
 # always read as dim, and the version blurb is purposely low-contrast.
 _STATIC_ANSI = {
     "dim": "2",
-    "version": "2;38;5;244",
+    "version": "2",  # faint only — lets terminal/p10k/iterm theme control the hue
 }
 
 _DEFAULT_THEME = "ocean"
@@ -249,6 +249,7 @@ def show_banner(
     latest_version: str | None = None,
     show_greeting: bool = False,
     animate_duration: float = 0.0,
+    spinner_override: str | None = None,
 ):
     """Print the altergo banner. TTY-only.
 
@@ -294,12 +295,13 @@ def show_banner(
         theme = THEMES.get(get_current_theme(), THEMES[_DEFAULT_THEME])
         theme_id = get_current_theme()
         grad = theme["banner"]
-        figlet = RichFiglet("altergo", font="smslant", colors=grad, horizontal=True)
+        _banner_font = load_persisted_banner_font()
+        figlet = RichFiglet("altergo", font=_banner_font, colors=grad, horizontal=True)
 
         # Measure the logo upfront — used both for the version column width
         # (so the version sits right next to the figlet, not on the far edge
         # of the terminal) and for centering the account name underneath.
-        rendered = pyfiglet.Figlet(font="smslant").renderText("altergo")
+        rendered = pyfiglet.Figlet(font=_banner_font).renderText("altergo")
         logo_lines = [ln for ln in rendered.splitlines() if ln.strip()]
         logo_right = max((len(ln.rstrip()) for ln in logo_lines), default=32)
 
@@ -363,12 +365,15 @@ def show_banner(
 
             if account:
                 if animate_duration > 0:
-                    try:
-                        import altergo_greetings as _greet
+                    if spinner_override:
+                        spinner_name = spinner_override
+                    else:
+                        try:
+                            import altergo_greetings as _greet
 
-                        spinner_name = _greet.spinner_for_theme(theme_id)
-                    except Exception:
-                        spinner_name = "dots"
+                            spinner_name = _greet.spinner_for_theme(theme_id)
+                        except Exception:
+                            spinner_name = "dots"
                     from rich.padding import Padding
 
                     acct_inner = Table.grid(padding=(0, 0), expand=False)
@@ -461,7 +466,17 @@ def show_help():
         return _c(C("dim"), t)
 
     def sep():
-        return _c(C("dim"), "  " + "─" * 52)
+        return _c(C("dim"), "  " + "─" * 54)
+
+    # Descriptions are plain text — no color code — so the terminal skin controls
+    # their color rather than forcing a hardcoded dim/grey.
+    # _COL is the visual column where descriptions start (2-space indent + command).
+    # Longest visible command is 36 chars → descriptions start at column 40.
+    _COL = 40
+
+    def row(raw, colored, description):
+        pad = " " * max(2, _COL - 2 - len(raw))
+        return f"  {colored}{pad}{description}"
 
     pixelabs = _link("https://pixelabs.net", _c(C("brand"), "pixelabs.net"))
 
@@ -473,56 +488,104 @@ def show_help():
         "",
         sep(),
         h("Launch"),
-        f"  {kw('altergo')}                             {dim('Open launcher or start active account')}",
-        f"  {kw('altergo')} {arg('<name>')}                     {dim('Launch a specific account')}",
-        f"  {kw('altergo')} {arg('<name>')} {arg('<provider>')}           {dim('Launch with a specific provider')}",
+        row("altergo", kw("altergo"), "Open launcher or start active account"),
+        row("altergo <name>", f"{kw('altergo')} {arg('<name>')}", "Launch a named account"),
+        row(
+            "altergo <name> <provider>",
+            f"{kw('altergo')} {arg('<name>')} {arg('<provider>')}",
+            "Launch with a specific provider",
+        ),
         "",
         sep(),
         h("Accounts"),
-        f"  {kw('altergo --config')}                   {dim('Create or reconfigure an account')}",
-        f"  {kw('altergo --config --name')} {arg('<name>')}     {dim('Name the account')}",
-        f"  {kw('altergo --config --provider')} {arg('<p>')}    {dim('claude, gemini, codex, copilot')}",
-        f"  {dim('  e.g.')} {kw('altergo --config --name')} {arg('work-claude')} {kw('--provider')} {arg('claude')}",
-        f"  {dim('  e.g.')} {kw('altergo --config --name')} {arg('work-gemini')} {kw('--provider')} {arg('gemini')}",
-        f"  {kw('altergo --use')} {arg('<name>')}               {dim('Set default account')}",
-        f"  {kw('altergo --teardown')} {arg('[--name <n>]')}    {dim('Remove account symlinks')}",
-        f"  {kw('altergo --settings')}                 {dim('Manage shared credentials (TUI)')}",
+        row("altergo --config", kw("altergo --config"), "Create or reconfigure an account"),
+        row(
+            "altergo --config <name>",
+            f"{kw('altergo --config')} {arg('<name>')}",
+            "Create or reconfigure a named account",
+        ),
+        row(
+            "altergo --rename <old> <new>",
+            f"{kw('altergo --rename')} {arg('<old>')} {arg('<new>')}",
+            "Rename an account",
+        ),
+        row(
+            "altergo --config --provider <p>",
+            f"{kw('altergo --config --provider')} {arg('<p>')}",
+            "Provider: claude, gemini, codex, copilot",
+        ),
+        row("altergo --use <name>", f"{kw('altergo --use')} {arg('<name>')}", "Set as default account"),
+        row(
+            "altergo --teardown [--name <n>]",
+            f"{kw('altergo --teardown')} {arg('[--name <n>]')}",
+            "Remove account files and symlinks",
+        ),
+        row("altergo --settings", kw("altergo --settings"), "Manage shared credentials"),
         "",
         sep(),
         h("Sessions"),
-        f"  {kw('altergo --resume')}                   {dim('Pick session interactively')}",
-        f"  {kw('altergo --resume')} {arg('<id>')}             {dim('Resume by session ID')}",
-        f"  {kw('altergo --search')}                   {dim('Search conversation history')}",
-        f"  {kw('altergo --list')}                     {dim('List recent sessions')}",
-        f"  {kw('altergo --star')}                     {dim('Star the last exited session')}",
-        f"  {kw('altergo --star')} {arg('<id>')}               {dim('Star a session by ID')}",
+        row("altergo --resume", kw("altergo --resume"), "Pick session interactively"),
+        row("altergo --resume <id>", f"{kw('altergo --resume')} {arg('<id>')}", "Resume by session ID"),
+        row("altergo --search", kw("altergo --search"), "Search conversation history"),
+        row("altergo --list", kw("altergo --list"), "List recent sessions"),
+        row("altergo --star", kw("altergo --star"), "Star the last session"),
+        row("altergo --star <id>", f"{kw('altergo --star')} {arg('<id>')}", "Star a session by ID"),
+        "",
+        sep(),
+        h("Portal  ·  tmux-backed, reconnect from anywhere"),
+        row("altergo portal", f"{kw('altergo')} {kw('portal')}", "Open portal with active account"),
+        row(
+            "altergo portal <name>",
+            f"{kw('altergo')} {kw('portal')} {arg('<name>')}",
+            "Open portal for a named account",
+        ),
+        row(
+            "altergo portal <name> <provider>",
+            f"{kw('altergo')} {kw('portal')} {arg('<name>')} {arg('<provider>')}",
+            "Open portal with specific provider",
+        ),
+        row(
+            "altergo portal <name> --resume",
+            f"{kw('altergo')} {kw('portal')} {arg('<name>')} {kw('--resume')}",
+            "Reconnect to last session",
+        ),
+        row(
+            "altergo portal <name> --resume <id>",
+            f"{kw('altergo')} {kw('portal')} {arg('<name>')} {kw('--resume')} {arg('<id>')}",
+            "Reconnect to a specific session",
+        ),
         "",
         sep(),
         h("Customization"),
-        f"  {kw('altergo --theme')}                    {dim('Show active theme')}",
-        f"  {kw('altergo --theme')} {arg('<name>')}            {dim(', '.join(THEMES.keys()))}",
-        f"  {kw('altergo --update-check')} {arg('on|off')}     {dim('Enable or disable update checker')}",
+        row("altergo --theme", kw("altergo --theme"), "Show active theme"),
+        row(
+            "altergo --theme <name>",
+            f"{kw('altergo --theme')} {arg('<name>')}",
+            f"Set theme  ({', '.join(THEMES.keys())})",
+        ),
+        row(
+            "altergo --update-check on|off",
+            f"{kw('altergo --update-check')} {arg('on|off')}",
+            "Enable or disable update checker",
+        ),
         "",
         sep(),
         h("Advanced"),
-        f"  {kw('altergo')} {arg('<name>')} {kw('shell')}             {dim('Shell inside account HOME')}",
-        f"  {kw('altergo')} {arg('<name>')} {kw('--')} {arg('<cmd>')}         {dim('Run command in account context')}",
+        row(
+            "altergo <name> shell", f"{kw('altergo')} {arg('<name>')} {kw('shell')}", "Open a shell inside account HOME"
+        ),
+        row(
+            "altergo <name> -- <cmd>",
+            f"{kw('altergo')} {arg('<name>')} {kw('--')} {arg('<cmd>')}",
+            "Run a command in account context",
+        ),
         "",
         sep(),
-        h("Navigation"),
-        (
-            f"  {kw('↑↓')} {kw('jk')}    {dim('move')}    {kw('←→')} {kw('hl')}"
-            f"  {dim('switch account')}    {kw('Enter')}  {dim('launch')}"
-        ),
-        (
-            f"  {kw('t')}       {dim('cycle theme')}   {kw('s')}      {dim('shell mode')}"
-            f"       {kw('d')}      {dim('set default')}"
-        ),
-        (
-            f"  {kw('p')} {kw('Tab')}    {dim('preview')}   {kw('/')}      {dim('search')}"
-            f"           {kw('g')} {kw('G')}   {dim('top / bottom')}"
-        ),
-        f"  {kw('q')} {kw('Esc')}    {dim('quit')}",
+        h("Launcher keys"),
+        (f"  {kw('↑↓')} {kw('jk')}  move    {kw('←→')} {kw('hl')}  switch account    {kw('Enter')}  launch"),
+        (f"  {kw('t')}  cycle theme    {kw('s')}  shell mode    {kw('d')}  set default"),
+        (f"  {kw('p')} {kw('Tab')}  preview    {kw('/')}  search    {kw('g')} {kw('G')}  top / bottom"),
+        f"  {kw('q')} {kw('Esc')}  quit",
         "",
         dim("  altergo · open-source by pixelabs · not affiliated with Anthropic, Google, OpenAI, or GitHub"),
         "",
@@ -541,7 +604,7 @@ MAIN_HOME = _pw_home
 MAIN_CLAUDE = MAIN_HOME / ".claude"
 ACCOUNTS_DIR = MAIN_HOME / ".altergo" / "accounts"
 
-# Reserved account names — blocked at --config --name time
+# Reserved account names — blocked at --config time
 _RESERVED_NAMES = frozenset(
     [
         "main",
@@ -1113,15 +1176,27 @@ def load_last_session() -> dict | None:
         return None
 
 
-def _record_last_session_after_exit(provider: str) -> None:
+def _record_last_session_after_exit(provider: str, launch_time: float) -> None:
     """Scan for the newest JSONL session file and write it to LAST_SESSION_FILE.
 
     Called immediately after the provider subprocess exits so that
     ``altergo --star`` can star the session without needing its ID.
+
+    Only considers files with mtime >= launch_time - 2.0 so that sessions
+    running in other terminal windows (whose JSONL files may be newer overall)
+    are not mistakenly captured. The 2-second buffer covers filesystem
+    timestamp granularity (HFS+ has 1s resolution) and clock imprecision.
+
+    Note: when tmux_session is enabled, subprocess.run returns as soon as tmux
+    forks — before Claude Code has written anything — so this scan may miss the
+    session in that path. That is a known limitation of the tmux launch model.
     """
     projects_dir = MAIN_CLAUDE / "projects"
     if not projects_dir.exists():
         return
+
+    # Subtract a buffer to tolerate filesystem timestamp imprecision.
+    cutoff = launch_time - 2.0
 
     newest_path = None
     newest_mtime = 0.0
@@ -1136,7 +1211,7 @@ def _record_last_session_after_exit(provider: str) -> None:
                         continue
                     try:
                         mtime = f.stat().st_mtime
-                        if mtime > newest_mtime:
+                        if mtime >= cutoff and mtime > newest_mtime:
                             newest_mtime = mtime
                             newest_path = f
                     except OSError:
@@ -1187,6 +1262,203 @@ def save_persisted_theme(name: str) -> None:
     tmp = SETTINGS_FILE.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(data, indent=2))
     os.replace(str(tmp), str(SETTINGS_FILE))
+
+
+# ── Banner font ───────────────────────────────────────────────────────────────
+
+# Curated list of pyfiglet fonts that look good in a terminal banner.
+# Filtered at runtime to those actually available in the installed pyfiglet
+# *and* that render "altergo" in ≤ 5 non-empty rows.
+_BANNER_FONT_CATALOG: list[str] = [
+    "smslant",  # default — clean italic, 5 rows
+    "shadow",  # soft outline, very legible, 5 rows
+    "small",  # compact upright, good for narrow terminals, 5 rows
+    "thin",  # delicate line art, 5 rows (used in onboarding)
+    "chunky",  # bold blocky, strong presence, 5 rows
+    "avatar",  # clean slightly condensed, 5 rows
+    "trek",  # retro sci-fi, 5 rows
+    "rowancap",  # elegant wide, 5 rows
+    "elite",  # block-shade half-block chars, 5 rows
+    "smblock",  # compact block art, 4 rows
+    "double",  # double-line ASCII, 4 rows
+    "bulbhead",  # rounded uppercase, 4 rows
+    "tombstone",  # western-flavored, 4 rows
+    "calvin_s",  # box-drawing chars, 3 rows
+    "future",  # box-drawing variant, 3 rows
+    "digital",  # +-+-+ geometric, 3 rows
+    "pagga",  # block-shade, solid, 3 rows
+]
+
+_DEFAULT_BANNER_FONT = "smslant"
+
+# Lazily populated by _get_valid_banner_fonts() — avoids importing pyfiglet
+# at module load time.
+_valid_banner_fonts_cache: list[str] | None = None
+
+
+def _get_valid_banner_fonts() -> list[str]:
+    """Return the subset of _BANNER_FONT_CATALOG that is available and ≤5 rows.
+
+    Result is cached after the first call.
+    """
+    global _valid_banner_fonts_cache
+    if _valid_banner_fonts_cache is not None:
+        return _valid_banner_fonts_cache
+    try:
+        import pyfiglet
+
+        available = set(pyfiglet.FigletFont.getFonts())
+        valid = []
+        for font_name in _BANNER_FONT_CATALOG:
+            if font_name not in available:
+                continue
+            try:
+                rendered = pyfiglet.Figlet(font=font_name).renderText("altergo")
+                rows = len([ln for ln in rendered.splitlines() if ln.strip()])
+                if rows <= 5:
+                    valid.append(font_name)
+            except Exception:
+                pass
+        _valid_banner_fonts_cache = valid if valid else [_DEFAULT_BANNER_FONT]
+    except Exception:
+        _valid_banner_fonts_cache = [_DEFAULT_BANNER_FONT]
+    return _valid_banner_fonts_cache
+
+
+def load_persisted_banner_font() -> str:
+    """Read the banner font name from SETTINGS_FILE. Falls back to the default."""
+    if not SETTINGS_FILE.exists():
+        return _DEFAULT_BANNER_FONT
+    try:
+        data = json.loads(SETTINGS_FILE.read_text())
+        font = data.get("banner_font")
+        if isinstance(font, str) and font in _BANNER_FONT_CATALOG:
+            return font
+    except Exception:
+        pass
+    return _DEFAULT_BANNER_FONT
+
+
+def save_persisted_banner_font(name: str) -> None:
+    """Persist the chosen banner font to SETTINGS_FILE."""
+    if name not in _BANNER_FONT_CATALOG:
+        return
+    _patch_settings({"banner_font": name})
+
+
+# ── Animation packs ───────────────────────────────────────────────────────────
+
+# Each pack drives the twinkle duration and spinner style for the provider
+# handoff animation. "off" disables animation entirely.
+_ANIM_PACKS: dict[str, dict] = {
+    "off": {"duration": 0.0, "spinner": None, "label": "Off", "hint": "No animation — instant launch"},  # noqa: E501
+    "minimal": {"duration": 0.4, "spinner": None, "label": "Minimal", "hint": "Brief star pulse, quiet and fast"},  # noqa: E501
+    "smooth": {
+        "duration": 0.7,
+        "spinner": "boxBounce2",
+        "label": "Smooth",
+        "hint": "Fat block sweeping around a rectangle",
+    },  # noqa: E501
+    "retro": {"duration": 0.5, "spinner": "line", "label": "Retro", "hint": "Classic |/-\\ spinner, quick twinkle"},  # noqa: E501
+    "wave": {
+        "duration": 0.6,
+        "spinner": "growVertical",
+        "label": "Wave",
+        "hint": "Growing vertical bars — rise and fall",
+    },  # noqa: E501
+    "orbit": {"duration": 0.6, "spinner": "arc", "label": "Orbit", "hint": "Smooth arc rotation — elegant and calm"},  # noqa: E501
+    "pulse": {"duration": 0.8, "spinner": "dots", "label": "Pulse", "hint": "Soft braille dots — gentle and focused"},  # noqa: E501
+    "matrix": {"duration": 0.9, "spinner": "noise", "label": "Matrix", "hint": "Block-fill noise — deep focus mode"},  # noqa: E501
+}
+_VALID_ANIM_PACKS: tuple[str, ...] = tuple(_ANIM_PACKS.keys())
+_DEFAULT_ANIM_PACK = "minimal"
+
+# Representative spinner-frame strips for the settings preview panel.
+# Populated lazily from Rich's spinner registry (real frames, not hardcoded).
+# Packs without a Rich spinner get a hand-crafted fallback.
+_ANIM_PACK_FRAMES_CACHE: dict[str, str] | None = None
+
+
+def _build_anim_pack_frames() -> dict[str, str]:
+    """Return filmstrip preview strings for all animation packs.
+
+    Each strip is 6 evenly-sampled frames from the pack's actual Rich spinner,
+    joined with two-space gaps.  Packs with no spinner use a hand-crafted strip.
+    """
+    fallbacks: dict[str, str] = {
+        "off": "\u2500  \u2500  \u2500  \u2500  \u2500  \u2500",
+        "minimal": "\u2736  \u2737  \u2736  \u2737  \u2736  \u2737",
+    }
+
+    rich_spinners: dict = {}
+    try:
+        from rich._spinners import SPINNERS as _RS  # type: ignore[import-untyped]
+
+        rich_spinners = _RS
+    except Exception:
+        pass
+
+    result: dict[str, str] = {}
+    for name, cfg in _ANIM_PACKS.items():
+        spinner_name = cfg.get("spinner")
+        if not spinner_name and name in fallbacks:
+            result[name] = fallbacks[name]
+            continue
+        if spinner_name and spinner_name in rich_spinners:
+            frames: list[str] = rich_spinners[spinner_name]["frames"]
+            # Sample 6 evenly-spaced frames
+            n = len(frames)
+            indices = [int(i * n / 6) for i in range(6)]
+            result[name] = "  ".join(frames[i] for i in indices)
+        else:
+            result[name] = fallbacks.get(name, "\u00b7  \u00b7  \u00b7  \u00b7  \u00b7  \u00b7")
+    return result
+
+
+def _get_anim_pack_frames() -> dict[str, str]:
+    global _ANIM_PACK_FRAMES_CACHE
+    if _ANIM_PACK_FRAMES_CACHE is None:
+        _ANIM_PACK_FRAMES_CACHE = _build_anim_pack_frames()
+    return _ANIM_PACK_FRAMES_CACHE
+
+
+# Cache for Rich spinner registry (frames + intervals)
+_RICH_SPINNER_DATA_CACHE: dict | None = None
+
+
+def _get_rich_spinner_data() -> dict:
+    """Return Rich's SPINNERS registry, cached after first call."""
+    global _RICH_SPINNER_DATA_CACHE
+    if _RICH_SPINNER_DATA_CACHE is None:
+        try:
+            from rich._spinners import SPINNERS as _RS  # type: ignore[import-untyped]
+
+            _RICH_SPINNER_DATA_CACHE = _RS
+        except Exception:
+            _RICH_SPINNER_DATA_CACHE = {}
+    return _RICH_SPINNER_DATA_CACHE
+
+
+def load_animation_pack() -> str:
+    """Return the active animation pack name.
+
+    Migrates gracefully from the old ``launch_animation`` boolean:
+    ``False`` → ``"off"``, ``True`` / missing → ``_DEFAULT_ANIM_PACK``.
+    """
+    if not SETTINGS_FILE.exists():
+        return _DEFAULT_ANIM_PACK
+    try:
+        data = json.loads(SETTINGS_FILE.read_text())
+        pack = data.get("animation_pack")
+        if isinstance(pack, str) and pack in _VALID_ANIM_PACKS:
+            return pack
+        # Migrate from old boolean key
+        la = data.get("launch_animation")
+        if la is False:
+            return "off"
+    except Exception:
+        pass
+    return _DEFAULT_ANIM_PACK
 
 
 # ── Random theme helpers ──────────────────────────────────────────────────────
@@ -2383,6 +2655,20 @@ def do_teardown(account: str = "default"):
 
     print()
     print(_c(32, "Teardown complete.") + " Account home and credentials left intact.")
+
+
+def do_rename(old_name: str, new_name: str):
+    old_home = ACCOUNTS_DIR / old_name
+    new_home = ACCOUNTS_DIR / new_name
+    if not old_home.is_dir():
+        print(f"altergo: account '{old_name}' not found.", file=sys.stderr)
+        sys.exit(1)
+    validate_account_name(new_name)
+    if new_home.exists():
+        print(f"altergo: account '{new_name}' already exists.", file=sys.stderr)
+        sys.exit(1)
+    old_home.rename(new_home)
+    print(f"  {_c(32, '✓')} Renamed account '{old_name}' → '{new_name}'")
 
 
 # --- Session Discovery ---
@@ -3771,7 +4057,19 @@ def _draw_settings(stdscr):
     # Page 0: Appearance
     theme_names = list(THEMES.keys())
     current_theme_idx = theme_names.index(get_current_theme()) if get_current_theme() in theme_names else 0
-    launch_anim = _load_bool_setting("launch_animation")
+
+    # Banner font
+    _banner_fonts = _get_valid_banner_fonts()
+    _saved_font = load_persisted_banner_font()
+    current_font_idx = _banner_fonts.index(_saved_font) if _saved_font in _banner_fonts else 0
+
+    # Animation pack (replaces old launch_anim bool)
+    _saved_pack = load_animation_pack()
+    _packs_list = list(_VALID_ANIM_PACKS)
+    current_pack_idx = (
+        _packs_list.index(_saved_pack) if _saved_pack in _VALID_ANIM_PACKS else _packs_list.index(_DEFAULT_ANIM_PACK)
+    )
+
     _rts = load_random_theme_settings()
     random_theme_on = _rts["random_theme_enabled"]
     random_theme_freq = _rts["random_theme_frequency"]  # 1–5
@@ -3802,9 +4100,33 @@ def _draw_settings(stdscr):
     n_pages = len(_SETTINGS_PAGES)
 
     # Per-page cursor positions
-    # Page 0: rows = [theme_0..theme_N-1, launch_anim, random_toggle, freq_slider] → cursor 0..N+2
+    # Page 0: rows = [themes…, fonts…, packs…, random_toggle, freq_slider]
+    # Index layout (computed dynamically via helpers below):
+    #   0..T-1              → theme rows
+    #   T..T+F-1            → font rows
+    #   T+F..T+F+P-1        → animation pack rows
+    #   T+F+P               → random theme toggle
+    #   T+F+P+1             → freq slider
+    def _p0_font_offset() -> int:
+        return len(theme_names)
+
+    def _p0_pack_offset() -> int:
+        return len(theme_names) + len(_banner_fonts)
+
+    def _p0_rand_idx() -> int:
+        return len(theme_names) + len(_banner_fonts) + len(_VALID_ANIM_PACKS)
+
+    def _p0_freq_idx() -> int:
+        return _p0_rand_idx() + 1
+
+    # Two-column grid for the font section: column-major order.
+    # Left col:  fonts[0 .. n_font_rows-1]
+    # Right col: fonts[n_font_rows .. F-1]
+    _n_font_rows = max(1, (len(_banner_fonts) + 1) // 2)
+
     page0_cursor = current_theme_idx
-    page0_n = len(theme_names) + 3  # themes + launch_anim + random toggle + freq slider
+    page0_n = len(theme_names) + len(_banner_fonts) + len(_VALID_ANIM_PACKS) + 2
+    page0_scroll = 0  # virtual-row scroll offset for the content area
 
     # Page 1: rows = [update_check, show_greeting, show_goodbye, tmux_session]
     page1_cursor = 0
@@ -3831,6 +4153,51 @@ def _draw_settings(stdscr):
                 except curses.error:
                     pass
 
+    # ── Scroll helpers for page 0 ─────────────────────────────────────────────
+
+    def _cursor_to_vrow(c: int) -> int:
+        """Map a page-0 cursor index to its virtual row in the content list.
+
+        Virtual row 0 is the Theme section header.  All visible rows in the
+        content area are rendered at ``screen_row = content_start + vrow - page0_scroll``.
+        Font section uses a two-column grid: _n_font_rows virtual rows, each
+        rendering two fonts side-by-side (column-major order).
+        """
+        T = len(theme_names)
+        F = len(_banner_fonts)
+        NF = _n_font_rows  # virtual rows the font section occupies
+        P = len(_VALID_ANIM_PACKS)
+        # Theme rows: header at vrow 0, items at 1..T
+        if c < T:
+            return 1 + c
+        # Font rows: blank at T+1, header at T+2, grid rows at T+3..T+2+NF
+        if c < T + F:
+            fi = c - T
+            row_in_grid = fi % NF  # same vrow for left and right column items
+            return T + 3 + row_in_grid
+        # Pack rows: blank at T+3+NF, header at T+4+NF, items at T+5+NF..T+4+NF+P
+        if c < T + F + P:
+            pi = c - T - F
+            return T + 5 + NF + pi
+        # Random toggle: blank at T+5+NF+P, header at T+6+NF+P, toggle at T+7+NF+P
+        if c == T + F + P:
+            return T + 7 + NF + P
+        # Freq slider
+        return T + 8 + NF + P
+
+    def _page0_ensure_visible():
+        """Adjust page0_scroll so the focused row is inside the viewport."""
+        nonlocal page0_scroll
+        max_y_now, _ = stdscr.getmaxyx()
+        # Content rows: content_start(3) .. max_y-2 (footer is max_y-2 and max_y-1)
+        visible_h = max(1, max_y_now - 3 - 2)
+        target = _cursor_to_vrow(page0_cursor)
+        if target < page0_scroll:
+            page0_scroll = target
+        elif target >= page0_scroll + visible_h:
+            page0_scroll = target - visible_h + 1
+        page0_scroll = max(0, page0_scroll)
+
     # ── Helper: draw one tab bar line ─────────────────────────────────────────
     def _draw_tab_bar(max_x):
         x = 0
@@ -3850,185 +4217,273 @@ def _draw_settings(stdscr):
     # ── Helper: draw page 0 (Appearance) ─────────────────────────────────────
     def _draw_page0(max_y, max_x, attrs_local):
         content_start = 3
-        row = content_start
+        # Rows content_start .. max_y-3 are the scrollable content area.
+        # max_y-2 and max_y-1 are the footer hint + nav bar (always visible).
+        _bot = max_y - 2  # first non-content row
 
-        # Section header: Theme
-        section = "Theme " + "\u2500" * max(0, 34)  # ─
-        _safe_addnstr(stdscr, row, 2, section[: max_x - 3], max_x - 3, attrs_local["accent"] | curses.A_BOLD)
-        row += 1
+        def _sr(vr: int) -> int:
+            """Virtual row → screen row."""
+            return content_start + vr - page0_scroll
+
+        def _vis(vr: int) -> bool:
+            s = _sr(vr)
+            return content_start <= s < _bot
+
+        def _draw_vr(vr: int, col: int, text: str, width: int, attr=curses.A_NORMAL):
+            s = _sr(vr)
+            if content_start <= s < _bot:
+                _safe_addnstr(stdscr, s, col, text, width, attr)
+
+        vrow = 0
+
+        # ── Theme ─────────────────────────────────────────────────────────────
+        _draw_vr(vrow, 2, ("Theme " + "\u2500" * 34)[: max_x - 3], max_x - 3, attrs_local["accent"] | curses.A_BOLD)
+        vrow += 1
 
         for ti, tid in enumerate(theme_names):
-            if row >= max_y - 3:
-                break
-            tdata = THEMES[tid]
-            is_focused = ti == page0_cursor
-            is_selected = ti == current_theme_idx
+            if _vis(vrow):
+                s = _sr(vrow)
+                tdata = THEMES[tid]
+                is_focused = ti == page0_cursor
+                is_selected = ti == current_theme_idx
+                marker = "\u25c6" if is_selected else "\u00b7"
+                marker_attr = attrs_local["accent"] | curses.A_BOLD if is_selected else attrs_local["dim"]
+                prefix = "\u25b8 " if is_focused else "  "
+                prefix_attr = attrs_local["accent"] | curses.A_BOLD if is_focused else curses.A_NORMAL
+                _safe_addnstr(stdscr, s, 0, prefix, 2, prefix_attr)
+                _safe_addnstr(stdscr, s, 2, marker, 1, marker_attr)
+                _safe_addnstr(stdscr, s, 4, " ", 1, curses.A_NORMAL)
+                name_str = tdata["display_name"].ljust(12)
+                name_attr = attrs_local["accent"] | curses.A_BOLD if is_selected else curses.A_NORMAL
+                _safe_addnstr(stdscr, s, 5, name_str[:12], 12, name_attr)
+                sx = 18
+                for si in range(min(3, len(tdata["banner"]))):
+                    pk = (tid, si)
+                    if pk in swatch_pairs and sx < max_x - 2:
+                        _safe_addnstr(stdscr, s, sx, _SWATCH_BLOCK * 2, 2, curses.color_pair(swatch_pairs[pk]))
+                        sx += 2
+                desc = "  " + tdata["description"]
+                if sx < max_x - 4:
+                    _safe_addnstr(stdscr, s, sx, desc[: max_x - sx - 1], max_x - sx - 1, attrs_local["dim"])
+            vrow += 1
 
-            # Marker glyph
-            if is_selected:
-                marker = "\u25c6"  # ◆
-                marker_attr = attrs_local["accent"] | curses.A_BOLD
-            else:
-                marker = "\u00b7"  # ·
-                marker_attr = attrs_local["dim"]
+        vrow += 1  # blank line
 
-            prefix = "\u25b8 " if is_focused else "  "  # ▸
+        # ── Font ──────────────────────────────────────────────────────────────
+        _draw_vr(vrow, 2, ("Font " + "\u2500" * 35)[: max_x - 3], max_x - 3, attrs_local["accent"] | curses.A_BOLD)
+        vrow += 1
+
+        font_section_vrow = vrow  # anchor for preview overlay
+
+        # Two-column grid layout.
+        # Left col:  fonts[ 0 .. _n_font_rows-1 ]  at col 0
+        # Right col: fonts[ _n_font_rows .. F-1 ]   at col _COL2_X
+        # Divider at _DIV_X, preview at _PRV_X.
+        _COL2_X = 20  # start of right-column entry
+        _DIV_X = 40  # vertical divider before preview
+        _PRV_X = 42  # preview text start
+        _preview_avail = max(0, max_x - _PRV_X - 1)
+
+        # Pre-render the focused font preview
+        _preview_lines: list[str] = []
+        _preview_font = _banner_fonts[current_font_idx] if _banner_fonts else _DEFAULT_BANNER_FONT
+        if _preview_avail > 10:
+            try:
+                import pyfiglet as _pf
+
+                _raw = _pf.Figlet(font=_preview_font).renderText("altergo")
+                _preview_lines = [ln[:_preview_avail] for ln in _raw.splitlines()]
+                while _preview_lines and not _preview_lines[-1].strip():
+                    _preview_lines.pop()
+            except Exception:
+                pass
+
+        _font_off = _p0_font_offset()
+
+        def _draw_font_item(row_vrow: int, col_x: int, fi: int, fname: str):
+            """Render one font item at the given virtual row and column offset."""
+            if not _vis(row_vrow):
+                return
+            s = _sr(row_vrow)
+            fi_abs = _font_off + fi
+            is_focused = fi_abs == page0_cursor
+            is_selected = fi == current_font_idx
+            marker = "\u25c6" if is_selected else "\u00b7"
+            marker_attr = attrs_local["accent"] | curses.A_BOLD if is_selected else attrs_local["dim"]
+            prefix = "\u25b8 " if is_focused else "  "
             prefix_attr = attrs_local["accent"] | curses.A_BOLD if is_focused else curses.A_NORMAL
-
-            _safe_addnstr(stdscr, row, 0, prefix, 2, prefix_attr)
-            _safe_addnstr(stdscr, row, 2, marker, 1, marker_attr)
-            _safe_addnstr(stdscr, row, 4, " ", 1, curses.A_NORMAL)
-
-            name_str = tdata["display_name"].ljust(12)
+            _safe_addnstr(stdscr, s, col_x, prefix, 2, prefix_attr)
+            _safe_addnstr(stdscr, s, col_x + 2, marker, 1, marker_attr)
             name_attr = attrs_local["accent"] | curses.A_BOLD if is_selected else curses.A_NORMAL
-            _safe_addnstr(stdscr, row, 5, name_str[:12], 12, name_attr)
+            # Name fits in the 15-char slot starting at col_x+4, capped before divider
+            _safe_addnstr(stdscr, s, col_x + 4, f" {fname}".ljust(14)[:14], 14, name_attr)
 
-            # Color swatch: draw up to 3 stops of the banner gradient
-            sx = 18
-            stops = tdata["banner"]
-            n_swatches = min(3, len(stops))
-            for si in range(n_swatches):
-                pair_key = (tid, si)
-                if pair_key in swatch_pairs and sx < max_x - 2:
-                    _safe_addnstr(stdscr, row, sx, _SWATCH_BLOCK * 2, 2, curses.color_pair(swatch_pairs[pair_key]))
-                    sx += 2
+        for row_idx in range(_n_font_rows):
+            # Left column: font at row_idx
+            _draw_font_item(vrow, 0, row_idx, _banner_fonts[row_idx])
+            # Right column: font at n_font_rows + row_idx (may not exist)
+            right_fi = _n_font_rows + row_idx
+            if right_fi < len(_banner_fonts):
+                _draw_font_item(vrow, _COL2_X, right_fi, _banner_fonts[right_fi])
+            # Vertical divider
+            if _preview_avail > 10 and _DIV_X < max_x - 1 and _vis(vrow):
+                _safe_addnstr(stdscr, _sr(vrow), _DIV_X, "\u2502", 1, attrs_local["dim"])
+            vrow += 1
 
-            # Description
-            desc = "  " + tdata["description"]
-            if sx < max_x - 4:
-                _safe_addnstr(stdscr, row, sx, desc[: max_x - sx - 1], max_x - sx - 1, attrs_local["dim"])
+        # Preview overlay: anchored to font_section_vrow so it scrolls with the list.
+        if _preview_avail > 10:
+            _prv_attr = attrs_local["accent"] | curses.A_BOLD
+            for li, pline in enumerate(_preview_lines):
+                pv = font_section_vrow + li
+                if _vis(pv) and pline.strip():
+                    _safe_addnstr(stdscr, _sr(pv), _PRV_X, pline, _preview_avail, _prv_attr)
 
-            row += 1
+        vrow += 1  # blank line
 
-        row += 1  # blank line before next section
+        # ── Animation ─────────────────────────────────────────────────────────
+        _draw_vr(vrow, 2, ("Animation " + "\u2500" * 30)[: max_x - 3], max_x - 3, attrs_local["accent"] | curses.A_BOLD)
+        vrow += 1
 
-        # Section header: Launch
-        if row < max_y - 3:
-            section2 = "Launch " + "\u2500" * max(0, 33)
-            _safe_addnstr(stdscr, row, 2, section2[: max_x - 3], max_x - 3, attrs_local["accent"] | curses.A_BOLD)
-            row += 1
+        # Divider + preview column layout.
+        _A_DIV_X, _A_PRV_X = 20, 22
+        _anim_avail = max_x - _A_PRV_X - 1
 
-        anim_row_idx = len(theme_names)
-        if row < max_y - 3:
-            is_focused = page0_cursor == anim_row_idx
+        # Compute ONE live frame per pack using Rich spinner data + wall-clock time.
+        # Each pack's frame advances at its spinner's native interval (ms).
+        _rich_spinners = _get_rich_spinner_data()
+        _now_ms = int(time.time() * 1000)
+        _live_frames: dict[str, str] = {}
+        for _pn, _pcfg in _ANIM_PACKS.items():
+            _sp = _pcfg.get("spinner")
+            if _sp and _sp in _rich_spinners:
+                _sp_data = _rich_spinners[_sp]
+                _sp_frames = _sp_data["frames"]
+                _sp_interval = max(1, _sp_data["interval"])
+                _fi = (_now_ms // _sp_interval) % len(_sp_frames)
+                _live_frames[_pn] = _sp_frames[_fi]
+            elif _pn == "minimal":
+                # Star blink at ~4 Hz
+                _live_frames[_pn] = "\u2736" if (_now_ms // 250) % 2 == 0 else "\u2737"
+            else:
+                _live_frames[_pn] = "\u2500"  # ─
+
+        _pack_off = _p0_pack_offset()
+        for pi, pname in enumerate(_VALID_ANIM_PACKS):
+            if _vis(vrow):
+                s = _sr(vrow)
+                pi_abs = _pack_off + pi
+                is_focused = pi_abs == page0_cursor
+                is_selected = pi == current_pack_idx
+                pcfg = _ANIM_PACKS[pname]
+                marker = "\u25c6" if is_selected else "\u00b7"
+                marker_attr = attrs_local["accent"] | curses.A_BOLD if is_selected else attrs_local["dim"]
+                prefix = "\u25b8 " if is_focused else "  "
+                prefix_attr = attrs_local["accent"] | curses.A_BOLD if is_focused else curses.A_NORMAL
+                _safe_addnstr(stdscr, s, 0, prefix, 2, prefix_attr)
+                _safe_addnstr(stdscr, s, 2, marker, 1, marker_attr)
+                label_attr = attrs_local["accent"] | curses.A_BOLD if is_selected else curses.A_NORMAL
+                pack_label = f" {pcfg['label']}".ljust(10)
+                _safe_addnstr(stdscr, s, 4, pack_label, len(pack_label), label_attr)
+                # Vertical divider
+                if _A_DIV_X < max_x - 1:
+                    _safe_addnstr(stdscr, s, _A_DIV_X, "\u2502", 1, attrs_local["dim"])
+                # Live frame right of divider — only for the focused pack
+                if is_focused and _anim_avail > 2:
+                    lf = _live_frames.get(pname, "\u00b7")
+                    _safe_addnstr(
+                        stdscr,
+                        s,
+                        _A_PRV_X,
+                        f" {lf}",
+                        min(len(lf) + 2, _anim_avail),
+                        attrs_local["accent"] | curses.A_BOLD,
+                    )
+            vrow += 1
+
+        vrow += 1  # blank line
+
+        # ── Randomize ─────────────────────────────────────────────────────────
+        _draw_vr(vrow, 2, ("Randomize " + "\u2500" * 30)[: max_x - 3], max_x - 3, attrs_local["accent"] | curses.A_BOLD)
+        vrow += 1
+
+        # Random toggle
+        if _vis(vrow):
+            s = _sr(vrow)
+            is_focused = page0_cursor == _p0_rand_idx()
             prefix = "\u25b8 " if is_focused else "  "
             prefix_attr = attrs_local["accent"] | curses.A_BOLD if is_focused else curses.A_NORMAL
-            _safe_addnstr(stdscr, row, 0, prefix, 2, prefix_attr)
-
-            if launch_anim:
-                dot = "\u25c9"  # ◉
-                dot_attr = attrs_local["accent"] | curses.A_BOLD
-            else:
-                dot = "\u25cb"  # ○
-                dot_attr = attrs_local["dim"]
-            _safe_addnstr(stdscr, row, 2, dot, 1, dot_attr)
-            label = "  Launch animation    "
-            _safe_addnstr(stdscr, row, 3, label[: max_x - 4], max_x - 4, curses.A_NORMAL)
-            hint = "Star spinner while provider warms up"
-            lx = 3 + len(label)
-            if lx < max_x - 4:
-                _safe_addnstr(stdscr, row, lx, hint[: max_x - lx - 1], max_x - lx - 1, attrs_local["dim"])
-            row += 1
-
-        row += 1  # blank line before Randomize section
-
-        # Section header: Randomize
-        if row < max_y - 3:
-            section3 = "Randomize " + "\u2500" * max(0, 30)
-            _safe_addnstr(stdscr, row, 2, section3[: max_x - 3], max_x - 3, attrs_local["accent"] | curses.A_BOLD)
-            row += 1
-
-        # ── Random theme toggle ───────────────────────────────────────────────
-        rand_toggle_idx = len(theme_names) + 1
-        if row < max_y - 3:
-            is_focused = page0_cursor == rand_toggle_idx
-            prefix = "\u25b8 " if is_focused else "  "
-            prefix_attr = attrs_local["accent"] | curses.A_BOLD if is_focused else curses.A_NORMAL
-            _safe_addnstr(stdscr, row, 0, prefix, 2, prefix_attr)
-
-            if random_theme_on:
-                dot = "\u25c9"  # ◉
-                dot_attr = attrs_local["accent"] | curses.A_BOLD
-            else:
-                dot = "\u25cb"  # ○
-                dot_attr = attrs_local["dim"]
-            _safe_addnstr(stdscr, row, 2, dot, 1, dot_attr)
+            _safe_addnstr(stdscr, s, 0, prefix, 2, prefix_attr)
+            dot = "\u25c9" if random_theme_on else "\u25cb"
+            dot_attr = attrs_local["accent"] | curses.A_BOLD if random_theme_on else attrs_local["dim"]
+            _safe_addnstr(stdscr, s, 2, dot, 1, dot_attr)
             label2 = "  Random theme       "
-            _safe_addnstr(stdscr, row, 3, label2[: max_x - 4], max_x - 4, curses.A_NORMAL)
+            _safe_addnstr(stdscr, s, 3, label2[: max_x - 4], max_x - 4, curses.A_NORMAL)
             hint2 = "Pick a new theme automatically every few sessions"
             lx2 = 3 + len(label2)
             if lx2 < max_x - 4:
-                _safe_addnstr(stdscr, row, lx2, hint2[: max_x - lx2 - 1], max_x - lx2 - 1, attrs_local["dim"])
-            row += 1
+                _safe_addnstr(stdscr, s, lx2, hint2[: max_x - lx2 - 1], max_x - lx2 - 1, attrs_local["dim"])
+        vrow += 1
 
-        # ── Frequency slider ─────────────────────────────────────────────────
-        freq_slider_idx = len(theme_names) + 2
-        if row < max_y - 3:
-            is_focused = page0_cursor == freq_slider_idx
-            # 20-char track: █ filled, ◆ thumb, ░ empty
+        # Freq slider
+        if _vis(vrow):
+            s = _sr(vrow)
+            is_focused = page0_cursor == _p0_freq_idx()
             TRACK_LEN = 20
             thumb_pos = int((random_theme_freq - 1) / 4 * (TRACK_LEN - 1))
             if random_theme_on:
-                track = ""
-                for i in range(TRACK_LEN):
-                    if i < thumb_pos:
-                        track += "\u2588"  # █
-                    elif i == thumb_pos:
-                        track += "\u25c6"  # ◆
-                    else:
-                        track += "\u2591"  # ░
+                track = "".join(
+                    "\u2588" if i < thumb_pos else ("\u25c6" if i == thumb_pos else "\u2591") for i in range(TRACK_LEN)
+                )
                 slider_attr = (attrs_local["accent"] | curses.A_BOLD) if is_focused else curses.A_NORMAL
-                left_label = "often "
-                right_label = " rarely"
+                left_label, right_label = "often ", " rarely"
                 label_attr = attrs_local["dim"]
                 prefix_sl = "\u25b8 " if is_focused else "  "
                 prefix_sl_attr = (attrs_local["accent"] | curses.A_BOLD) if is_focused else curses.A_NORMAL
             else:
-                track = "\u2592" * (TRACK_LEN - 1) + "\u00b7"  # ▒▒▒▒▒·
+                track = "\u2592" * (TRACK_LEN - 1) + "\u00b7"
                 slider_attr = attrs_local["dim"]
-                left_label = "----- "
-                right_label = " -----"
+                left_label, right_label = "----- ", " -----"
                 label_attr = attrs_local["dim"]
-                prefix_sl = "  "
-                prefix_sl_attr = attrs_local["dim"]
-
+                prefix_sl, prefix_sl_attr = "  ", attrs_local["dim"]
             cx = 0
-            _safe_addnstr(stdscr, row, cx, prefix_sl, 2, prefix_sl_attr)
+            _safe_addnstr(stdscr, s, cx, prefix_sl, 2, prefix_sl_attr)
             cx = 2
-            _safe_addnstr(stdscr, row, cx, left_label, len(left_label), label_attr)
+            _safe_addnstr(stdscr, s, cx, left_label, len(left_label), label_attr)
             cx += len(left_label)
-            _safe_addnstr(stdscr, row, cx, "[", 1, attrs_local["dim"])
+            _safe_addnstr(stdscr, s, cx, "[", 1, attrs_local["dim"])
             cx += 1
-            _safe_addnstr(stdscr, row, cx, track, TRACK_LEN, slider_attr)
+            _safe_addnstr(stdscr, s, cx, track, TRACK_LEN, slider_attr)
             cx += TRACK_LEN
-            _safe_addnstr(stdscr, row, cx, "]", 1, attrs_local["dim"])
+            _safe_addnstr(stdscr, s, cx, "]", 1, attrs_local["dim"])
             cx += 1
-            _safe_addnstr(stdscr, row, cx, right_label, len(right_label), label_attr)
-            row += 1
+            _safe_addnstr(stdscr, s, cx, right_label, len(right_label), label_attr)
+        vrow += 1
 
-        # Explanation lines (shown when random theme is on)
-        if random_theme_on and row < max_y - 4:
-            _freq_descriptions = {
-                1: ("Changes nearly every session", "Expect a new look very frequently"),
-                2: ("Changes every few sessions", "Plenty of variety"),
-                3: ("Changes occasionally", "Balanced \u2014 noticeable but not constant"),
-                4: ("Changes infrequently", "Mostly consistent, occasional surprise"),
-                5: ("Changes rarely", "Stable look with rare surprises"),
-            }
+        # Freq description lines
+        _freq_descriptions = {
+            1: ("Changes nearly every session", "Expect a new look very frequently"),
+            2: ("Changes every few sessions", "Plenty of variety"),
+            3: ("Changes occasionally", "Balanced \u2014 noticeable but not constant"),
+            4: ("Changes infrequently", "Mostly consistent, occasional surprise"),
+            5: ("Changes rarely", "Stable look with rare surprises"),
+        }
+        if random_theme_on:
             line1, line2 = _freq_descriptions.get(random_theme_freq, _freq_descriptions[3])
-            _safe_addnstr(stdscr, row, 4, ("\u25c6 " + line1)[: max_x - 5], max_x - 5, attrs_local["dim"])
-            row += 1
-            if row < max_y - 3:
-                _safe_addnstr(stdscr, row, 4, ("\u00b7 " + line2)[: max_x - 5], max_x - 5, attrs_local["dim"])
-        elif not random_theme_on and row < max_y - 3:
-            _safe_addnstr(
-                stdscr,
-                row,
-                4,
-                "\u00b7 Enable \u201cRandom theme\u201d to configure frequency"[: max_x - 5],
-                max_x - 5,
-                attrs_local["dim"],
-            )
+            if _vis(vrow):
+                _safe_addnstr(stdscr, _sr(vrow), 4, ("\u25c6 " + line1)[: max_x - 5], max_x - 5, attrs_local["dim"])
+            vrow += 1
+            if _vis(vrow):
+                _safe_addnstr(stdscr, _sr(vrow), 4, ("\u00b7 " + line2)[: max_x - 5], max_x - 5, attrs_local["dim"])
+        else:
+            if _vis(vrow):
+                _safe_addnstr(
+                    stdscr,
+                    _sr(vrow),
+                    4,
+                    "\u00b7 Enable \u201cRandom theme\u201d to configure frequency"[: max_x - 5],
+                    max_x - 5,
+                    attrs_local["dim"],
+                )
 
     # ── Helper: draw page 1 (Behavior) ───────────────────────────────────────
     def _draw_page1(max_y, max_x):
@@ -4134,14 +4589,18 @@ def _draw_settings(stdscr):
 
         if current_page == 0:
             # Show contextual hint for the focused row
-            _rand_toggle_idx = len(theme_names) + 1
-            _freq_slider_idx = len(theme_names) + 2
-            if page0_cursor < len(theme_names):
-                tid = theme_names[page0_cursor]
-                hint = "  " + THEMES[tid]["description"]
-            elif page0_cursor == len(theme_names):
-                hint = "  Spin the star animation while the provider binary starts up"
-            elif page0_cursor == _rand_toggle_idx:
+            T = len(theme_names)
+            F = len(_banner_fonts)
+            P = len(_VALID_ANIM_PACKS)
+            if page0_cursor < T:
+                hint = "  " + THEMES[theme_names[page0_cursor]]["description"]
+            elif page0_cursor < T + F:
+                fi = page0_cursor - T
+                hint = f"  Preview: '{_banner_fonts[fi]}' — select with ↑↓, saved with s"
+            elif page0_cursor < T + F + P:
+                pi = page0_cursor - T - F
+                hint = f"  {_ANIM_PACKS[_VALID_ANIM_PACKS[pi]]['hint']}"
+            elif page0_cursor == _p0_rand_idx():
                 hint = "  Picks a different theme automatically every few sessions"
             else:
                 hint = "  Use \u2190 \u2192 to set how often the theme rotates"
@@ -4166,7 +4625,7 @@ def _draw_settings(stdscr):
                     stdscr, footer_row, 0, warn_line[: max_x - 1], max_x - 1, curses.color_pair(7) | curses.A_DIM
                 )
 
-        _on_freq_slider = current_page == 0 and page0_cursor == len(theme_names) + 2 and random_theme_on
+        _on_freq_slider = current_page == 0 and page0_cursor == _p0_freq_idx() and random_theme_on
         if _on_freq_slider:
             nav = "  \u2191\u2193/jk navigate  \u2190\u2192/hl adjust  Space toggle  Tab page  s save  q/Esc cancel"
         else:
@@ -4208,17 +4667,18 @@ def _draw_settings(stdscr):
 
         stdscr.refresh()
 
+        # On page 0, use a short timeout so the animation preview ticks in real
+        # time.  KEY_RESIZE and normal input still work; getch returns -1 on timeout.
+        stdscr.timeout(80 if current_page == 0 else -1)
         key = stdscr.getch()
 
+        # Timeout with no keypress — just redraw (animation tick)
+        if key == -1:
+            continue
+
         # ── Page navigation ──────────────────────────────────────────────────
-        # Page 0 owns ←/→ for the freq slider; other pages use them for tab switching.
-        if key in (curses.KEY_LEFT, ord("h")) and current_page != 0:
-            current_page = (current_page - 1) % n_pages
-            continue
-        elif key in (curses.KEY_RIGHT, ord("l")) and current_page != 0:
-            current_page = (current_page + 1) % n_pages
-            continue
-        elif key == ord("\t"):  # Tab → next page
+        # Only Tab / Shift-Tab switch pages.  ←/→ are reserved for per-page use.
+        if key == ord("\t"):  # Tab → next page
             current_page = (current_page + 1) % n_pages
             continue
         elif key == curses.KEY_BTAB:  # Shift-Tab → prev page
@@ -4235,7 +4695,8 @@ def _draw_settings(stdscr):
         elif key == ord("s"):  # Save
             return {
                 "theme": theme_names[current_theme_idx],
-                "launch_animation": launch_anim,
+                "banner_font": _banner_fonts[current_font_idx] if _banner_fonts else _DEFAULT_BANNER_FONT,
+                "animation_pack": _VALID_ANIM_PACKS[current_pack_idx],
                 "update_check": update_check,
                 "show_greeting": show_greeting,
                 "show_goodbye": show_goodbye,
@@ -4246,45 +4707,89 @@ def _draw_settings(stdscr):
             }
 
         elif key == curses.KEY_RESIZE:
+            if current_page == 0:
+                _page0_ensure_visible()
             continue
 
         # ── Per-page navigation & toggling ──────────────────────────────────
         elif current_page == 0:
-            _rand_idx = len(theme_names) + 1
-            _freq_idx = len(theme_names) + 2
+            _foff = _p0_font_offset()
+            _in_font_section = _foff <= page0_cursor < _foff + len(_banner_fonts)
 
             if key in (curses.KEY_UP, ord("k")):
-                new_cur = page0_cursor - 1
-                # Skip freq slider when random theme is off
-                if new_cur == _freq_idx and not random_theme_on:
-                    new_cur -= 1
-                page0_cursor = max(0, new_cur)
+                if _in_font_section:
+                    fi = page0_cursor - _foff
+                    col = fi // _n_font_rows
+                    row_in_col = fi % _n_font_rows
+                    if row_in_col == 0:
+                        # Top of column → exit upward to last theme
+                        page0_cursor = _foff - 1
+                    else:
+                        # Move up within the same column
+                        page0_cursor = _foff + col * _n_font_rows + (row_in_col - 1)
+                else:
+                    new_cur = page0_cursor - 1
+                    if new_cur == _p0_freq_idx() and not random_theme_on:
+                        new_cur -= 1
+                    page0_cursor = max(0, new_cur)
+                _page0_ensure_visible()
             elif key in (curses.KEY_DOWN, ord("j")):
-                new_cur = page0_cursor + 1
-                # Skip freq slider when random theme is off
-                if new_cur == _freq_idx and not random_theme_on:
-                    new_cur += 1
-                page0_cursor = min(page0_n - 1, new_cur)
+                if _in_font_section:
+                    fi = page0_cursor - _foff
+                    col = fi // _n_font_rows
+                    row_in_col = fi % _n_font_rows
+                    # Last row of left col = n_font_rows-1; right col = F-n_font_rows-1
+                    max_row = _n_font_rows - 1 if col == 0 else (len(_banner_fonts) - _n_font_rows - 1)
+                    if row_in_col >= max_row:
+                        # Bottom of column → exit downward to first pack
+                        page0_cursor = _foff + len(_banner_fonts)
+                    else:
+                        page0_cursor = _foff + col * _n_font_rows + (row_in_col + 1)
+                else:
+                    new_cur = page0_cursor + 1
+                    if new_cur == _p0_freq_idx() and not random_theme_on:
+                        new_cur += 1
+                    page0_cursor = min(page0_n - 1, new_cur)
+                _page0_ensure_visible()
             elif key == ord(" "):
-                if page0_cursor == len(theme_names):
-                    launch_anim = not launch_anim
-                elif page0_cursor == _rand_idx:
+                if page0_cursor == _p0_rand_idx():
                     random_theme_on = not random_theme_on
             elif key in (curses.KEY_LEFT, ord("h")):
-                if page0_cursor == _freq_idx and random_theme_on:
+                if page0_cursor == _p0_freq_idx() and random_theme_on:
                     random_theme_freq = max(1, random_theme_freq - 1)
-                else:
-                    current_page = (current_page - 1) % n_pages
+                elif _in_font_section:
+                    # Move from right column → left column (same row)
+                    fi = page0_cursor - _foff
+                    col = fi // _n_font_rows
+                    if col == 1:
+                        page0_cursor = _foff + fi % _n_font_rows
+                        _page0_ensure_visible()
             elif key in (curses.KEY_RIGHT, ord("l")):
-                if page0_cursor == _freq_idx and random_theme_on:
+                if page0_cursor == _p0_freq_idx() and random_theme_on:
                     random_theme_freq = min(5, random_theme_freq + 1)
-                else:
-                    current_page = (current_page + 1) % n_pages
+                elif _in_font_section:
+                    # Move from left column → right column (same row)
+                    fi = page0_cursor - _foff
+                    col = fi // _n_font_rows
+                    if col == 0:
+                        target_fi = _n_font_rows + fi % _n_font_rows
+                        if target_fi < len(_banner_fonts):
+                            page0_cursor = _foff + target_fi
+                            _page0_ensure_visible()
 
             # Theme selection follows cursor — live preview IS the selection
             if page0_cursor < len(theme_names) and current_theme_idx != page0_cursor:
                 current_theme_idx = page0_cursor
                 set_current_theme(theme_names[current_theme_idx])
+
+            # Font selection follows cursor
+            if _foff <= page0_cursor < _foff + len(_banner_fonts):
+                current_font_idx = page0_cursor - _foff
+
+            # Animation pack selection follows cursor
+            _poff = _p0_pack_offset()
+            if _poff <= page0_cursor < _poff + len(_VALID_ANIM_PACKS):
+                current_pack_idx = page0_cursor - _poff
 
         elif current_page == 1:
             if key in (curses.KEY_UP, ord("k")):
@@ -4341,7 +4846,11 @@ def interactive_settings():
         except Exception:
             data = {}
     data["theme"] = new_theme
-    data["launch_animation"] = result.get("launch_animation", True)
+    data["banner_font"] = result.get("banner_font", _DEFAULT_BANNER_FONT)
+    data["animation_pack"] = result.get("animation_pack", _DEFAULT_ANIM_PACK)
+    # launch_animation is the old boolean key — keep it in sync as a migration aid
+    # so older altergo versions fall back gracefully if the user rolls back.
+    data["launch_animation"] = data["animation_pack"] != "off"
     data["update_check"] = result.get("update_check", True)
     data["show_greeting"] = result.get("show_greeting", True)
     data["show_goodbye"] = result.get("show_goodbye", True)
@@ -4470,14 +4979,15 @@ def _tmux_available() -> bool:
 
 
 def _tmux_session_name(account: str, provider: str) -> str:
-    """Return a unique, human-readable tmux session name for an altergo session.
+    """Return a tmux session name for an altergo session.
 
-    Format: ``altergo-<account>-<provider>-<6-hex-chars>``
-    The random suffix ensures each invocation gets its own session so sessions
-    accumulate independently and can be listed/attached by the companion TUI.
+    Format: ``<account>/<provider>`` (e.g. ``hocus/claude``).
+    Short and readable — shown verbatim in the status bar session block.
+    No random suffix needed: destroy-unattached keeps at most one live
+    session per account, so uniqueness within a launch is guaranteed.
     """
     safe = account.replace(".", "-").replace(":", "-")
-    return f"altergo-{safe}-{provider}-{secrets.token_hex(3)}"
+    return f"{safe}/{provider}"
 
 
 def _build_tmux_cmd(inner_cmd: list, env: dict, session_name: str) -> list:
@@ -4486,16 +4996,37 @@ def _build_tmux_cmd(inner_cmd: list, env: dict, session_name: str) -> list:
     The altered HOME and PATH from the altergo account env are forwarded into
     the tmux window via ``-e`` flags so the account context is fully preserved
     inside the session.  tmux itself runs in the caller's real environment.
+
+    On non-zero exit the pane pauses with a prompt so the user can read any
+    error output before tmux closes the alternate screen and the text is lost.
     """
+    # Build a POSIX shell wrapper: run the command, then pause for Enter before
+    # the tmux session closes so the provider's exit screen stays visible until
+    # the user dismisses it. Signal exits (130/131) skip the prompt.
+    inner_shell = " ".join(shlex.quote(arg) for arg in inner_cmd)
+    wrapper = (
+        f"{inner_shell}; _ret=$?; "
+        # On clean exit (0): pause so the provider's exit page stays visible
+        # before tmux tears down the alternate screen and returns to the caller.
+        'if [ "$_ret" -eq 0 ]; then '
+        r'printf "\n\033[2m  ↩  Press Enter to return to your terminal\033[0m" >&2; '
+        "read _ag_dummy; "
+        # On signal exits (130 = Ctrl-C, 131 = SIGQUIT): return immediately —
+        # the user is bailing out and doesn't want a prompt.
+        'elif [ "$_ret" -ne 130 ] && [ "$_ret" -ne 131 ]; then '
+        r'printf "\n\033[0;31m  Session exited with code %d — press Enter to close\033[0m\n" "$_ret" >&2; '
+        "read _ag_dummy; "
+        'fi; exit "$_ret"'
+    )
     tmux_cmd = ["tmux", "new-session", "-s", session_name]
     for key in ("HOME", "PATH"):
         if key in env:
             tmux_cmd += ["-e", f"{key}={env[key]}"]
-    tmux_cmd += ["--"] + inner_cmd
+    tmux_cmd += ["--", "sh", "-c", wrapper]
     return tmux_cmd
 
 
-def launch_claude(account: str = "default", args=None, provider: str | None = None):
+def launch_claude(account: str = "default", args=None, provider: str | None = None, force_tmux: bool = False):
     """Launch a provider CLI with account HOME, passing args through unchanged.
 
     If provider is None, reads account.json to determine which provider to use.
@@ -4535,12 +5066,16 @@ def launch_claude(account: str = "default", args=None, provider: str | None = No
     maybe_refresh_update_cache()
     first_launch_notice_if_needed()
     home_change_notice_if_needed()
-    _anim = _handoff_duration(provider) if _load_bool_setting("launch_animation") else 0.0
+    _pack_name = load_animation_pack()
+    _pack_cfg = _ANIM_PACKS.get(_pack_name, _ANIM_PACKS[_DEFAULT_ANIM_PACK])
+    # "off" or providers that don't support animation (codex) → no twinkle
+    _anim = 0.0 if _pack_name == "off" or _handoff_duration(provider) == 0.0 else _pack_cfg["duration"]
     show_banner(
         account,
         latest_version=get_cached_latest_version(),
         show_greeting=_load_bool_setting("show_greeting"),
         animate_duration=_anim,
+        spinner_override=_pack_cfg.get("spinner"),
     )
     if provider == "claude":
         _sync_claude_mcps(account_home)
@@ -4549,12 +5084,15 @@ def launch_claude(account: str = "default", args=None, provider: str | None = No
 
     # Wrap in a tmux session when the setting is on and we're not already inside tmux.
     run_env = env
-    if _load_bool_setting("tmux_session", default=False) and not os.environ.get("TMUX"):
+    use_tmux = force_tmux or _load_bool_setting("tmux_session", default=False)
+    if force_tmux and os.environ.get("TMUX"):
+        print(_c(C("dim"), "  altergo portal: already inside a tmux session — launching directly"))
+    if use_tmux and not os.environ.get("TMUX"):
         if _tmux_available():
             sname = _tmux_session_name(account, provider)
             cmd = _build_tmux_cmd(cmd, env, sname)
             run_env = None  # tmux runs in the caller's real env; account env is in -e flags
-            print(_c(C("dim"), f"  tmux session: {sname}  (detach with Ctrl-b d)"))
+            print(_c(C("dim"), f"  tmux session: {sname}  (detach: Ctrl-b d  ·  quit: type 'exit' or Ctrl-C)"))
         else:
             print(
                 _c(
@@ -4565,10 +5103,11 @@ def launch_claude(account: str = "default", args=None, provider: str | None = No
                 file=sys.stderr,
             )
 
+    launch_wall = time.time()
     result = subprocess.run(cmd, env=run_env)
     # Record the last session so `altergo --star` works with no ID argument.
     try:
-        _record_last_session_after_exit(provider)
+        _record_last_session_after_exit(provider, launch_wall)
     except Exception:
         pass  # never fail the user's exit due to tracking
     _print_launch_message()
@@ -4611,7 +5150,7 @@ def launch_shell(account: str = "default"):
             sname = _tmux_session_name(account, "shell")
             shell_cmd = _build_tmux_cmd(shell_cmd, env, sname)
             run_env = None
-            print(_c(C("dim"), f"  tmux session: {sname}  (detach with Ctrl-b d)"))
+            print(_c(C("dim"), f"  tmux session: {sname}  (detach: Ctrl-b d  ·  quit: type 'exit' or Ctrl-C)"))
         else:
             print(
                 _c(
@@ -4647,7 +5186,7 @@ def launch_command(account: str = "default", cmd_args=None):
             sname = _tmux_session_name(account, Path(cmd_path).name)
             inner_cmd = _build_tmux_cmd(inner_cmd, env, sname)
             run_env = None
-            print(_c(C("dim"), f"  tmux session: {sname}  (detach with Ctrl-b d)"))
+            print(_c(C("dim"), f"  tmux session: {sname}  (detach: Ctrl-b d  ·  quit: type 'exit' or Ctrl-C)"))
         else:
             print(
                 _c(
@@ -4670,10 +5209,12 @@ _KNOWN_COMMANDS = frozenset(
     [
         "shell",
         "use",
+        "portal",
         "--resume",
         "--list",
         "--search",
         "--config",
+        "--rename",
         "--teardown",
         "--settings",
         "--version",
@@ -5177,7 +5718,7 @@ def _first_run_onboarding():
 
     _hint2 = Text()
     _hint2.append("  or ", style="dim")
-    _hint2.append("altergo --config --name <name>", style=f"bold {_mid_hex}")
+    _hint2.append("altergo --config <name>", style=f"bold {_mid_hex}")
     _hint2.append(" to skip the prompts", style="dim")
     console.print(_hint2)
     console.print()
@@ -5193,7 +5734,7 @@ def _first_run_onboarding():
             ).strip()
         except KeyboardInterrupt:
             console.print()
-            console.print("  \u2192 run: altergo --config --name <name> when ready")
+            console.print("  \u2192 run: altergo --config <name> when ready")
             sys.exit(0)
 
         if not raw:
@@ -5285,24 +5826,23 @@ def main():
         sys.exit(0)
 
     if args and args[0] == "--config":
-        # Parse --name and --provider flags
         # Supported forms:
-        #   altergo --config                                  (interactive)
-        #   altergo --config --name work                      (named, interactive provider picker)
-        #   altergo --config --name work --provider claude    (fully specified)
-        #   altergo --config --provider gemini                (interactive name, specified provider)
+        #   altergo --config                           (interactive)
+        #   altergo --config <name>                    (named, interactive provider picker)
+        #   altergo --config <name> --provider claude  (fully specified)
+        #   altergo --config --provider gemini         (interactive name, specified provider)
         remaining = args[1:]
         name = None
         provider_arg = None
         i = 0
         while i < len(remaining):
-            if remaining[i] == "--name" and i + 1 < len(remaining):
-                name = remaining[i + 1]
-                validate_account_name(name)
-                i += 2
-            elif remaining[i] == "--provider" and i + 1 < len(remaining):
+            if remaining[i] == "--provider" and i + 1 < len(remaining):
                 provider_arg = remaining[i + 1]
                 i += 2
+            elif not remaining[i].startswith("--") and name is None:
+                name = remaining[i]
+                validate_account_name(name)
+                i += 1
             else:
                 i += 1
 
@@ -5332,6 +5872,13 @@ def main():
                 cfg_provider = meta["provider"] if meta else "claude"
 
         do_config(name, cfg_provider)
+        sys.exit(0)
+
+    if args and args[0] == "--rename":
+        if len(args) < 3:
+            print("altergo: usage: altergo --rename <old-name> <new-name>", file=sys.stderr)
+            sys.exit(1)
+        do_rename(args[1], args[2])
         sys.exit(0)
 
     if args and args[0] == "--teardown":
@@ -5446,7 +5993,7 @@ def main():
         use_home = ACCOUNTS_DIR / use_name
         if not use_home.is_dir():
             print(
-                f"altergo: account '{use_name}' not found. Run 'altergo --config --name {use_name}' to create it.",
+                f"altergo: account '{use_name}' not found. Run 'altergo --config {use_name}' to create it.",
                 file=sys.stderr,
             )
             sys.exit(1)
@@ -5506,11 +6053,52 @@ def main():
             print("Cancelled.")
         sys.exit(0)
 
-    # Generic check for unhandled top-level flags starting with '--'
-    if args and args[0].startswith("--") and args[0] not in _KNOWN_COMMANDS:
-        print(f"altergo: unrecognized command or flag: '{args[0]}'", file=sys.stderr)
-        print("  Run 'altergo --help' for usage.", file=sys.stderr)
-        sys.exit(1)
+    # altergo portal [<account>] [<provider>] [flags...]
+    if args and args[0] == "portal":
+        portal_args = args[1:]
+        p_account = None
+        p_provider = None
+        p_remaining = []
+        seen_flag = False
+        for tok in portal_args:
+            if tok.startswith("-"):
+                seen_flag = True
+                p_remaining.append(tok)
+            elif seen_flag:
+                # Value following a flag (e.g. session ID after --resume) — pass through
+                p_remaining.append(tok)
+            elif p_account is None and (ACCOUNTS_DIR / tok).is_dir():
+                p_account = tok
+            elif p_provider is None and tok in PROVIDERS:
+                p_provider = tok
+            else:
+                # Unknown positional token before any flags — not an account or provider
+                print(
+                    f"altergo: portal: unknown account or provider '{tok}'.\n"
+                    f"  Run 'altergo --list' to see accounts, or 'altergo --help' for usage.",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+
+        if p_account is None:
+            _all = list_accounts()
+            _active = get_active_account()
+            if _active:
+                p_account = _active
+            elif len(_all) == 1:
+                p_account = _all[0]
+            elif not _all:
+                print("altergo: no accounts found. Run 'altergo --config' first.", file=sys.stderr)
+                sys.exit(1)
+            else:
+                print(
+                    f"altergo: multiple accounts ({', '.join(_all)}) — specify one: altergo portal <name>",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+
+        launch_claude(p_account, p_remaining, provider=p_provider, force_tmux=True)
+        sys.exit(0)
 
     # ── Account name as first positional arg ──────────────────────────────────
     # altergo <name> [sub-command | claude flags...]
@@ -5520,7 +6108,7 @@ def main():
         acct_home = ACCOUNTS_DIR / candidate
         if not acct_home.is_dir():
             print(
-                f"altergo: account '{candidate}' not found. Run 'altergo --config --name {candidate}' to create it.",
+                f"altergo: account '{candidate}' not found. Run 'altergo --config {candidate}' to create it.",
                 file=sys.stderr,
             )
             sys.exit(1)
@@ -5563,13 +6151,26 @@ def main():
     if args and args[0] == "shell":
         launch_shell(account)
 
+    # altergo [<name>] portal → same as top-level portal but account already resolved
+    if args and args[0] == "portal":
+        p_remaining = args[1:]
+        p_provider = None
+        filtered = []
+        for tok in p_remaining:
+            if not tok.startswith("-") and tok in PROVIDERS and p_provider is None:
+                p_provider = tok
+            else:
+                filtered.append(tok)
+        launch_claude(account, filtered, provider=p_provider, force_tmux=True)
+        sys.exit(0)
+
     # 'use' subcommand removed — each account has exactly one provider
     if args and args[0] == "use":
         print(
             "altergo: 'use' subcommand has been removed.\n"
             "  Each account now has exactly one provider.\n"
             "  Create a separate account instead:\n"
-            "    altergo --config --name <new-name> --provider <provider>",
+            "    altergo --config <new-name> --provider <provider>",
             file=sys.stderr,
         )
         sys.exit(1)

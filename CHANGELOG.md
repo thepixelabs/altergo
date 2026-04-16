@@ -1,6 +1,24 @@
 # CHANGELOG
 
 
+## v0.36.0 (2026-04-16)
+
+### Features
+
+- Two-column help, looping launcher, share commands/skills
+  ([#15](https://github.com/thepixelabs/altergo/pull/15),
+  [`4d8aed4`](https://github.com/thepixelabs/altergo/commit/4d8aed4286564b160d4813a50c684400d2cd5f7a))
+
+- Redesign --help into a two-column layout with a shimmering divider, terminal-width aware (fallback
+  to single column below 118 cols). - Launcher loops back to the menu after each session exits;
+  launch_claude/launch_shell/launch_command now return the child exit code and callers own sys.exit.
+  - Native chips appear for any provider whose binary is on PATH, no longer gated on a pre-existing
+  dot-dir in MAIN_HOME. - Share commands/ and skills/ across accounts via symlink, matching agents/
+  and plans/. - Tests updated to match the new native-chip and launch return-code contracts.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+
+
 ## v0.35.3 (2026-04-14)
 
 ### Bug Fixes

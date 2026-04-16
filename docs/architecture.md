@@ -84,6 +84,8 @@ The following describes the filesystem state after `altergo --config` has been r
     file-history/
     shell-snapshots/
     agents/
+    commands/
+    skills/
     plans/
     cache/
     settings.json
@@ -109,6 +111,8 @@ All altergo accounts live under `~/.altergo/accounts/`. The `default` account is
                 file-history/       ← Symlink → ~/.claude/file-history/
                 shell-snapshots/    ← Symlink → ~/.claude/shell-snapshots/
                 agents/             ← Symlink → ~/.claude/agents/
+                commands/           ← Symlink → ~/.claude/commands/
+                skills/             ← Symlink → ~/.claude/skills/
                 plans/              ← Symlink → ~/.claude/plans/
                 cache/              ← Symlink → ~/.claude/cache/
                 settings.json       ← Symlink → ~/.claude/settings.json
@@ -242,6 +246,8 @@ Every entry in `SYMLINK_DIRS`, `SYMLINK_FILES`, and `CATALOG` is described here.
 | `file-history/` | File access history | Context about which files were recently opened. Account-agnostic. |
 | `shell-snapshots/` | Shell state captures | Per-session snapshots. No reason to isolate by account. |
 | `agents/` | Agent definition files | Agent configurations are per-project. Sharing means you do not need to recreate agents in each account. |
+| `commands/` | Custom slash-command markdown files | User-authored prompt templates with no credential or session state. |
+| `skills/` | User skill definitions | User-authored content (markdown + scripts) with no credential or session state. |
 | `plans/` | Plan files | Plans are project work context, not account state. |
 | `cache/` | Response cache | Content-addressed cache. Sharing means no account re-fetches what another already fetched, reducing latency and API cost. |
 

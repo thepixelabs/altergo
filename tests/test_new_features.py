@@ -878,9 +878,14 @@ def test_native_build_launcher_menu_injects_chip(tmp_path, monkeypatch):
     assert "native" in chip_names
 
 
-def test_native_build_launcher_menu_no_chip_when_dot_dir_absent(tmp_path, monkeypatch):
-    """build_launcher_menu must NOT add a native chip when the provider dot-dir
-    does not exist in MAIN_HOME (even if the binary is on PATH)."""
+def test_native_build_launcher_menu_adds_chip_when_binary_present_without_dot_dir(tmp_path, monkeypatch):
+    """build_launcher_menu must add a native chip when the binary is on PATH,
+    even if the provider dot-dir does not exist in MAIN_HOME yet.
+
+    This lets users reach a fresh provider install from the launcher without
+    first creating any config — the provider CLI bootstraps its own dot-dir
+    on first run.
+    """
     mod = _load_altergo()
 
     # MAIN_HOME exists but has NO .claude subdir.
@@ -898,8 +903,12 @@ def test_native_build_launcher_menu_no_chip_when_dot_dir_absent(tmp_path, monkey
 
     menu = mod.build_launcher_menu()
 
-    # No accounts and no detectable native dot-dir → empty menu.
-    assert menu == []
+    # The claude provider row must appear with just the native chip.
+    assert len(menu) == 1
+    claude_row = menu[0]
+    assert claude_row["provider_id"] == "claude"
+    chip_names = [c["name"] for c in claude_row["accounts"]]
+    assert "native" in chip_names
 
 
 def test_native_build_launcher_menu_no_chip_when_binary_absent(tmp_path, monkeypatch):
@@ -1057,10 +1066,11 @@ def test_native_provider_detected_from_dot_dir(tmp_path, monkeypatch):
     monkeypatch.setattr(sys, "stdout", io.StringIO())
     monkeypatch.setattr(sys, "stderr", io.StringIO())
 
-    with pytest.raises(SystemExit) as exc:
-        mod.launch_claude("native")
+    # launch_claude now returns the child exit code instead of calling sys.exit —
+    # the launcher loop owns the exit so it can re-render the menu between sessions.
+    rc = mod.launch_claude("native")
 
-    assert exc.value.code == 0
+    assert rc == 0
     assert len(run_calls) == 1
     # Must have launched claude, not some other binary.
     assert run_calls[0][0] == "/usr/bin/claude"

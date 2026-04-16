@@ -158,10 +158,10 @@ def _load_greetings():
 def test_greetings_bank_counts():
     g = _load_greetings()
     total = sum(len(lines) for lines in g.GREETINGS.values())
-    assert total == 80, "panel-locked at 80 sentences"
+    assert total == 400, "panel-locked at 400 sentences"
     assert len(g.GREETINGS) == 8, "eight time windows"
     for wid, lines in g.GREETINGS.items():
-        assert len(lines) == 10, f"window {wid} must have 10 sentences"
+        assert len(lines) == 50, f"window {wid} must have 50 sentences"
 
 
 def test_greetings_length_cap():

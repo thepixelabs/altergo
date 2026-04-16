@@ -6008,6 +6008,7 @@ def interactive_launcher():
         if not menu:
             print("altergo: no accounts found. Run 'altergo --config' first.", file=sys.stderr)
             sys.exit(1)
+        show_banner()
         result = curses.wrapper(_draw_launcher, menu)
         account, shell_mode = result if result else (None, False)
         if not account:

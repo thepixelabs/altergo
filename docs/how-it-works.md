@@ -17,6 +17,8 @@ Claude Code stores everything under `~/.claude/`:
     projects/               ← Session history, one subdirectory per working directory
     tasks/                  ← Task context from Claude's built-in task system
     agents/                 ← Agent definitions
+    commands/               ← Custom slash commands
+    skills/                 ← User skills
     plans/                  ← Plan files
     session-env/            ← Shell environment snapshots
     file-history/           ← File access history
@@ -76,7 +78,7 @@ After `altergo --config` runs, the directory structure looks like this:
     settings.json                   ← Settings (real file)
     CLAUDE.md                       ← Global instructions (real file)
     keybindings.json                ← Keybindings (real file)
-    tasks/ agents/ plans/ ...       ← Context directories (real)
+    tasks/ agents/ commands/ skills/ plans/ ...       ← Context directories (real)
 
 ~/.altergo/accounts/default/        ← Default account home
     .claude/
@@ -87,6 +89,8 @@ After `altergo --config` runs, the directory structure looks like this:
         file-history/ ──────────────┤
         shell-snapshots/ ───────────┤
         agents/ ────────────────────┤
+        commands/ ──────────────────┤
+        skills/ ────────────────────┤
         plans/ ─────────────────────┤
         cache/ ─────────────────────┘
         settings.json ──────────────── symlink → ~/.claude/settings.json
@@ -362,6 +366,8 @@ Because it also uses `os.execvpe`, the altergo process is replaced by the target
 | `projects/` | Directory | Yes (symlink) | Sessions are keyed by filesystem path, not by account. All accounts work on the same codebases |
 | `tasks/` | Directory | Yes (symlink) | Task context is project-scoped, not account-scoped |
 | `agents/` | Directory | Yes (symlink) | Agent definitions should be available from all accounts |
+| `commands/` | Directory | Yes (symlink) | Custom slash commands are user-authored, not account-specific |
+| `skills/` | Directory | Yes (symlink) | Skills are user-authored content with no credential or session state |
 | `plans/` | Directory | Yes (symlink) | Plans are project work context, not account state |
 | `session-env/` | Directory | Yes (symlink) | Shell environment snapshots are per-session, not per-account |
 | `file-history/` | Directory | Yes (symlink) | File access history is useful for context regardless of which account is active |

@@ -450,11 +450,11 @@ def show_banner(
 
 
 def show_help():
-    """Print --help output with color and OSC 8 hyperlinks when on a TTY."""
+    """Print --help output in a two-column layout with a shimmering divider."""
     grad = THEMES.get(get_current_theme(), THEMES[_DEFAULT_THEME])["banner"]
 
     def h(t):
-        return "  " + _gradient_ansi(t, grad, bold=True)
+        return _gradient_ansi(t, grad, bold=True)
 
     def kw(t):
         return _c(C("command"), t)
@@ -465,133 +465,290 @@ def show_help():
     def dim(t):
         return _c(C("dim"), t)
 
-    def sep():
-        return _c(C("dim"), "  " + "─" * 54)
+    # ── layout constants ───────────────────────────────────────────────────────
+    # Each column is COL_W visible chars wide (content only, no divider space).
+    # Description offset within a column: _COL2 chars from column start.
+    # Divider sits at terminal column DIV_COL (1-indexed, between the columns).
+    # Minimum terminal width for two-column mode: MIN_W.
+    COL_W = 56  # visible width per column
+    _COL2 = 32  # description offset inside a column (raw cmd + padding)
+    DIV_COL = 59  # 1-indexed terminal column of the │ character
+    MIN_W = 118  # fall back to single-column below this
 
-    # Descriptions are plain text — no color code — so the terminal skin controls
-    # their color rather than forcing a hardcoded dim/grey.
-    # _COL is the visual column where descriptions start (2-space indent + command).
-    # Longest visible command is 36 chars → descriptions start at column 40.
-    _COL = 40
+    # ── detect terminal width ──────────────────────────────────────────────────
+    try:
+        _tw = os.get_terminal_size().columns
+    except OSError:
+        _tw = 0
+    two_col = sys.stdout.isatty() and _tw >= MIN_W
 
-    def row(raw, colored, description):
-        pad = " " * max(2, _COL - 2 - len(raw))
-        return f"  {colored}{pad}{description}"
+    # ── strip ANSI for visible-length calculation ──────────────────────────────
+    _ansi_re = re.compile(r"\033(?:\[[^m]*m|\][^\033]*\033\\|[^[\\])")
 
-    pixelabs = _link("https://pixelabs.net", _c(C("brand"), "pixelabs.net"))
+    def _vis(s: str) -> int:
+        return len(_ansi_re.sub("", s))
 
-    show_banner()
-    print(f"  {dim('Because one personality was not causing enough bugs.')}")
-    print(f"  A {pixelabs} project.")
+    # ── row builder (single column, COL_W wide) ────────────────────────────────
+    def row(raw: str, colored: str, description: str) -> str:
+        pad = " " * max(1, _COL2 - 2 - _vis(colored))
+        content = f"  {colored}{pad}{description}"
+        # Pad to COL_W so the divider lines up regardless of description length
+        vis = _vis(content)
+        if vis < COL_W:
+            content += " " * (COL_W - vis)
+        return content
 
-    lines = [
-        "",
-        sep(),
-        h("Launch"),
-        row("altergo", kw("altergo"), "Open launcher or start active account"),
-        row("altergo <name>", f"{kw('altergo')} {arg('<name>')}", "Launch a named account"),
-        row(
-            "altergo <name> <provider>",
-            f"{kw('altergo')} {arg('<name>')} {arg('<provider>')}",
-            "Launch with a specific provider",
-        ),
-        "",
-        sep(),
-        h("Accounts"),
-        row("altergo --config", kw("altergo --config"), "Create or reconfigure an account"),
-        row(
-            "altergo --config <name>",
-            f"{kw('altergo --config')} {arg('<name>')}",
-            "Create or reconfigure a named account",
-        ),
-        row(
+    # ── section-header builder ─────────────────────────────────────────────────
+    def sec(title: str) -> str:
+        content = f"  {h(title)}"
+        vis = _vis(content)
+        if vis < COL_W:
+            content += " " * (COL_W - vis)
+        return content
+
+    # ── thin separator (single-column width) ──────────────────────────────────
+    def sep_line() -> str:
+        return _c(C("dim"), "  " + "─" * (COL_W - 2))
+
+    # ── blank row padded to COL_W ──────────────────────────────────────────────
+    def blank() -> str:
+        return " " * COL_W
+
+    # ── section data ──────────────────────────────────────────────────────────
+    # Each section is a list of (raw_cmd, colored_cmd, description) tuples,
+    # or the sentinel string "" for a blank spacer row.
+    SEC_LAUNCH = [
+        ("altergo", kw("altergo"), "Open launcher / active account"),
+        ("altergo <name>", f"{kw('altergo')} {arg('<name>')}", "Launch a named account"),
+        ("altergo <name> <prov>", f"{kw('altergo')} {arg('<name>')} {arg('<prov>')}", "Launch with specific provider"),
+    ]
+    SEC_ACCOUNTS = [
+        ("altergo --config", kw("altergo --config"), "Create or reconfigure account"),
+        ("altergo --config <name>", f"{kw('altergo --config')} {arg('<name>')}", "Create/reconfigure named account"),
+        (
             "altergo --rename <old> <new>",
             f"{kw('altergo --rename')} {arg('<old>')} {arg('<new>')}",
             "Rename an account",
         ),
-        row(
-            "altergo --config --provider <p>",
+        (
+            "altergo --config --provider",
             f"{kw('altergo --config --provider')} {arg('<p>')}",
-            "Provider: claude, gemini, codex, copilot",
+            "claude gemini codex copilot",
         ),
-        row("altergo --use <name>", f"{kw('altergo --use')} {arg('<name>')}", "Set as default account"),
-        row(
-            "altergo --teardown [--name <n>]",
-            f"{kw('altergo --teardown')} {arg('[--name <n>]')}",
-            "Remove account files and symlinks",
+        ("altergo --use <name>", f"{kw('altergo --use')} {arg('<name>')}", "Set as default account"),
+        ("altergo --teardown", f"{kw('altergo --teardown')} {arg('[--name <n>]')}", "Remove account + symlinks"),
+        ("altergo --settings", kw("altergo --settings"), "Manage shared credentials"),
+    ]
+    SEC_SESSIONS = [
+        ("altergo --resume", kw("altergo --resume"), "Pick session interactively"),
+        ("altergo --resume <id>", f"{kw('altergo --resume')} {arg('<id>')}", "Resume by session ID"),
+        ("altergo --search", kw("altergo --search"), "Search conversation history"),
+        ("altergo --list", kw("altergo --list"), "List recent sessions"),
+        ("altergo --star", kw("altergo --star"), "Star the last session"),
+        ("altergo --star <id>", f"{kw('altergo --star')} {arg('<id>')}", "Star a session by ID"),
+    ]
+    _portal = kw("portal")
+    SEC_PORTAL = [
+        ("altergo portal", f"{kw('altergo')} {_portal}", "Open portal, active account"),
+        ("altergo portal <name>", f"{kw('altergo')} {_portal} {arg('<name>')}", "Open portal, named account"),
+        (
+            "altergo portal <name> <prov>",
+            f"{kw('altergo')} {_portal} {arg('<name>')} {arg('<prov>')}",
+            "Open portal, specific provider",
         ),
-        row("altergo --settings", kw("altergo --settings"), "Manage shared credentials"),
-        "",
-        sep(),
-        h("Sessions"),
-        row("altergo --resume", kw("altergo --resume"), "Pick session interactively"),
-        row("altergo --resume <id>", f"{kw('altergo --resume')} {arg('<id>')}", "Resume by session ID"),
-        row("altergo --search", kw("altergo --search"), "Search conversation history"),
-        row("altergo --list", kw("altergo --list"), "List recent sessions"),
-        row("altergo --star", kw("altergo --star"), "Star the last session"),
-        row("altergo --star <id>", f"{kw('altergo --star')} {arg('<id>')}", "Star a session by ID"),
-        "",
-        sep(),
-        h("Portal  ·  tmux-backed, reconnect from anywhere"),
-        row("altergo portal", f"{kw('altergo')} {kw('portal')}", "Open portal with active account"),
-        row(
-            "altergo portal <name>",
-            f"{kw('altergo')} {kw('portal')} {arg('<name>')}",
-            "Open portal for a named account",
-        ),
-        row(
-            "altergo portal <name> <provider>",
-            f"{kw('altergo')} {kw('portal')} {arg('<name>')} {arg('<provider>')}",
-            "Open portal with specific provider",
-        ),
-        row(
+        (
             "altergo portal <name> --resume",
-            f"{kw('altergo')} {kw('portal')} {arg('<name>')} {kw('--resume')}",
+            f"{kw('altergo')} {_portal} {arg('<name>')} {kw('--resume')}",
             "Reconnect to last session",
         ),
-        row(
+        (
             "altergo portal <name> --resume <id>",
-            f"{kw('altergo')} {kw('portal')} {arg('<name>')} {kw('--resume')} {arg('<id>')}",
-            "Reconnect to a specific session",
+            f"{kw('altergo')} {_portal} {arg('<name>')} {kw('--resume')} {arg('<id>')}",
+            "Reconnect specific session",
         ),
-        "",
-        sep(),
-        h("Customization"),
-        row("altergo --theme", kw("altergo --theme"), "Show active theme"),
-        row(
+    ]
+    SEC_CUSTOM = [
+        ("altergo --theme", kw("altergo --theme"), "Show active theme"),
+        (
             "altergo --theme <name>",
             f"{kw('altergo --theme')} {arg('<name>')}",
             f"Set theme  ({', '.join(THEMES.keys())})",
         ),
-        "",
-        sep(),
-        h("Advanced"),
-        row("altergo native", f"{kw('altergo')} {arg('native')}", "Launch with real $HOME (no isolation)"),
-        row(
-            "altergo native <provider>",
-            f"{kw('altergo')} {arg('native')} {arg('<provider>')}",
-            "Launch specific provider with real $HOME",
-        ),
-        row(
-            "altergo <name> shell", f"{kw('altergo')} {arg('<name>')} {kw('shell')}", "Open a shell inside account HOME"
-        ),
-        row(
+    ]
+    SEC_ADVANCED = [
+        ("altergo native", f"{kw('altergo')} {arg('native')}", "Launch real $HOME (no isolation)"),
+        ("altergo native <prov>", f"{kw('altergo')} {arg('native')} {arg('<prov>')}", "Launch provider, real $HOME"),
+        ("altergo <name> shell", f"{kw('altergo')} {arg('<name>')} {kw('shell')}", "Shell inside account HOME"),
+        (
             "altergo <name> -- <cmd>",
             f"{kw('altergo')} {arg('<name>')} {kw('--')} {arg('<cmd>')}",
-            "Run a command in account context",
+            "Run command in account context",
         ),
-        "",
-        sep(),
-        h("Launcher keys"),
-        (f"  {kw('↑↓')} {kw('jk')}  move    {kw('←→')} {kw('hl')}  switch account    {kw('Enter')}  launch"),
-        (f"  {kw('t')}  cycle theme    {kw('s')}  shell mode    {kw('d')}  set default"),
-        (f"  {kw('p')} {kw('Tab')}  preview    {kw('/')}  search    {kw('g')} {kw('G')}  top / bottom"),
-        f"  {kw('q')} {kw('Esc')}  quit",
-        "",
-        dim("  altergo · open-source by pixelabs · not affiliated with Anthropic, Google, OpenAI, or GitHub"),
-        "",
     ]
-    print("\n".join(lines))
+    # Launcher keys rendered as freeform strings, not row() tuples
+    _K = [
+        f"  {kw('↑↓')} {kw('jk')}  move    {kw('←→')} {kw('hl')}  switch account",
+        f"  {kw('Enter')}  launch    {kw('t')}  cycle theme    {kw('s')}  shell",
+        f"  {kw('d')}  set default    {kw('p')} {kw('Tab')}  preview",
+        f"  {kw('/')}  search    {kw('g')} {kw('G')}  top/bottom    {kw('q')} {kw('Esc')}  quit",
+    ]
+
+    # ── render a section into a list of padded strings ─────────────────────────
+    def render_sec(title: str, items) -> list:
+        out = [sec(title)]
+        for entry in items:
+            if entry == "":
+                out.append(blank())
+            else:
+                out.append(row(entry[0], entry[1], entry[2]))
+        return out
+
+    def render_keys(title: str, lines_raw: list) -> list:
+        out = [sec(title)]
+        for ln in lines_raw:
+            padded = ln
+            vis = _vis(padded)
+            if vis < COL_W:
+                padded += " " * (COL_W - vis)
+            out.append(padded)
+        return out
+
+    # ── build the two columns ──────────────────────────────────────────────────
+    left_sections: list[list] = [
+        render_sec("Launch", SEC_LAUNCH),
+        render_sec("Accounts", SEC_ACCOUNTS),
+        render_sec("Sessions", SEC_SESSIONS),
+    ]
+    right_sections: list[list] = [
+        render_sec("Portal  ·  tmux-backed", SEC_PORTAL),
+        render_sec("Customization", SEC_CUSTOM),
+        render_sec("Advanced", SEC_ADVANCED),
+        render_keys("Launcher keys", _K),
+    ]
+
+    def _interleave_blank(sections: list[list]) -> list:
+        """Join sections with a single blank row between them."""
+        out: list = []
+        for i, s in enumerate(sections):
+            if i:
+                out.append(blank())
+            out.extend(s)
+        return out
+
+    left_rows = _interleave_blank(left_sections)
+    right_rows = _interleave_blank(right_sections)
+
+    # ── shimmer animation for the divider ─────────────────────────────────────
+    _SHIMMER_PALETTE = [
+        "\033[38;5;255m",  # dist 0: bright white peak
+        "\033[38;5;231m",  # dist 1: off-white
+        "\033[38;5;195m",  # dist 2: pale cyan
+        "\033[38;5;159m",  # dist 3: light cyan
+        "\033[38;5;123m",  # dist 4: cyan
+        "\033[38;5;87m",  # dist 5: turquoise
+        "\033[38;5;45m",  # dist 6: cyan-blue
+        "\033[38;5;33m",  # dist 7: blue
+    ]
+    _SHIMMER_BASE = "\033[38;5;237m"
+    _RST = "\033[0m"
+
+    def _shimmer(num_rows: int, col: int) -> None:
+        """Animate a shimmering pass down the divider column."""
+        if not sys.stdout.isatty():
+            return
+        sys.stdout.write("\033[?25l")  # hide cursor
+        try:
+            for _ in range(2):  # two passes
+                for peak in range(-5, num_rows + 6):
+                    # Move cursor up to the first divider row
+                    sys.stdout.write(f"\033[{num_rows}A")
+                    for r in range(num_rows):
+                        d = abs(r - peak)
+                        color = _SHIMMER_PALETTE[d] if d < len(_SHIMMER_PALETTE) else _SHIMMER_BASE
+                        # Move to divider column, write │, move down one row, return to col 1
+                        sys.stdout.write(f"\033[{col}G{color}│{_RST}\033[B\033[1G")
+                    sys.stdout.flush()
+                    time.sleep(0.016)  # ~60 fps
+        finally:
+            sys.stdout.write("\033[?25h")  # show cursor
+            sys.stdout.flush()
+
+    # ── print header ──────────────────────────────────────────────────────────
+    pixelabs = _link("https://pixelabs.net", _c(C("brand"), "pixelabs.net"))
+    show_banner()
+    print(f"  {dim('Because one personality was not causing enough bugs.')}")
+    print(f"  A {pixelabs} project.\n")
+
+    # ── single-column fallback ─────────────────────────────────────────────────
+    if not two_col:
+
+        def sep():
+            return _c(C("dim"), "  " + "─" * 54)
+
+        def row1(raw, colored, description):
+            vis_cmd = _vis(f"  {colored}")
+            pad = " " * max(2, 40 - vis_cmd)
+            return f"  {colored}{pad}{description}"
+
+        lines = []
+        for title, items in [
+            ("Launch", SEC_LAUNCH),
+            ("Accounts", SEC_ACCOUNTS),
+            ("Sessions", SEC_SESSIONS),
+            ("Portal  ·  tmux-backed, reconnect from anywhere", SEC_PORTAL),
+            ("Customization", SEC_CUSTOM),
+            ("Advanced", SEC_ADVANCED),
+        ]:
+            lines += ["", sep(), "  " + h(title)]
+            for entry in items:
+                lines.append(row1(entry[0], entry[1], entry[2]))
+        lines += ["", sep(), "  " + h("Launcher keys")] + _K
+        lines += [
+            "",
+            dim("  altergo · open-source by pixelabs · not affiliated with Anthropic, Google, OpenAI, or GitHub"),
+            "",
+        ]
+        print("\n".join(lines))
+        return
+
+    # ── two-column layout ──────────────────────────────────────────────────────
+    # Pad the shorter column with blank rows so both are the same height.
+    n_left = len(left_rows)
+    n_right = len(right_rows)
+    n_rows = max(n_left, n_right)
+    left_rows += [blank()] * (n_rows - n_left)
+    right_rows += [blank()] * (n_rows - n_right)
+
+    # DIV_COL is 1-indexed; the divider character is printed as part of the row
+    # render, so we use a dim │ placeholder in the static print, then shimmer.
+    _div_char = _c(C("dim"), "│")
+
+    output_lines = []
+    for L, R in zip(left_rows, right_rows):
+        # Pad L to exactly COL_W visible chars before the divider
+        vis_l = _vis(L)
+        gap = max(0, COL_W - vis_l)
+        output_lines.append(f"{L}{' ' * gap} {_div_char} {R}")
+
+    print("\n".join(output_lines))
+
+    # Footer
+    print()
+    print(dim("  altergo · open-source by pixelabs · not affiliated with Anthropic, Google, OpenAI, or GitHub"))
+    print()
+
+    # Shimmer: cursor is now just past the footer; walk back up past footer
+    # (2 lines: footer + blank), then animate the divider column.
+    if sys.stdout.isatty():
+        # After the two print()s and one print(footer), cursor is 3 lines below
+        # the last content row.  Step back up to the bottom of the content block,
+        # run the shimmer (which goes up n_rows then walks back down), then step
+        # back down over the 3 footer lines so the prompt lands correctly.
+        sys.stdout.write("\033[3A")  # up past: blank, footer, blank
+        sys.stdout.flush()
+        _shimmer(n_rows, DIV_COL)  # cursor ends at bottom of content block
+        sys.stdout.write("\033[3B\033[1G")  # back down over the 3 footer lines
+        sys.stdout.flush()
 
 
 # --- Config ---
@@ -692,6 +849,8 @@ SYMLINK_DIRS = [
     "file-history",
     "shell-snapshots",
     "agents",
+    "commands",
+    "skills",
     "plans",
     "cache",
 ]
@@ -719,6 +878,8 @@ PROVIDERS = {
             "file-history",
             "shell-snapshots",
             "agents",
+            "commands",
+            "skills",
             "plans",
             "cache",
         ],
@@ -5145,7 +5306,7 @@ def launch_claude(account: str = "default", args=None, provider: str | None = No
     except Exception:
         pass  # never fail the user's exit due to tracking
     _print_launch_message()
-    sys.exit(result.returncode)
+    return result.returncode
 
 
 def launch_shell(account: str = "default"):
@@ -5203,7 +5364,7 @@ def launch_shell(account: str = "default"):
 
     result = subprocess.run(shell_cmd, env=run_env)
     _print_launch_message()
-    sys.exit(result.returncode)
+    return result.returncode
 
 
 def launch_command(account: str = "default", cmd_args=None):
@@ -5242,7 +5403,7 @@ def launch_command(account: str = "default", cmd_args=None):
 
     result = subprocess.run(inner_cmd, env=run_env)
     _print_launch_message()
-    sys.exit(result.returncode)
+    return result.returncode
 
 
 # --- Account name disambiguation helper ---
@@ -5486,17 +5647,15 @@ def build_launcher_menu() -> list:
         if len(acct_ages) == len(accounts):
             break
 
-    # Inject "native" chips for every provider whose binary and dot-dir both
-    # exist in the real MAIN_HOME.  This lets the user reach their unmanaged
-    # home installation from the launcher without any $HOME change.
+    # Inject "native" chips for every provider whose binary is available.
+    # Native runs with the real $HOME unchanged — no dot-dir isolation needed,
+    # so we only require the binary to be on PATH (not a pre-existing dot-dir).
     for lp in _LAUNCHER_PROVIDERS:
         pid = lp["id"]
         prov = PROVIDERS.get(pid)
         if prov is None:
             continue
-        binary_available = bool(shutil.which(lp["binary"]))
-        dot_dir_exists = (MAIN_HOME / prov["dot_dir"]).exists()
-        if binary_available and dot_dir_exists:
+        if shutil.which(lp["binary"]):
             provider_accounts.setdefault(pid, [])
             if _NATIVE_ACCOUNT not in provider_accounts[pid]:
                 provider_accounts[pid].append(_NATIVE_ACCOUNT)
@@ -5839,19 +5998,25 @@ def _first_run_onboarding():
 
 
 def interactive_launcher():
-    """Show the provider+account picker and launch the selected account."""
-    menu = build_launcher_menu()
-    if not menu:
-        print("altergo: no accounts found. Run 'altergo --config' first.", file=sys.stderr)
-        sys.exit(1)
-    result = curses.wrapper(_draw_launcher, menu)
-    account, shell_mode = result if result else (None, False)
-    if not account:
-        sys.exit(0)
-    if shell_mode:
-        launch_shell(account)
-    else:
-        launch_claude(account)
+    """Show the provider+account picker and launch the selected account.
+
+    Loops: after each session exits the menu is shown again so the user
+    can launch another account or press q to quit.
+    """
+    while True:
+        menu = build_launcher_menu()
+        if not menu:
+            print("altergo: no accounts found. Run 'altergo --config' first.", file=sys.stderr)
+            sys.exit(1)
+        result = curses.wrapper(_draw_launcher, menu)
+        account, shell_mode = result if result else (None, False)
+        if not account:
+            sys.exit(0)
+        if shell_mode:
+            launch_shell(account)
+        else:
+            launch_claude(account)
+        # Session exited — loop back to the menu
 
 
 # --- Main ---
@@ -6173,7 +6338,7 @@ def main():
 
     # altergo [<name>] shell
     if args and args[0] == "shell":
-        launch_shell(account)
+        sys.exit(launch_shell(account))
 
     # altergo [<name>] portal → same as top-level portal but account already resolved
     if args and args[0] == "portal":
@@ -6201,7 +6366,7 @@ def main():
 
     # altergo [<name>] -- <cmd> [args...]
     if args and args[0] == "--":
-        launch_command(account, args[1:])
+        sys.exit(launch_command(account, args[1:]))
 
     # ── Everything else → pass straight through to provider ──────────────────
     # altergo                    → provider (active account)
@@ -6223,7 +6388,7 @@ def main():
         print("  Run 'altergo --help' for usage.", file=sys.stderr)
         sys.exit(1)
 
-    launch_claude(account, args, provider=provider)
+    sys.exit(launch_claude(account, args, provider=provider))
 
 
 if __name__ == "__main__":

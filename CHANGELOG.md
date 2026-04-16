@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.37.0 (2026-04-16)
+
+### Features
+
+- Expand greetings bank + banner above the launcher
+  ([#17](https://github.com/thepixelabs/altergo/pull/17),
+  [`42346bb`](https://github.com/thepixelabs/altergo/commit/42346bb265cd5c088eeba67d2bb435a15c8eadf2))
+
+- Grow greetings bank 80 → 400 (10 → 50 per window across 8 time windows); update the panel-lock
+  test accordingly. - interactive_launcher() now calls show_banner() at the top of each loop
+  iteration so the picker is framed by the themed figlet, matching interactive_settings().
+
+
 ## v0.36.0 (2026-04-16)
 
 ### Features

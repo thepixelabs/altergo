@@ -143,7 +143,7 @@ def test_update_check_flag_persistence(tmp_path, monkeypatch):
     assert mod.load_update_check_enabled() is True
 
 
-# --- Greetings module ------------------------------------------------------
+# --- Session messages module (greetings + goodbyes) ------------------------
 
 
 def _load_greetings():
@@ -167,10 +167,10 @@ def test_greetings_bank_counts():
 def test_greetings_length_cap():
     g = _load_greetings()
     # Hard cap at ~65 chars so nothing wraps under a 29-wide figlet even
-    # after indentation + icon.
+    # after indentation + icon. Entries are (emoji, text) tuples — check text.
     for wid, lines in g.GREETINGS.items():
-        for line in lines:
-            assert len(line) <= 65, f"'{line}' too long for window {wid}"
+        for emoji, text in lines:
+            assert len(text) <= 65, f"'{text}' too long for window {wid}"
 
 
 def test_greetings_windows_tile_24_hours():
@@ -228,6 +228,52 @@ def test_greeting_copy_guardrails():
     # The two replacements MUST be present
     assert any("the tests are failing" in l.lower() for l in all_lines)
     assert any("ci is asleep" in l.lower() for l in all_lines)
+
+
+def test_greetings_no_specific_hour_callouts():
+    """Each sentence appears anywhere in a 2–4h window — specific hour
+    names ("Ten PM", "Three AM") would lie by up to two hours. Use fuzzy
+    markers ("past midnight", "this late", "pre-standup") instead.
+
+    Matches only number-word + AM/PM/o'clock, so "PM" as project-manager
+    ("Signals from the PM") does not trigger."""
+    import re
+    g = _load_greetings()
+    pattern = re.compile(
+        r"\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)"
+        r"\s+(?:am|pm|o'?clock)\b",
+        re.IGNORECASE,
+    )
+    for wid, lines in g.GREETINGS.items():
+        for _, text in lines:
+            m = pattern.search(text)
+            assert m is None, (
+                f"{wid}: '{text}' uses a specific hour callout ('{m.group(0)}'); "
+                f"window spans 2–4 hours so it will be wrong sometimes"
+            )
+
+
+# --- Goodbye bank ----------------------------------------------------------
+
+
+def test_goodbyes_bank_count():
+    g = _load_greetings()
+    assert len(g.GOODBYES) == 50, "goodbye bank locked at 50 lines"
+
+
+def test_goodbyes_shape():
+    g = _load_greetings()
+    for entry in g.GOODBYES:
+        assert isinstance(entry, tuple) and len(entry) == 2
+        emoji, text = entry
+        assert isinstance(emoji, str) and emoji
+        assert isinstance(text, str) and text
+
+
+def test_pick_goodbye_returns_tuple_from_bank():
+    g = _load_greetings()
+    emoji, text = g.pick_goodbye()
+    assert (emoji, text) in g.GOODBYES
 
 
 # --- tmux_session setting -------------------------------------------------

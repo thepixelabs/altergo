@@ -5569,24 +5569,9 @@ def _prompt_provider_picker(current_provider: str | None = None) -> str:
 
 
 # --- Goodbye messages ---
-
-_GOODBYE = [
-    ("👋", "Back to reality. Good luck with the next bug."),
-    ("🚪", "Session closed. The context window has left the building."),
-    ("🤔", "That was productive, ah?"),
-    ("💬", "The chat is over. Your git blame remains."),
-    ("🧠", "All that intelligence, and it still couldn't push to main for you."),
-    ("⏱️", "See you in 5 minutes when the next edge case appears."),
-    ("🔮", "The model has spoken. Whether it was right is your problem."),
-    ("💸", "Tokens spent. Wisdom optional."),
-    ("📝", "Another session closed. Another PR description that writes itself."),
-    ("🤷", "Done. The AI did the thinking. You take the blame."),
-    ("✅", "Clean exit. The work continues."),
-    ("🍀", "Until next time. May your tests be green."),
-    ("📌", "Context preserved. You know where to find it."),
-    ("🚀", "Ship it."),
-    ("💾", "Commit early, commit often. You know the drill."),
-]
+#
+# The bank lives in :mod:`altergo_greetings` (``GOODBYES``) alongside the
+# greeting bank — both are session-message copy and share the same voice rules.
 
 
 def _print_launch_message():
@@ -5595,9 +5580,9 @@ def _print_launch_message():
         return
     if not _load_bool_setting("show_goodbye"):
         return
-    import random
+    import altergo_greetings as _greet
 
-    emoji, msg = random.choice(_GOODBYE)
+    emoji, msg = _greet.pick_goodbye()
     grad = THEMES.get(get_current_theme(), THEMES[_DEFAULT_THEME])["banner"]
     parts = []
     n = len(msg)

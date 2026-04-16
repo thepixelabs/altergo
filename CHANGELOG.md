@@ -1,6 +1,23 @@
 # CHANGELOG
 
 
+## v0.37.1 (2026-04-16)
+
+### Refactoring
+
+- Unify goodbye bank into altergo_greetings + add test coverage
+  ([`9f8998a`](https://github.com/thepixelabs/altergo/commit/9f8998a007d36bdaafa33fc0f7dae92e66d363e9))
+
+Move the _GOODBYE list from altergo.py into altergo_greetings.GOODBYES (alongside GREETINGS — both
+  are session-message copy sharing the same voice rules). Expose pick_goodbye(). altergo.py now
+  imports from the greetings module instead of owning its own copy.
+
+Tests: rename section to 'Session messages module', fix the (emoji, text) tuple unpacking in the
+  length-cap check, add goodbye bank tests (count, shape, pick_goodbye round-trip), and add a
+  regression test that bans number-word + AM/PM/o'clock callouts so window-wide sentences cannot lie
+  by 1–2 hours.
+
+
 ## v0.37.0 (2026-04-16)
 
 ### Features

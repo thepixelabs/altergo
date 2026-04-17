@@ -1,6 +1,6 @@
 # Architecture reference
 
-**Applies to:** altergo v0.16.0+  
+**Applies to:** altergo v0.37.0+  
 **Audience:** Engineers maintaining altergo, debugging symlink issues, or auditing what altergo touches on disk.
 
 For a prose explanation of why the architecture is designed this way, see [how-it-works.md](how-it-works.md).
@@ -28,7 +28,7 @@ altergo/
         ...
     .github/
         workflows/
-            ci.yml          ← Lint (ruff) + test matrix (Python 3.9–3.13, ubuntu + macos)
+            ci.yml          ← Lint (ruff) + test matrix (Python 3.10–3.13, ubuntu + macos)
             release.yml     ← PyPI publish on tag push
             pages.yml       ← GitHub Pages deploy
             security.yml    ← Dependency security scan
@@ -48,9 +48,10 @@ The entire program is one file. Here is a map of its logical sections:
 | Banner | `show_banner()` | Rich-rendered figlet logo, version, greeting |
 | Help | `show_help()` | Colored, hyperlinked help output |
 | Config | `MAIN_HOME`, `ACCOUNTS_DIR`, `SETTINGS_FILE` | Path constants |
-| Account helpers | `resolve_account()`, `list_accounts()` | Account directory resolution |
-| Migration | `detect_legacy()`, `migrate_legacy()` | Auto-migration from v0.4.x layout |
+| Account helpers | `resolve_account()`, `list_accounts()`, `load_account_meta()`, `save_account_meta()` | Account directory resolution, v2 account.json I/O |
 | Providers | `PROVIDERS`, `CATALOG` | Multi-provider support, credential sharing catalog |
+| Symlink plumbing | `_ensure_symlinked_dir()`, `_ensure_home_file_symlink()`, `_sync_claude_mcps()` | Per-provider directory symlinks, home-level file symlinks, MCP bidirectional merge |
+| Self-heal (dormant) | `_sweep_existing_accounts()` | Repair pass kept for tests; no longer invoked from launch paths (see below) |
 | Settings helpers | `load_settings()`, `save_settings()`, `_load_bool_setting()` | Settings persistence |
 | Preferences | `_load_bool_setting()` | Boolean settings: greeting, goodbye, animation |
 | Update checker | `load_update_check_enabled()`, PyPI cache | Background version check |
@@ -95,16 +96,19 @@ The following describes the filesystem state after `altergo --config` has been r
 
 ### Accounts directory
 
-All altergo accounts live under `~/.altergo/accounts/`. The `default` account is used when you run `altergo` with no account name. Named accounts (e.g. `work`, `client-a`) are created with `altergo --config --name <name>`.
+All altergo accounts live under `~/.altergo/accounts/`. The `default` account is used when you run `altergo` with no account name. Named accounts (e.g. `work`, `client-a`) are created with `altergo --config <name>` (positional form since v0.34.0).
 
 ```
 ~/.altergo/
     .altergo.json                   ← Settings file (global, shared across all accounts)
-    .legacy-backup/                 ← Backup of pre-v0.5 layout (present after auto-migration only)
+    version_check.json              ← PyPI version cache (daily refresh; see "Network activity")
     accounts/
         default/                    ← Default account home (HOME for plain `altergo`)
-            .claude/
+            account.json            ← v2 metadata: {"version": 2, "provider": "claude", ...}
+            .claude/                ← Provider dot-dir (only present for Claude accounts)
                 .credentials.json   ← Real file. Isolated credentials. Created on first login.
+                .claude.json        ← Real file. `mcpServers` bidirectionally merged with main;
+                                    ←   `oauthAccount` kept per-account. See "MCP server sync".
                 projects/           ← Symlink → ~/.claude/projects/
                 tasks/              ← Symlink → ~/.claude/tasks/
                 session-env/        ← Symlink → ~/.claude/session-env/
@@ -127,17 +131,43 @@ All altergo accounts live under `~/.altergo/accounts/`. The `default` account is
             ...
 
         work/                       ← Named account home (HOME for `altergo work`)
-            .claude/
+            account.json
+            .claude/                ← (or .gemini/, .codex/, .copilot/ — one per account in v2)
                 .credentials.json   ← Real file. Isolated credentials.
                 projects/           ← Symlink → ~/.claude/projects/ (same target)
                 ...                 ← Same symlink structure as default
             .aws/                   ← Symlink → ~/.aws/ (same shared credentials as default)
             ...
 
-    # Written by Claude Code during normal usage (not managed by altergo):
+    # Written by the provider CLI during normal usage (not managed by altergo):
     accounts/default/.local/bin/claude     ← Created if 'claude update' runs inside altergo
     accounts/default/Library/Application Support/claude/  ← macOS only
 ```
+
+### On-disk treatment of an account
+
+Three distinct disciplines are at play inside an account home:
+
+```
+~/.claude/  (primary, real — user's real Claude home, never renamed)
+├── .credentials.json        ◄── REAL (never linked, never touched by altergo)
+├── .claude.json             ◄── REAL (mcpServers bidirectionally synced; oauthAccount kept local)
+├── projects/ tasks/ skills/ ◄── REAL (same inode as every account → shared)
+├── settings.json CLAUDE.md  ◄── REAL (same inode as every account → shared)
+└── plugins/ paste-cache/    ◄── REAL (NOT shared; unmanaged)
+
+~/.altergo/accounts/work/.claude/
+├── .credentials.json  ← REAL, isolated per account
+├── .claude.json       ← REAL, merged with ~/.claude.json (mcpServers only)
+├── projects/ → symlink → ~/.claude/projects/
+├── settings.json → symlink → ~/.claude/settings.json
+└── plugins/           ← REAL, isolated (not managed)
+```
+
+Three treatments:
+- **Real & isolated** — per-account data that MUST differ (`.credentials.json`, `account.json`, the dot-dir itself, provider plugin caches).
+- **Symlinked & shared** — session history, agent/skill/command definitions, UI settings. One inode, N accounts read and write it.
+- **Bidirectionally merged** — only `.claude.json`, and only its `mcpServers` key. See [MCP server sync](#mcp-server-sync).
 
 ### Settings file placement
 
@@ -173,7 +203,7 @@ Account names must pass `validate_account_name()`:
 - Maximum 64 characters
 - Must not be in `_RESERVED_NAMES`: `default`, `main`, `list`, `new`, `rm`, `shell`, `config`, `setup`, `teardown`, `help`, `version`, `legacy`, `backup`, `migrate`, `use`
 
-`validate_account_name()` is called only during `--config --name <name>`. It is not called during account lookup in `main()` — if the directory does not exist, the user sees a "not found" error with a hint to run `--config --name`.
+`validate_account_name()` is called only during `altergo --config <name>`. It is not called during account lookup in `main()` — if the directory does not exist, the user sees a "not found" error with a hint to run `altergo --config <name>`.
 
 
 
@@ -197,8 +227,10 @@ When the first argument is not a known flag or subcommand, `main()` checks wheth
 
 ```
 _KNOWN_COMMANDS = frozenset([
-    "shell", "--resume", "--list", "--config", "--teardown",
-    "--settings", "--version", "-h", "--help", "--"
+    "shell", "use", "portal",
+    "--resume", "--list", "--search", "--config", "--rename",
+    "--teardown", "--settings", "--version", "--use", "--launch",
+    "--theme", "--star", "-h", "--help", "--"
 ])
 
 _looks_like_account(token):
@@ -213,30 +245,33 @@ This means `altergo --dangerously-skip-permissions` passes `--dangerously-skip-p
 
 ---
 
-## Auto-migration: `detect_legacy()` and `migrate_legacy()`
+## Historical: legacy auto-migration (removed)
 
-`detect_legacy()` returns `True` when both of these conditions hold:
-1. `~/.altergo/.claude/` exists (the old v0.4.x single-account layout)
-2. `~/.altergo/accounts/` does not yet exist
+Pre-v0.35.3, altergo ran a `detect_legacy()` / `migrate_legacy()` pair at the top of `main()` to upgrade v0.4.x single-account layouts in place. It was removed in v0.35.3 because all users were already on the N-account layout and the code was dead weight. No code path in the current tree calls it.
 
-`migrate_legacy()` runs at the top of `main()` on every invocation. When `detect_legacy()` returns `True`, it performs the migration in five steps:
+Two adjacent pieces of history are worth knowing when diagnosing an upgrade:
 
-1. Rename `~/.altergo/` to `/tmp/altergo-migrate-<pid>/`
-2. Create `~/.altergo/accounts/`
-3. Rename `/tmp/altergo-migrate-<pid>/` to `~/.altergo/accounts/default/`
-4. Copy `accounts/default/` to `~/.altergo/.legacy-backup/` (preserving symlinks)
-5. Write `~/.altergo/accounts/default/MIGRATED.txt` as an audit trail
-6. Print a 4-line visible block to stdout describing the migration
-
-The use of `/tmp/` as an intermediate staging area means the rename in step 1 is atomic on the local filesystem (same device). If the process is interrupted between steps 1 and 3, the data sits safely in `/tmp/` under a PID-qualified name. The migration is idempotent: once `accounts/` exists, `detect_legacy()` returns `False` and `migrate_legacy()` returns immediately without printing anything.
+- **v0.22.0 silent un-symlink of `.claude.json`** — accounts created between v0.21.2 and v0.22.0 had `.claude.json` as a symlink via `symlink_home_files`. `_sync_claude_mcps` detects that case, reads the content through the link, removes the symlink, and writes a real file with the merged `mcpServers`. Content is preserved; the rewrite is atomic.
+- **v0.35.3 dead-code removal** — the unconditional `_sweep_existing_accounts()` call from `main()` and from `launch_claude()` was removed. The function itself is kept (tests exercise it as a repair-path oracle), but no production code path calls it. If an operator ever needs to force a sweep across every account, they can drive it from a Python shell; there is no CLI flag for it.
 
 ---
 
 ## Symlink reference table
 
-Every entry in `SYMLINK_DIRS`, `SYMLINK_FILES`, and `CATALOG` is described here.
+Every entry in the per-provider `symlink_dirs`/`symlink_files` lists and in `CATALOG` is described here. The module-level `SYMLINK_DIRS` / `SYMLINK_FILES` constants (altergo.py:844-863) now exist only as the fallback used by `_sweep_existing_accounts` for legacy accounts without `account.json`; the authoritative lists live in the `PROVIDERS` dict (altergo.py:868-915).
 
-### Inside `account_home/.claude/` — shared session data (`SYMLINK_DIRS`)
+### Provider matrix
+
+Altergo supports four providers in v2. Each account binds to exactly one provider (`account.json.provider`), and only that provider's dot-dir is created and wired in the account home.
+
+| Provider | dot_dir | Credentials file | Symlinked dirs | Symlinked files | Per-provider behaviours |
+|---|---|---|---|---|---|
+| Claude Code | `.claude/` | `.credentials.json` | `projects/`, `tasks/`, `session-env/`, `file-history/`, `shell-snapshots/`, `agents/`, `commands/`, `skills/`, `plans/`, `cache/` | `settings.json`, `CLAUDE.md`, `keybindings.json` | `.claude.json` is a **real file** with bidirectional `mcpServers` merge — see [MCP server sync](#mcp-server-sync). |
+| Gemini CLI | `.gemini/` | `oauth_creds.json` | `tmp/`, `commands/` | `settings.json`, `GEMINI.md` | None. |
+| Codex CLI | `.codex/` | `auth.json` | `sessions/`, `rules/` | `config.toml`, `AGENTS.md`, `AGENTS.override.md` | Email address extracted from `id_token` JWT for display. |
+| GitHub Copilot | `.copilot/` | `config.json` | `session-state/`, `agents/`, `skills/`, `hooks/` | `mcp-config.json`, `lsp-config.json` | `mcp-config.json` is **symlinked**, not merged. If Copilot ever embeds per-account identity into this file, that would leak identity across accounts (cross-check before shipping the next Copilot release). |
+
+### Inside `account_home/.claude/` — shared session data (Claude `symlink_dirs`)
 
 | Directory | Contains | Why shared |
 |---|---|---|
@@ -251,21 +286,25 @@ Every entry in `SYMLINK_DIRS`, `SYMLINK_FILES`, and `CATALOG` is described here.
 | `plans/` | Plan files | Plans are project work context, not account state. |
 | `cache/` | Response cache | Content-addressed cache. Sharing means no account re-fetches what another already fetched, reducing latency and API cost. |
 
-### Inside `account_home/.claude/` — shared config (`SYMLINK_FILES`)
+### Inside `account_home/.claude/` — shared config (Claude `symlink_files`)
 
 | File | Contains | Why shared |
 |---|---|---|
-| `settings.json` | Editor settings, feature flags, UI preferences | Settings express personal workflow preferences, not account state. |
-| `CLAUDE.md` | Global system prompt and instructions for Claude | Instructions are how you configure Claude's behavior. All accounts should follow the same instructions. |
+| `settings.json` | Editor settings, feature flags, UI preferences, **hooks** | Settings express personal workflow preferences, not account state. Note that `settings.json` can declare hook scripts — see [SECURITY.md](../SECURITY.md) for the threat model implications. |
+| `CLAUDE.md` | Global system prompt and instructions for Claude | Instructions are how you configure Claude's behavior. All accounts should follow the same instructions. Shared `CLAUDE.md` is a cross-account prompt-injection channel — treat its contents as trusted. |
 | `keybindings.json` | Custom key mappings | Muscle memory is account-agnostic. |
+
+### `account_home/.claude/.claude.json` — real file, bidirectionally merged
+
+| File | Contains | Treatment |
+|---|---|---|
+| `.claude.json` | `mcpServers` (MCP server registrations) AND `oauthAccount` (per-account identity metadata) | **Not symlinked.** `mcpServers` is bidirectionally merged with `~/.claude.json` at `--config` and at every Claude launch; `oauthAccount` is left untouched on both sides so each account keeps its own identity. See [MCP server sync](#mcp-server-sync). |
 
 ### At `account_home/` level — shared CLI tool credentials (`CATALOG`)
 
-Isolates Claude credentials. Shares AWS, GCP, Docker, and kubectl by default.
+Claude credentials stay isolated per account. AWS, GCP, Azure, Docker, Kubernetes, Terraform, and GitHub CLI credentials are shared across accounts by default — configurable per-entry via `altergo --settings`.
 
-AWS, GCP, Docker, and kubectl credentials are shared across accounts by default — configurable via `altergo --settings`.
-
-These symlinks live directly in the account home (e.g., `~/.altergo/accounts/work/.aws`), not inside `.claude/`. This placement means they are available to any tool that reads `$HOME` — not just Claude Code.
+These symlinks live directly in the account home (e.g., `~/.altergo/accounts/work/.aws`), not inside `.claude/`. This placement means they are available to any tool that reads `$HOME` — not just the active provider CLI.
 
 | Entry | Paths | Default | Notes |
 |---|---|---|---|
@@ -287,8 +326,10 @@ These symlinks live directly in the account home (e.g., `~/.altergo/accounts/wor
 | Path | Why isolated |
 |---|---|
 | `~/.altergo/accounts/<name>/.claude/.credentials.json` | This is the entire purpose of altergo. Each account must authenticate separately. |
+| `~/.altergo/accounts/<name>/.claude/.claude.json` | Holds `oauthAccount` (per-account identity). Symlinking would leak identity across accounts. `mcpServers` inside it is bidirectionally synced separately. |
+| `~/.altergo/accounts/<name>/account.json` | v2 metadata pinning the account to exactly one provider. Written by `save_account_meta`. |
 
-### Unmanaged (written by Claude Code, not tracked by altergo)
+### Unmanaged (written by the provider CLI, not tracked by altergo)
 
 | Path | Notes |
 |---|---|
@@ -331,8 +372,6 @@ User runs: altergo [account] [args]
 │   ACCOUNTS_DIR = MAIN_HOME / ".altergo" / "accounts"
 │
 ├─ main()
-│   ├─ migrate_legacy()                     ← runs on every invocation; no-op if new layout
-│   │
 │   ├─ parse sys.argv[1:]
 │   │   ├─ -h / --help      → show_help()           → sys.exit(0)
 │   │   ├─ --version        → print version         → sys.exit(0)
@@ -403,19 +442,90 @@ Because `projects/` is symlinked to the same target for every account, sessions 
 
 ## `--config` and `--teardown` idempotency
 
-`do_config()` is safe to run multiple times:
+`do_config()` (altergo.py:2610-2730) is safe to run multiple times. Each symlinked directory passes through `_ensure_symlinked_dir()` (altergo.py:2394-2473), which handles four distinct cases:
 
-- If a symlink already points to the correct target, it prints a confirmation and moves on.
-- If a symlink points to a different target, it warns and skips — it does not silently redirect an existing symlink.
-- If the destination exists as a real directory (not a symlink), it warns and skips — it does not delete real data.
-- If the source (`~/.claude/<name>`) does not exist yet, it skips the entry — it does not create dangling symlinks.
+| Case | State of `account_home/<dot>/name/` | Action |
+|---|---|---|
+| (a) | Already a symlink to the correct `~/.claude/name/` target | No-op. Print "already symlinked". |
+| (a') | Symlinked elsewhere (different target) | Leave alone — do not clobber a user's intentional link. |
+| (b) | Absent | Create `~/.claude/name/` if missing, create the symlink. |
+| (c) | Real, empty directory | `rmdir` it, create the symlink. |
+| (d) | Real, non-empty directory **and** shared store `~/.claude/name/` is absent/empty | Warn and skip. Prior versions moved content into the shared store silently; that was the upgrade-data-loss vector closed in v0.35.3. |
+| (e) | Real, non-empty directory **and** shared store is also non-empty | Merge: move each entry to the shared store if absent there; on collision, move the account copy to `<name>.altergo-conflict/` quarantine. If the account dir ends up empty, promote to symlink. |
 
-`do_teardown()` removes only symlinks. It does not touch real files or directories. `.credentials.json` is never removed by teardown.
+For home-level files (e.g. `.claude.json` in older code paths), `_ensure_home_file_symlink()` (altergo.py:2476-2506) is the file-level analogue with similar cases. `.claude.json` itself is now outside this path — it has its own bidirectional merge (next section).
+
+`do_teardown()` removes only symlinks and (optionally) the account home itself; `.credentials.json` is never touched by teardown. See `do_teardown` in altergo.py:2733+ for the exact sequence.
+
+The dormant `_sweep_existing_accounts()` (altergo.py:5077-5117) is the self-heal helper that used to run on every `--config` and launch pre-v0.35.3; it walks every account, reads `account.json`, and reruns `_ensure_symlinked_dir` per provider. It is still in the source (covered by tests) but no production code path calls it. If the repair behaviour is needed in a future release, re-wire it from `do_config` — do not re-introduce the unconditional call from `main()`.
+
+---
+
+## MCP server sync
+
+`~/.claude.json` carries two logically distinct blobs in a single file:
+
+1. `mcpServers` — MCP server registrations. Account-agnostic: if you add a new MCP server in one account, you probably want it everywhere.
+2. `oauthAccount` — OAuth identity metadata (email, UUID, session). Per-account by definition. Symlinking the whole file would leak identity across accounts on the first write.
+
+`_sync_claude_mcps(account_home)` (altergo.py:2509-2576, originally commit `eef91f6`) resolves this by doing a bidirectional merge restricted to `mcpServers`:
+
+1. If `account_home/.claude.json` is a symlink (legacy shape from the short-lived v0.21.2 → v0.22.0 window), read the content through the link, unlink it, and rewrite as a real file. Content-preserving, atomic.
+2. Load `mcpServers` from both `~/.claude.json` (main) and `account_home/.claude.json`. Either may be missing.
+3. Merge: `{**main, **account}` — account wins on key collision, matching the usual "local overrides shared" ergonomics.
+4. If the merged map differs from either side, rewrite that side via tmp-file + `os.replace`. Atomic per-side; no partial writes.
+5. `oauthAccount` and every other top-level key are left exactly as they were on both sides.
+
+The sync runs:
+- Once at `--config` time for Claude accounts (altergo.py:2701-2703).
+- Once at every Claude launch for non-native accounts (altergo.py:5275-5276).
+
+No polling, no background thread. The merge is a few lines of JSON and runs inline on the launch path. For the `native` passthrough account, `account_home == MAIN_HOME`, so the sync is skipped — merging a file with itself is a no-op but would needlessly rewrite `~/.claude.json`.
+
+---
+
+## Account lifecycle
+
+`do_config(account, provider)` is the creation and reconfiguration path. It executes roughly the following steps (altergo.py:2610-2730):
+
+1. **Reject `native`.** The reserved `native` account is the zero-isolation passthrough; it cannot be configured.
+2. **Resolve paths.** `resolve_account(name)` returns `(account_home, account_claude)`.
+3. **Load prior metadata.** `load_account_meta(account_home)` — used only to preserve the `created` timestamp across re-runs.
+4. **Create `account_home`** if absent.
+5. **Create the provider dot-dir** (`~/.altergo/accounts/<n>/<dot_dir>/`).
+6. **Symlink provider dirs** — for each entry in `PROVIDERS[provider]["symlink_dirs"]`, run through `_ensure_symlinked_dir()`.
+7. **Symlink provider files** — for each entry in `PROVIDERS[provider]["symlink_files"]`, unlink any existing file at the destination (safe because these are config files the provider will re-fetch/re-render) and create the symlink. Skipped silently if the source doesn't exist yet.
+8. **Symlink home-level files** — `PROVIDERS[provider].get("symlink_home_files", [])`. Currently empty for all providers; kept as an extension point.
+9. **Report credentials state.** If the provider's credentials file is absent, print a hint to authenticate by running `altergo <name>`.
+10. **MCP sync (Claude only).** `_sync_claude_mcps(account_home)`.
+11. **Apply the CLI-credentials catalog.** For each `CATALOG` entry, honour the user's override in `.altergo.json` or fall back to `default_on`. Link or unlink accordingly at the account-home level (not inside the dot-dir).
+12. **Write v2 metadata.** `account.json = {"version": 2, "provider": "<id>", "created": <iso8601>}` via `save_account_meta`.
+
+There is no separate "repair" step in the current flow — `_ensure_symlinked_dir()` is itself idempotent and self-healing for the four cases enumerated above.
+
+### v2 account.json schema
+
+Introduced in v0.22.0 (`e635bf9`). Pre-v0.22 accounts had an implicit multi-provider shape; v2 pins one account to exactly one provider:
+
+```json
+{
+  "version": 2,
+  "provider": "claude",
+  "created": "2026-04-11T14:23:07"
+}
+```
+
+`load_account_meta()` treats any of the following as "legacy Claude account":
+- No `account.json` file but a `.claude/` directory exists
+- `account.json` exists but cannot be parsed
+- `account.json` has a non-v2 `version` or is missing `provider`
+
+All four cases fall through to `{"version": 2, "provider": "claude"}` in memory — the file on disk is only rewritten when `save_account_meta` is called from `do_config`.
 
 ---
 
 ## Python version compatibility
 
-altergo targets Python 3.9+ (`requires-python = ">=3.9"` in pyproject.toml). The CI matrix runs against 3.9, 3.10, 3.11, 3.12, and 3.13 on both ubuntu-latest and macos-latest.
+altergo targets Python 3.10+ (`requires-python = ">=3.10"` in pyproject.toml). The CI matrix runs against 3.10, 3.11, 3.12, and 3.13 on both ubuntu-latest and macos-latest.
 
 No type annotations are used in the source; the code predates the decision to add them and the implementation is short enough that they are not necessary for comprehension.

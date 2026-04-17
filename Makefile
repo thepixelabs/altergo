@@ -10,7 +10,7 @@ help:
 	@echo "  make dev               Create $(VENV)/ and install local source in editable mode"
 	@echo "  make run ARGS='...'    Run local altergo with ARGS (e.g. ARGS='--settings')"
 	@echo "  make settings          Shortcut: make run ARGS='--settings'"
-	@echo "  make config NAME=foo   Shortcut: make run ARGS='--config --name foo'"
+	@echo "  make config NAME=foo   Shortcut: make run ARGS='--config foo'"
 	@echo "  make which             Show resolved local vs global altergo paths"
 	@echo "  make dev-version       Print version from $(VENV)"
 	@echo "  make global-version    Print version from your global install"
@@ -32,7 +32,7 @@ settings: $(ALTERGO)
 	@$(ALTERGO) --settings
 
 config: $(ALTERGO)
-	@$(ALTERGO) --config $(if $(NAME),--name $(NAME),)
+	@$(ALTERGO) --config $(NAME)
 
 which: $(ALTERGO)
 	@echo "Local:  $(ALTERGO)"

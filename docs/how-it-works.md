@@ -1,6 +1,6 @@
 # How altergo works
 
-**Applies to:** altergo v0.16.0+  
+**Applies to:** altergo v0.37.0+  
 **Audience:** Engineers who want to understand the design in depth — not just what altergo does, but why it does it that way.
 
 The [README](../README.md) covers installation and basic usage. This document covers the mechanics, the tradeoffs, and the reasoning behind every design decision.
@@ -199,8 +199,10 @@ altergo resolves this with a two-step check in `main()`:
 
 ```python
 _KNOWN_COMMANDS = frozenset([
-    "shell", "--resume", "--list", "--config", "--teardown",
-    "--settings", "--version", "-h", "--help", "--"
+    "shell", "use", "portal",
+    "--resume", "--list", "--search", "--config", "--rename",
+    "--teardown", "--settings", "--version", "--use", "--launch",
+    "--theme", "--star", "-h", "--help", "--"
 ])
 
 def _looks_like_account(token: str) -> bool:
@@ -222,7 +224,7 @@ if args and _looks_like_account(args[0]):
     if not acct_home.is_dir():
         print(
             f"altergo: account '{candidate}' not found. "
-            f"Run 'altergo --config --name {candidate}' to create it.",
+            f"Run 'altergo --config {candidate}' to create it.",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -234,68 +236,48 @@ If the directory does not exist, altergo exits with a clear error and a specific
 
 ---
 
-## Auto-migration from v0.4.x
+## Auto-migration from v0.4.x (historical)
 
-On first run after upgrading from v0.4.x, altergo detects the old layout and migrates it automatically, with no user action required.
-
-### Detection
-
-```python
-def detect_legacy() -> bool:
-    old_claude = MAIN_HOME / ".altergo" / ".claude"
-    return old_claude.exists() and not ACCOUNTS_DIR.exists()
-```
-
-The trigger is precise: the old `~/.altergo/.claude/` directory exists AND the new `~/.altergo/accounts/` directory does not. A fresh v0.5.0 install (no prior data) returns `False`. A system that has already been migrated returns `False`. Only the exact v0.4.x layout triggers migration.
-
-### Why non-interactive
-
-The migration runs inside `main()` before any argument parsing. It prints a 4-line visible block to stdout:
-
-```
-altergo: layout migrated for v0.5.0 N-account support
-  ~/.altergo/  →  ~/.altergo/accounts/default/
-  Backup preserved at ~/.altergo/.legacy-backup/
-  See https://altergo.pixelabs.net/docs/migration-0.5 for details
-```
-
-It also writes `~/.altergo/accounts/default/MIGRATED.txt` as a permanent audit trail recording the version, timestamp, old and new paths, and rollback instructions.
-
-It does not ask for confirmation. The reasons:
-
-1. The migration is safe and fully reversible (backup is always created).
-2. Requiring user confirmation would break scripts and aliases that invoke `altergo` programmatically.
-3. The old layout is unambiguous — there is no scenario where this detection misfires on a v0.5.0 install.
-
-### The two-step rename and why `/tmp/`
-
-```python
-def migrate_legacy() -> None:
-    old_root = MAIN_HOME / ".altergo"
-    tmp_path = Path(f"/tmp/altergo-migrate-{os.getpid()}")
-    old_root.rename(tmp_path)                     # Step 1: atomic on same filesystem
-    ACCOUNTS_DIR.mkdir(parents=True, exist_ok=True)  # Step 2: create new layout
-    default_home = ACCOUNTS_DIR / "default"
-    tmp_path.rename(default_home)                 # Step 3: move into place
-    backup_path = MAIN_HOME / ".altergo" / ".legacy-backup"
-    shutil.copytree(str(default_home), str(backup_path), symlinks=True)  # Step 4: backup
-    (default_home / "MIGRATED.txt").write_text(...)  # Step 5: audit trail
-    print("altergo: layout migrated ...")         # Step 6: 4-line visible block
-```
-
-`~/.altergo` is renamed to `/tmp/altergo-migrate-<pid>/` in one atomic operation. This ensures that if the process is interrupted after step 1, the data is not lost — it sits in `/tmp/` under a PID-qualified name rather than in a partially-overwritten state. The PID qualifier prevents collisions if multiple altergo processes somehow run simultaneously on the same machine.
-
-### The backup
-
-Step 4 copies `accounts/default/` to `~/.altergo/.legacy-backup/` with `symlinks=True` — existing symlinks inside the default account are preserved as symlinks in the backup, not resolved and copied. The backup is read-only insurance: if something goes wrong after migration, you can restore by removing `accounts/default/` and copying `.legacy-backup/` back into place.
-
-The backup is preserved through the entire v0.5.x series. It will be removed in v0.6.0.
+> **Removed in v0.35.3.** Between v0.5.0 and v0.35.2, altergo auto-detected the v0.4.x layout (`~/.altergo/.claude/` present, `~/.altergo/accounts/` absent) and migrated it in place on first run. The `detect_legacy` / `migrate_legacy` code paths are gone in v0.35.3+. If you are still on a pre-v0.5.0 layout today, see [docs/migration.md](migration.md#archived-migration-notes-v04x--v050) for the archived procedure or open an issue for manual guidance.
 
 ---
 
-## SYMLINK_HOME_DIRS placement: why at `account_home` level
+## Native passthrough: `altergo native`
 
-Isolates Claude credentials. Shares AWS, GCP, Docker, and kubectl by default.
+Sometimes you want the exact opposite of what altergo does: launch your provider with your real `$HOME` intact, no isolation, no symlinks. That is what `altergo native` gives you.
+
+```bash
+altergo native              # launch your default provider against $HOME
+altergo native gemini       # force a specific provider
+```
+
+Under the covers, `altergo native` skips the env-override entirely — `HOME` is left as-is, no symlinks are traversed, no bidirectional MCP merge runs. The provider reads directly from your primary `~/.claude/` (or `~/.gemini/`, `~/.codex/`, `~/.copilot/`). Useful for:
+
+- Quick sanity checks — "is this bug altergo's fault or the provider's?"
+- One-off sessions where you explicitly want the primary account and do not care about account switching
+- Scripts that want to invoke the provider without disturbing altergo's state
+
+If you find yourself reaching for `altergo native` often, you probably want to reconfigure: `altergo --config <name>` and use the named account path instead.
+
+---
+
+## tmux session persistence
+
+When the **tmux sessions** setting is enabled, every `altergo` launch wraps the provider inside a named tmux window (one per account + provider). Sessions keep running even when the terminal closes or the SSH connection drops, and a second `altergo` from a new login attaches to the existing session instead of starting a fresh one.
+
+This matters most for:
+
+- **Remote development over SSH** — laptop sleeps, wifi flickers, or the SSH tunnel drops. The AI session keeps going on the remote box; you reattach and pick up where you left off.
+- **Long-running agent loops** — multi-step agents that take minutes to complete don't die when you close the terminal to do something else.
+- **Multi-pane workflows** — tmux's own split-pane/attach semantics compose naturally with altergo's per-account windows.
+
+altergo detects an existing `$TMUX` environment and skips wrapping to avoid nesting sessions; if tmux is not installed it falls back to a plain launch and prints an install hint.
+
+See [docs/settings.md](settings.md#tmux-session-persistence) for how to enable the setting and the keybindings once inside a session.
+
+---
+
+## CLI-credential symlinks: why at `account_home` level
 
 AWS, GCP, Docker, and kubectl credentials are shared across accounts by default — configurable via `altergo --settings`.
 
@@ -363,6 +345,9 @@ Because it also uses `os.execvpe`, the altergo process is replaced by the target
 | Entry | Type | Shared? | Rationale |
 |---|---|---|---|
 | `.credentials.json` | File | No (isolated) | This is the entire point — each account has its own auth token |
+| `.claude.json` | File | No (isolated) | Holds `oauthAccount`; the `mcpServers` section is bidirectionally synced at every `--config` and every launch (see "MCP servers: sync, not symlink" below) |
+| `plugins/` | Directory | No (isolated) | Plugin state is per-install |
+| `paste-cache/` | Directory | No (isolated) | Ephemeral clipboard state |
 | `projects/` | Directory | Yes (symlink) | Sessions are keyed by filesystem path, not by account. All accounts work on the same codebases |
 | `tasks/` | Directory | Yes (symlink) | Task context is project-scoped, not account-scoped |
 | `agents/` | Directory | Yes (symlink) | Agent definitions should be available from all accounts |
@@ -377,6 +362,23 @@ Because it also uses `os.execvpe`, the altergo process is replaced by the target
 | `CLAUDE.md` | File | Yes (symlink) | Your global instructions apply regardless of which account is active |
 | `keybindings.json` | File | Yes (symlink) | Muscle memory is account-agnostic |
 
+> Every "shared" entry is a symlink to the real target under `~/.claude/`. That means *the same inode*: editing your CLAUDE.md from one account is instantly visible from every other account. There is no sync step because there is no second copy.
+
+### MCP servers: sync, not symlink
+
+`~/.claude.json` is a problem file. It holds two pieces of state that pull in opposite directions:
+
+- **`mcpServers`** — the list of MCP server registrations you add with `claude mcp add`. You want this shared, otherwise every account has to re-register the same servers.
+- **`oauthAccount`** — the identity of the currently authenticated Claude account. You *must not* share this; leaking it across accounts would break the whole point of altergo.
+
+Symlinking the file gives you the first half at the cost of the second. Not sharing it gives you the second at the cost of the first. altergo resolves the conflict with a **bidirectional merge**, implemented in `_sync_claude_mcps` (altergo.py:2509-2576):
+
+1. Read `~/.claude.json` (primary) and `~/.altergo/accounts/<name>/.claude.json` (account).
+2. Union-merge the `mcpServers` maps from both files. On key collision, the account entry wins — that way, the server you just registered with `claude mcp add` is preserved.
+3. Write the merged result back into *both* files, atomically (temp file + rename). `oauthAccount` in each file is left completely untouched.
+
+The merge runs on every `altergo --config` and every Claude launch, so registrations propagate as soon as you next touch any account. Net effect: you register an MCP server once, from any account, and every account sees it. OAuth identity stays per-account.
+
 ### The symlink config and teardown contract
 
 `altergo --config` creates symlinks. It skips any entry in the source (`~/.claude/`) that does not yet exist — for example, if you have not yet configured keybindings, `~/.claude/keybindings.json` does not exist, so no symlink is created. Creating a dangling symlink pointing at a nonexistent target would cause Claude Code to behave differently than it would for a fresh install.
@@ -389,6 +391,8 @@ Two directories accumulate inside the account's `.claude/` from normal Claude Co
 
 - **`paste-cache/`** — Ephemeral clipboard / paste buffer state. This being isolated per-account is harmless; paste cache is transient.
 - **`plugins/`** — Plugin state. If you install Claude Code plugins, they accumulate separately per account. If you want plugins shared, manually symlink the `plugins/` directory after running `altergo --config`.
+
+`.claude.json` itself is also per-account, but is *not* unmanaged — its `mcpServers` section is merged bidirectionally on every `--config` and every launch. See "MCP servers: sync, not symlink" above.
 
 ---
 
@@ -445,7 +449,7 @@ Claude Code writes to several locations beyond `~/.claude/`. With HOME overridde
    ├─ Resolve MAIN_HOME via pwd.getpwuid(os.getuid()).pw_dir
    │  (immune to $HOME being already overridden)
    │
-   ├─ migrate_legacy() — no-op if already on new layout
+   │  (legacy v0.4.x auto-migration was removed in v0.35.3 — see migration.md)
    │
    ├─ Parse sys.argv
    │  ├─ --config / --teardown / --list / --version / --help → handled, exit

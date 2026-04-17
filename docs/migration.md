@@ -1,93 +1,55 @@
 # Migration guide
 
+This page covers syntax changes and one-time migrations that apply when you upgrade altergo. Live, supported paths are at the top; archived notes for old releases are at the bottom.
+
 ---
 
-## Upgrading from altergo v0.4.x to v0.5.0
+## v0.34.0 — CLI syntax change: positional `--config <name>`
 
-**Applies to:** Anyone upgrading an existing altergo v0.4.x installation.
+**Applies to:** Anyone upgrading across v0.34.0.
 
-v0.5.0 introduced N-account support. The directory layout changed:
-
-| | v0.4.x | v0.5.0 |
-|-|--------|--------|
-| Alt account home | `~/.altergo/` | `~/.altergo/accounts/default/` |
-| Alt `.claude/` dir | `~/.altergo/.claude/` | `~/.altergo/accounts/default/.claude/` |
-| Settings file | `~/.altergo/.altergo.json` (inside alt home) | `~/.altergo/.altergo.json` (above `accounts/`, global) |
-
-### Auto-migration: no action required for most users
-
-On the first run after upgrading, altergo detects the old layout and migrates it automatically. You do not need to do anything. The migration runs before any command is processed and prints the following 4-line block:
-
-```
-altergo: layout migrated for v0.5.0 N-account support
-  ~/.altergo/  →  ~/.altergo/accounts/default/
-  Backup preserved at ~/.altergo/.legacy-backup/
-  See https://altergo.pixelabs.net/docs/migration-0.5 for details
-```
-
-After that block, altergo continues normally. All your existing sessions, credentials, and symlinks are preserved under the new path. A `MIGRATED.txt` file is also written to `~/.altergo/accounts/default/MIGRATED.txt` as a permanent audit trail — it records the altergo version, timestamp, old and new paths, and rollback instructions.
-
-### What the migration does
-
-1. Renames `~/.altergo/` to a temporary path (`/tmp/altergo-migrate-<pid>/`)
-2. Creates the new `~/.altergo/accounts/` directory
-3. Moves the temporary directory to `~/.altergo/accounts/default/`
-4. Copies the migrated content to `~/.altergo/.legacy-backup/` as a backup
-5. Writes `~/.altergo/accounts/default/MIGRATED.txt` as an audit trail
-6. Prints the 4-line migration block to stdout
-
-The use of `/tmp/` as a staging area means the rename is atomic. If the process is interrupted between steps 1 and 3, your data sits safely in `/tmp/` under a PID-qualified name — nothing is lost.
-
-### Note about settings
-
-The settings file (`~/.altergo/.altergo.json`) was located inside `~/.altergo/` in v0.4.x. After migration, `~/.altergo/` becomes `~/.altergo/accounts/default/`, so the old settings file is now at `~/.altergo/accounts/default/.altergo.json`. The new settings file location is `~/.altergo/.altergo.json` (above `accounts/`).
-
-This means your credential-sharing preferences reset to defaults after migration. The new location is intentional — settings are now global across all accounts rather than per-account.
-
-To reconfigure, run:
+The old `altergo --config --name <n>` form is gone. Use the positional form:
 
 ```bash
-altergo --settings
+# Old (pre-v0.34.0) — no longer accepted
+altergo --config --name personal
+
+# New (v0.34.0+)
+altergo --config personal
 ```
 
-### Verifying migration worked
+Also introduced: `altergo --rename <old> <new>` for renaming an existing account without losing credentials or history. Update any aliases, scripts, or CI jobs that still pass `--name`.
+
+---
+
+## v0.22.0 — `.claude.json` silent unsymlink
+
+**Applies to:** Anyone who had `~/.altergo/accounts/<name>/.claude/.claude.json` as a symlink before v0.22.0 (created by older altergo versions that treated it as shared).
+
+`~/.claude.json` holds both `mcpServers` and `oauthAccount`. Symlinking it across accounts leaks OAuth identity, which is a real security problem. In v0.22.0 altergo switched to a **bidirectional merge** for `mcpServers` only — see [how-it-works.md](how-it-works.md#mcp-servers-sync-not-symlink) for the mechanics.
+
+On the first Claude launch after upgrading, altergo atomically replaces any pre-existing `.claude.json` symlink with a real file that preserves the linked content. **No user action is required** — the change is silent and reversible via teardown. If you want to confirm:
 
 ```bash
-# Should show your account directory at the new path
-ls ~/.altergo/accounts/default/.claude/
-
-# Should show your sessions (session files are shared, so nothing changed here)
-altergo --list
-
-# Should launch with your existing credentials
-altergo
+# Should report "regular file", not "symbolic link"
+stat -f '%HT' ~/.altergo/accounts/<name>/.claude/.claude.json   # macOS
+stat -c '%F'  ~/.altergo/accounts/<name>/.claude/.claude.json   # Linux
 ```
 
-If `altergo` asks you to log in, check that the credentials file survived the migration:
+## v0.22.0 — removal of multi-provider bundling
+
+Also in v0.22.0: the old syntax for bundling providers per account was removed.
 
 ```bash
-cat ~/.altergo/accounts/default/.claude/.credentials.json
+# Old (pre-v0.22.0) — no longer accepted
+altergo pro use gemini
+altergo --config --name pro --provider claude,gemini
+
+# New (v0.22.0+)
+altergo --config pro            # pick the provider interactively
 ```
 
-If the file is present and valid, the credentials are intact — the login prompt may be a transient auth expiry rather than a migration issue.
-
-### Rollback procedure
-
-The backup at `~/.altergo/.legacy-backup/` is a complete copy of the pre-migration state. To restore:
-
-```bash
-# 1. Remove the migrated account directory
-rm -rf ~/.altergo/accounts/
-
-# 2. Copy the backup back to the original location
-cp -R ~/.altergo/.legacy-backup ~/.altergo-restore
-mv ~/.altergo-restore ~/.altergo
-
-# 3. Downgrade altergo to v0.4.x
-pip install "altergo==0.4.*"
-```
-
-The backup is preserved through the entire v0.5.x series. It will be removed in v0.6.0.
+Running `altergo <name> use <provider>` today prints a clear error pointing you to `altergo --config`. There is no silent fallback.
 
 ---
 
@@ -184,7 +146,7 @@ Two directories in particular — `paste-cache/` and `plugins/` — are written 
 ln -s ~/.claude/plugins ~/.altergo/accounts/default/.claude/plugins
 ```
 
-See [architecture.md](architecture.md#unmanaged-not-tracked-by-altergo) for the full explanation of unmanaged state.
+See [architecture.md](architecture.md#unmanaged-written-by-the-provider-cli-not-tracked-by-altergo) for the full explanation of unmanaged state.
 
 ---
 
@@ -242,3 +204,54 @@ You still have the alias active in the current shell session. Either open a new 
 
 - [how-it-works.md](how-it-works.md) — Full technical explanation of the selective HOME override and symlink architecture
 - [architecture.md](architecture.md) — Directory layout reference and symlink table
+
+---
+
+## Archived migration notes: v0.4.x → v0.5.0
+
+> **These steps applied to altergo releases v0.5.0 through v0.35.2.** The `detect_legacy` / `migrate_legacy` auto-migration code was **removed in v0.35.3** — altergo no longer detects or rewrites the old layout automatically. If you are upgrading directly from pre-v0.5.0 today, run through the manual steps below, or [file an issue](https://github.com/thepixelabs/altergo/issues) and we will help.
+
+v0.5.0 introduced N-account support. The directory layout changed:
+
+| | v0.4.x | v0.5.0+ |
+|-|--------|--------|
+| Alt account home | `~/.altergo/` | `~/.altergo/accounts/default/` |
+| Alt `.claude/` dir | `~/.altergo/.claude/` | `~/.altergo/accounts/default/.claude/` |
+| Settings file | `~/.altergo/.altergo.json` (inside alt home) | `~/.altergo/.altergo.json` (above `accounts/`, global) |
+
+### Manual migration steps (from pre-v0.5.0 today)
+
+1. Move the old alt home into the new `accounts/default/` slot:
+
+    ```bash
+    mkdir -p ~/.altergo/accounts
+    mv ~/.altergo/.claude ~/.altergo/accounts/default/.claude
+    # If you had other dotfiles under ~/.altergo/ (e.g. .aws, .config), move them too:
+    # mv ~/.altergo/.aws ~/.altergo/accounts/default/.aws
+    ```
+
+2. Reinitialize the symlink structure:
+
+    ```bash
+    altergo --config default
+    ```
+
+3. Verify:
+
+    ```bash
+    altergo --list      # should show your sessions
+    altergo             # should launch Claude Code with your existing credentials
+    ```
+
+### What the old auto-migration did (historical reference)
+
+For the record, the auto-migration in v0.5.0–v0.35.2 performed roughly:
+
+1. Renamed `~/.altergo/` to a temporary path (`/tmp/altergo-migrate-<pid>/`).
+2. Created the new `~/.altergo/accounts/` directory.
+3. Moved the temporary directory to `~/.altergo/accounts/default/`.
+4. Copied the migrated content to `~/.altergo/.legacy-backup/` as a backup.
+5. Wrote `~/.altergo/accounts/default/MIGRATED.txt` as an audit trail.
+6. Printed a 4-line migration notice to stdout.
+
+If you are on v0.35.2 or older today and want altergo to handle this for you, upgrade to that version first (`pip install "altergo==0.35.2"`), run `altergo` once to trigger the migration, then upgrade to the latest release.

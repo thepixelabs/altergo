@@ -280,7 +280,7 @@ def show_banner(
     """
     if not sys.stdout.isatty():
         suffix = f"  [{account}]" if account else ""
-        print(f"  altergo {__version__}  —  Switch AI identities. Keep your context.{suffix}")
+        print(f"  altergo {__version__}  —  Don't break flow. Switch accounts.{suffix}")
         return
     try:
         import pyfiglet
@@ -446,7 +446,7 @@ def show_banner(
             console.print(group)
     except Exception:
         suffix = f"  [{account}]" if account else ""
-        print(f"  altergo {__version__}  —  Switch AI identities. Keep your context.{suffix}")
+        print(f"  altergo {__version__}  —  Don't break flow. Switch accounts.{suffix}")
 
 
 def show_help():

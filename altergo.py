@@ -1952,9 +1952,7 @@ def _is_newer(latest: str, current: str) -> bool:
     return a > b
 
 
-def _translate_yolo_flags(
-    provider: str, args: list[str]
-) -> tuple[list[str], list[str], list[str]]:
+def _translate_yolo_flags(provider: str, args: list[str]) -> tuple[list[str], list[str], list[str]]:
     """Translate --yolo / --yolo-resume into provider-native flags.
 
     Returns (prefix, cleaned_args, suffix) where the assembled command is:
@@ -3628,8 +3626,7 @@ def _draw_picker(stdscr, sessions):
         theme_hint = f" · theme: {THEMES[get_current_theme()]['display_name']} (t)"
         nav = (
             " ↑↓/jk move  ·  / search  ·  G top  ·  p/Tab preview"
-            "  ·  f filter  ·  s sort  ·  g group  ·  * star  ·  Enter resume  ·  q quit"
-            + theme_hint
+            "  ·  f filter  ·  s sort  ·  g group  ·  * star  ·  Enter resume  ·  q quit" + theme_hint
         )
         _safe_addnstr(stdscr, footer_row + 1, 0, _truncate(nav, max_x - 1), max_x - 1, attrs["dim"])
 

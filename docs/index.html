@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>altergo — Switch AI identities. Keep your context.</title>
+  <title>altergo — Don't break flow. Switch accounts.</title>
   <meta name="description" content="Multi-account session manager for Claude Code, Gemini CLI, Codex, and GitHub Copilot. Switch accounts without losing your flow — rate-limited, mid-session, or running two model tiers in tandem. Zero dependencies, open source." />
   <meta name="robots" content="index, follow" />
   <link rel="canonical" href="https://altergo.pixelabs.net/" />
@@ -11,7 +11,7 @@
   <!-- Open Graph -->
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://altergo.pixelabs.net/" />
-  <meta property="og:title" content="altergo — Switch AI identities. Keep your context." />
+  <meta property="og:title" content="altergo — Don't break flow. Switch accounts." />
   <meta property="og:description" content="Named accounts — personal, pro, sideproject. One command to switch. Credentials isolated, history shared." />
   <meta property="og:image" content="https://altergo.pixelabs.net/og-image.png" />
   <meta property="og:image:width" content="1200" />
@@ -20,7 +20,7 @@
   <meta property="og:site_name" content="Altergo" />
   <meta property="og:locale" content="en_US" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="altergo — Switch AI identities. Keep your context." />
+  <meta name="twitter:title" content="altergo — Don't break flow. Switch accounts." />
   <meta name="twitter:description" content="Named accounts — personal, pro, sideproject. `altergo backup` — that's it. Credentials isolated, history shared." />
   <meta name="twitter:image" content="https://altergo.pixelabs.net/og-image.png" />
   <meta name="twitter:creator" content="@thepixelabs" />
@@ -1949,7 +1949,7 @@
               <span class="step-win-title">config</span>
             </div>
             <div class="step-body">
-              <code class="step-command"><span class="prompt" aria-hidden="true">$</span><span class="cmd">altergo --config --name work</span></code>
+              <code class="step-command"><span class="prompt" aria-hidden="true">$</span><span class="cmd">altergo --config work</span></code>
               <p class="step-caption">Create a named account — one per AI account you use. Repeat for each one you have. Symlinks wired automatically.</p>
             </div>
           </div>
@@ -2191,12 +2191,12 @@
 <span class="cmd">pip install altergo</span>
 
 <span class="comment"># Name your accounts — run once per login you have</span>
-<span class="cmd">altergo --config --name work</span>
-<span class="cmd">altergo --config --name backup</span>
+<span class="cmd">altergo --config work</span>
+<span class="cmd">altergo --config backup</span>
 
 <span class="comment"># Switch — just use the account name</span>
 <span class="cmd">altergo backup</span></code>
-                <button class="code-copy-btn" aria-label="Copy pip install commands" data-copy="pip install altergo &amp;&amp; altergo --config --name work &amp;&amp; altergo --config --name backup &amp;&amp; altergo backup">
+                <button class="code-copy-btn" aria-label="Copy pip install commands" data-copy="pip install altergo &amp;&amp; altergo --config work &amp;&amp; altergo --config backup &amp;&amp; altergo backup">
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
                     <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
@@ -2215,12 +2215,12 @@
 <span class="cmd">pipx install altergo</span>
 
 <span class="comment"># Name your accounts — run once per login you have</span>
-<span class="cmd">altergo --config --name work</span>
-<span class="cmd">altergo --config --name backup</span>
+<span class="cmd">altergo --config work</span>
+<span class="cmd">altergo --config backup</span>
 
 <span class="comment"># Switch — just use the account name</span>
 <span class="cmd">altergo backup</span></code>
-                <button class="code-copy-btn" aria-label="Copy pipx install commands" data-copy="pipx install altergo &amp;&amp; altergo --config --name work &amp;&amp; altergo --config --name backup &amp;&amp; altergo backup">
+                <button class="code-copy-btn" aria-label="Copy pipx install commands" data-copy="pipx install altergo &amp;&amp; altergo --config work &amp;&amp; altergo --config backup &amp;&amp; altergo backup">
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
                     <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
@@ -2277,8 +2277,7 @@
               <tbody>
                 <tr><td>altergo &lt;name&gt;</td><td>Launch the named account (e.g. <code>altergo backup</code>)</td></tr>
                 <tr><td>altergo &lt;name&gt; &lt;provider&gt;</td><td>Launch with a specific provider — <code>altergo backup gemini</code>, <code>altergo backup codex</code></td></tr>
-                <tr><td>altergo --config --name &lt;n&gt; --provider &lt;p&gt;</td><td>Create or reconfigure an account with a specific provider — <code>claude</code>, <code>gemini</code>, <code>codex</code>, <code>copilot</code></td></tr>
-                <tr><td>altergo &lt;name&gt; use &lt;provider&gt;</td><td>Set the default provider for an existing account — <code>altergo pro use gemini</code></td></tr>
+                <tr><td>altergo --config &lt;name&gt; --provider &lt;p&gt;</td><td>Create or reconfigure an account with a specific provider — <code>claude</code>, <code>gemini</code>, <code>codex</code>, <code>copilot</code></td></tr>
                 <tr><td>altergo --resume</td><td>Interactive session picker — browse, preview, resume</td></tr>
                 <tr><td>altergo --search</td><td>Full-text search across all conversation history</td></tr>
                 <tr><td>altergo --settings</td><td>Configure themes, behavior, and credential sharing</td></tr>

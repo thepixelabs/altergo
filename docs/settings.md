@@ -1,6 +1,6 @@
 # Settings
 
-**Applies to:** altergo v0.16.0+
+**Applies to:** altergo v0.37.0+
 
 Run `altergo --settings` to open the multi-page settings TUI. All settings are global — they apply to every account.
 
@@ -44,7 +44,24 @@ Items marked with a warning icon have security implications — the warning is s
 
 **On by default:** AWS, Google Cloud, Azure, Docker, Kubernetes, Terraform, GitHub CLI.
 
-**Off by default:** GitLab CLI, npm, SSH keys, Git identity, GPG keys.
+**Off by default:** GitLab CLI, npm, SSH keys, Git identity, GPG keys, and every entry in the Package Managers category (below).
+
+#### Package managers
+
+All package-manager entries ship **off by default** — each account gets a clean install cache. Turn on only the ones you explicitly want shared.
+
+| Entry | Paths shared when enabled | Notes |
+|---|---|---|
+| **pip (Python)** | `.pip`, `.config/pip`, `.pypirc`, `.local/lib`, `.local/bin` | Shares PyPI credentials and user-installed packages/scripts |
+| **cargo (Rust)** | `.cargo` | Shares the entire cargo dir: registry cache, installed binaries, credentials |
+| **gem (Ruby)** | `.gem`, `.gemrc` | — |
+| **yarn** | `.yarn`, `.yarnrc.yml`, `.yarnrc` | — |
+| **pnpm** | `.pnpmrc`, `.local/share/pnpm` | — |
+| **composer (PHP)** | `.composer` | Shares Composer auth tokens, config, and global packages |
+| **go modules** | `go`, `.config/go` | Shares the Go module cache and go env config. Can be large |
+| **Maven (Java)** | `.m2` | Includes `settings.xml` credentials and the local repo cache |
+| **Gradle (Java)** | `.gradle` | — |
+| **Bundler (Ruby)** | `.bundle` | — |
 
 ---
 
@@ -63,6 +80,8 @@ Items marked with a warning icon have security implications — the warning is s
 ---
 
 ## tmux session persistence
+
+**Where it lives:** `altergo --settings` → **Behavior** → **tmux sessions**. See the [README](../README.md#next-steps) for the one-line pitch.
 
 When **tmux sessions** is enabled, every `altergo` invocation wraps the provider session in a dedicated tmux window. This means:
 
@@ -83,6 +102,19 @@ Quick reference once inside a tmux session:
 
 ---
 
+## The home-change notice (first-run, one-time)
+
+**Introduced in v0.31.0.** The first time you launch any account on a given machine, altergo shows a short, full-screen animated notice explaining the HOME-isolation model — that each account runs in its own HOME folder, and that package managers (pip, cargo, gem, yarn, and friends) do not see packages installed in your main account by default.
+
+- **When it fires:** once per machine, on your first interactive `altergo` launch. Non-TTY launches (scripts, CI, `altergo -- <cmd>`) skip the animation entirely.
+- **How to dismiss:** press any key. The notice fades out and altergo continues with its normal banner.
+- **State:** altergo writes a marker flag so the notice is never shown a second time, even if the animation is interrupted with Ctrl-C.
+- **Why you cannot turn it back on:** the notice is a one-time education step, not a recurring toggle. If you want to see it again (for example, on a new machine), the marker lives alongside the settings file under `~/.altergo/` — remove it by hand to re-trigger.
+
+If the notice prompts you to share a package manager across accounts, the shortcut is `altergo --settings` → **Credentials** → **Package Managers**.
+
+---
+
 ## CLI shortcuts
 
 You do not need to open the settings TUI for every change. These CLI flags modify the same settings file:
@@ -91,13 +123,11 @@ You do not need to open the settings TUI for every change. These CLI flags modif
 # Set theme directly
 altergo --theme sunset
 
-# Toggle update checker
-altergo --update-check off
-altergo --update-check on
-
 # Cycle themes live in the launcher
 # Press 't' while in the launcher TUI
 ```
+
+> **Removed in v0.35.3:** the `altergo --update-check off` / `altergo --update-check on` flags were removed. The update-checker toggle lives in `altergo --settings` → **Behavior** → **Update checker** only.
 
 ---
 

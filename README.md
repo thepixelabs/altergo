@@ -38,6 +38,23 @@ You're mid-session and your AI hits a limit — or you need a different model fo
 
 altergo runs each account in its own isolated HOME, so credentials never mix. Session history, settings, and tool configs are shared across all accounts via symlinks — pick up any conversation from any account, instantly.
 
+### Isolated by account. Shared where it matters.
+
+**Each account keeps its own:**
+
+- `~/.claude/.credentials.json` — OAuth tokens and session cookies live per account. Nothing leaks sideways.
+- `~/.claude.json` — per account (holds your `oauthAccount` identity), but `mcpServers` is bidirectionally synced so `claude mcp add` registrations propagate automatically.
+
+**Every account shares:**
+
+- your sessions and projects
+- your skills, commands, and agents
+- your CLAUDE.md and keybindings
+- your plans, tasks, file history, and shell snapshots
+- your settings.json
+
+Shared entries are real symlinks to the same underlying file or directory — when you edit your CLAUDE.md under one account, every other account sees the change instantly. Same inode, no sync step.
+
 No daemon. No sync service. No config files to wrangle. One Python file.
 
 ### Before and after
@@ -102,8 +119,8 @@ chmod +x ~/.local/bin/altergo
 
 ```bash
 # Name your accounts — run once per login you have
-altergo --config --name personal
-altergo --config --name pro
+altergo --config personal
+altergo --config pro
 
 # Launch your configured AI assistant as that account
 altergo personal
@@ -114,21 +131,32 @@ altergo --resume
 
 That is the full workflow. The first time you run `altergo personal`, your configured provider authenticates under that account's isolated credentials. Every session you create is visible from every account — switch accounts, not worlds. Your history follows you everywhere.
 
+### What to try next
+
+- `altergo --search "docker build"` — full-text search across every session from every account
+- `altergo --resume` — interactive picker; press `/` to search, `f` to filter by provider, `s` to change sort
+- `altergo --settings` — enable **tmux sessions** so your AI keeps running when SSH drops
+- `altergo native` — launch your provider against your real `$HOME` (bypass isolation when you need it)
+- `altergo --rename old new` — rename an account without losing credentials or history
+
 ---
 
 ## <img src="docs/icons/features.svg" width="22" align="center"> Features
 
 | Feature | What it means |
 |---|---|
-| **Named accounts, unlimited** | `personal`, `pro`, `sideproject`, or any name. One per AI account you use. Each gets its own isolated provider credentials. |
+| **Named accounts** | `personal`, `pro`, `sideproject`, or any name. One per AI account you use. Each gets its own isolated provider credentials. |
 | **One command to switch** | `altergo pro` launches your configured AI assistant with the right credentials. No flags, no config editing. |
 | **Credential isolation** | Each account's provider credentials are isolated. AWS, GCP, Docker, kubectl, and GitHub CLI stay shared by default. |
-| **Configurable sharing** | `altergo --settings` opens a multi-page TUI — configure appearance (theme, launch animation), behavior (greeting/goodbye messages, update checks), and which CLI tool credentials are shared. |
-| **Interactive session picker** | Full-screen TUI with arrow keys, `j`/`k` vim bindings, page up/down, and a preview of each session's final message. |
-| **Session preview** | See project name, last modified time, size, and last message before you resume. |
+| **Shared skills, commands, agents** | User-authored Claude Code skills, slash commands, and agent definitions live under your primary home. Every account picks them up through the same symlinks. |
+| **MCP sync** | `claude mcp add` registrations propagate across all accounts automatically. OAuth identity stays isolated. |
+| **Configurable sharing** | `altergo --settings` opens a multi-page TUI — configure appearance (theme, launch animation), behavior (greeting/goodbye messages, tmux persistence, update checks), and which CLI tool credentials are shared. |
+| **Interactive session picker** | Full-screen TUI with arrow keys, `j`/`k` vim bindings, full-text search (`/`), provider filter (`f`), sort (`s`), goto (`g`), and a preview of each session's final message. |
+| **Full-text conversation search** | `altergo --search "query"` searches across every session from every account. |
+| **tmux session persistence** | Opt in via settings — wraps every session in a tmux window so it survives SSH disconnects and can be reattached. |
+| **Native passthrough** | `altergo native` launches your provider against your real `$HOME` — handy for quick one-offs without isolation. |
 | **Zero dependencies** | Ships as a single Python file. Standard library only. |
 | **Cross-platform** | macOS and Linux wherever Python 3.10+ is available. |
-| **Silent auto-migration** | Existing v0.4.x installs upgrade automatically on first run. No manual steps. |
 
 ---
 
@@ -137,13 +165,16 @@ That is the full workflow. The first time you run `altergo personal`, your confi
 | Command | What it does |
 |---|---|
 | `altergo <name>` | Launch the configured AI assistant as the named account (e.g. `altergo personal`) |
+| `altergo <name> <provider>` | Launch a specific provider under the named account, overriding that account's default (e.g. `altergo personal gemini`) |
 | `altergo` | Launch the default account's AI assistant (backwards compatible) |
+| `altergo native` | Launch your configured provider against your real `$HOME` — no isolation, no symlinks |
+| `altergo native <provider>` | Same as above, but force a specific provider (e.g. `altergo native gemini`) |
 | `altergo --resume` | Open the interactive TUI session picker (all accounts) |
 | `altergo --resume <id>` | Resume a specific session by ID directly |
+| `altergo --search <query>` | Full-text search across every session from every account |
 | `altergo --list` | Print recent sessions as a plain table |
-| `altergo --config --name <n>` | Create or reconfigure a named account, wire symlinks automatically |
-| `altergo --config --name <n> --provider <id,…>` | Configure an account with one or more providers (single provider auto-sets as default) |
-| `altergo <name> use <provider>` | Set the default provider for an existing account (e.g. `altergo pro use gemini`) |
+| `altergo --config <name>` | Create or reconfigure a named account, wire symlinks automatically |
+| `altergo --rename <old> <new>` | Rename an existing account (credentials and history preserved) |
 | `altergo --teardown` | Remove symlinks (account directory and credentials untouched) |
 | `altergo --teardown --name <n>` | Remove a specific named account's symlinks |
 | `altergo --settings` | Multi-page settings TUI: appearance, behavior, and credentials |
@@ -159,7 +190,11 @@ That is the full workflow. The first time you run `altergo personal`, your confi
 | `↑` / `k` | Move up |
 | `↓` / `j` | Move down |
 | `PgUp` / `PgDn` | Page scroll |
+| `Tab` / `Shift+Tab` | Next / previous page |
 | `g` / `G` | Jump to top / bottom |
+| `/` | Full-text search within sessions |
+| `f` | Filter by provider |
+| `s` | Cycle sort order |
 | `Enter` | Resume session |
 | `q` / `Esc` | Quit |
 
@@ -193,16 +228,22 @@ altergo sets `HOME=~/.altergo/accounts/<name>` for the provider process. Each ac
         │       ├── projects/        ──→ symlink to ~/.claude/projects/
         │       ├── settings.json    ──→ symlink to ~/.claude/settings.json
         │       └── CLAUDE.md        ──→ symlink to ~/.claude/CLAUDE.md
-        └── pro/                  Named account (altergo --config --name pro)
+        └── pro/                  Named account (altergo --config pro)
             └── .claude/
                 ├── .credentials.json   ← isolated per account
                 ├── projects/        ──→ symlink to ~/.claude/projects/
                 └── ...
 ```
 
-**What gets symlinked** (shared across all accounts, Claude Code provider): `projects/`, `tasks/`, `session-env/`, `file-history/`, `shell-snapshots/`, `agents/`, `plans/`, `cache/`, `settings.json`, `CLAUDE.md`, `keybindings.json`
+**What gets symlinked — shared across all accounts (Claude Code provider):** `projects/`, `tasks/`, `session-env/`, `file-history/`, `shell-snapshots/`, `agents/`, `commands/`, `skills/`, `plans/`, `cache/`, `settings.json`, `CLAUDE.md`, `keybindings.json`.
 
-**What stays separate**: provider credentials (`.credentials.json` for Claude Code; `oauth_creds.json` for Gemini CLI; `auth.json` for Codex; `config.json` for Copilot)
+The "why": user-authored content (skills, commands, agents, CLAUDE.md), persistent preferences (settings.json, keybindings.json), and project state (projects, tasks, plans, session history) all belong to *you*, not to a specific OAuth identity. Sharing them means one edit is visible from every account — same inode, no sync step.
+
+**What stays separate per account:** provider credentials (`.credentials.json` for Claude Code; `oauth_creds.json` for Gemini CLI; `auth.json` for Codex; `config.json` for Copilot) and the isolated machinery behind them (`.claude.json`, `plugins/`, `paste-cache/`).
+
+### MCP servers: sync, not symlink
+
+Claude Code stores both `mcpServers` and `oauthAccount` inside `~/.claude.json`. Symlinking that file would leak your OAuth identity across accounts; *not* sharing it would strand every `claude mcp add` in whichever account happened to run it. altergo splits the difference: on every `altergo --config` and every Claude launch it **bidirectionally merges** the `mcpServers` section between your primary `~/.claude.json` and the account's `.claude.json`, then atomically writes both files back. `oauthAccount` is never touched. Register an MCP server once; every account sees it.
 
 **CLI tool credentials** are shared or isolated per tool, configurable via `altergo --settings`. Shared by default: `.aws`, `.config/gcloud`, `.azure`, `.docker`, `.kube`, `.terraform.d`, `.config/gh`. Isolated by default: `.ssh`, `.gitconfig`, `.gnupg`, `.npmrc`, `.config/glab`.
 
@@ -229,15 +270,25 @@ When using Claude Code, tokens may be stored in the system Keychain rather than 
 
 ---
 
-## <img src="docs/icons/migrate.svg" width="22" align="center"> Migrating from v0.4.x
+## <img src="docs/icons/migrate.svg" width="22" align="center"> Migrating older installs
 
-If you have an existing `~/.altergo/` directory from v0.4.x, altergo migrates it automatically on first run. Your old setup becomes the default account at `~/.altergo/accounts/default/`. A backup is preserved at `~/.altergo/.legacy-backup/`. No manual steps required.
+- **From v0.4.x:** auto-migration existed through v0.35.2 and was removed in v0.35.3. If you are still on a pre-v0.5.0 layout today, see [docs/migration.md](docs/migration.md#archived-migration-notes-v04x--v050) for the archived steps — or open an issue for manual guidance.
+- **Syntax change in v0.34.0:** `altergo --config --name <n>` is now `altergo --config <name>`. The old form was removed; update any aliases.
+- **From claude100-resume:** credentials and aliases are not picked up automatically. See [docs/migration.md](docs/migration.md) for step-by-step instructions.
 
-Full details: [https://altergo.pixelabs.net/docs/migration-0.5](https://altergo.pixelabs.net/docs/migration-0.5)
+---
 
-## Migrating from claude100-resume
+## <img src="docs/icons/howitworks.svg" width="22" align="center"> Next steps
 
-If you used the earlier `claude100-resume` tool with `~/claude100-home/`, your credentials and alias are not picked up automatically. See [docs/migration.md](docs/migration.md) for step-by-step instructions.
+- [docs/how-it-works.md](docs/how-it-works.md) — the mechanics and design tradeoffs, in depth
+- [docs/settings.md](docs/settings.md) — every setting, what it toggles, and where it is stored
+- [docs/migration.md](docs/migration.md) — upgrade notes, syntax changes, and archived migrations
+
+Three power-user features new users miss:
+
+- `altergo --search "<query>"` — full-text search across every session, every account
+- **tmux session persistence** — toggle it in `altergo --settings` → Behavior so SSH drops never kill a session again
+- `altergo native` — launch your provider against your real `$HOME` when you want isolation out of the way
 
 ---
 

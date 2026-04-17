@@ -1210,3 +1210,113 @@ def test_yolo_mixed_with_user_args():
     assert "--model" in cleaned
     assert "sonnet" in cleaned
     assert suffix == ["--dangerously-skip-permissions"]
+
+
+# =============================================================================
+# --yolo-resume with optional session ID
+# =============================================================================
+
+_FAKE_ID = "4794df18-1ece-40c5-8e2c-59f1054d0b2c"
+
+
+@pytest.mark.parametrize(
+    "provider,expected_prefix,expected_suffix",
+    [
+        ("claude", ["--resume", _FAKE_ID], ["--dangerously-skip-permissions"]),
+        ("gemini", ["--resume", _FAKE_ID], ["--yolo"]),
+        ("codex", ["resume", _FAKE_ID], ["--dangerously-bypass-approvals-and-sandbox"]),
+        ("copilot", ["--resume", _FAKE_ID], ["--yolo"]),
+    ],
+)
+def test_yolo_resume_by_id_equals_form(provider, expected_prefix, expected_suffix):
+    """--yolo-resume=ID: all providers substitute the ID into resume_by_id template."""
+    mod = _load_altergo()
+    prefix, cleaned, suffix = mod._translate_yolo_flags(provider, [f"--yolo-resume={_FAKE_ID}"])
+    assert prefix == expected_prefix
+    assert suffix == expected_suffix
+    assert _FAKE_ID not in cleaned  # never leak into user args / prompt
+    assert not any(a.startswith("--yolo") for a in cleaned)
+
+
+@pytest.mark.parametrize(
+    "provider,expected_prefix",
+    [
+        ("claude", ["--resume", _FAKE_ID]),
+        ("gemini", ["--resume", _FAKE_ID]),
+        ("codex", ["resume", _FAKE_ID]),
+        ("copilot", ["--resume", _FAKE_ID]),
+    ],
+)
+def test_yolo_resume_by_id_space_form(provider, expected_prefix):
+    """--yolo-resume ID: paired positional is consumed when it looks like a UUID."""
+    mod = _load_altergo()
+    prefix, cleaned, suffix = mod._translate_yolo_flags(provider, ["--yolo-resume", _FAKE_ID])
+    assert prefix == expected_prefix
+    # ID must not leak into cleaned args — that's the bug we're fixing.
+    assert _FAKE_ID not in cleaned
+    assert cleaned == []
+
+
+def test_yolo_resume_space_form_uppercase_uuid():
+    """UUID match is case-insensitive — uppercase IDs are still consumed."""
+    mod = _load_altergo()
+    upper = _FAKE_ID.upper()
+    prefix, cleaned, suffix = mod._translate_yolo_flags("claude", ["--yolo-resume", upper])
+    assert prefix == ["--resume", upper]
+    assert upper not in cleaned
+
+
+def test_yolo_resume_space_form_nonuuid_not_consumed():
+    """Backwards-compat: a non-UUID trailing arg stays as a user prompt."""
+    mod = _load_altergo()
+    prefix, cleaned, suffix = mod._translate_yolo_flags("claude", ["--yolo-resume", "do this thing please"])
+    # Falls back to last-session behavior...
+    assert prefix == ["--continue"]
+    # ...and the prompt is preserved as a positional arg.
+    assert "do this thing please" in cleaned
+
+
+def test_yolo_resume_space_form_almost_uuid_not_consumed():
+    """A token that's close to a UUID but missing a segment is left alone."""
+    mod = _load_altergo()
+    almost = "4794df18-1ece-40c5-8e2c"  # missing final segment
+    prefix, cleaned, suffix = mod._translate_yolo_flags("claude", ["--yolo-resume", almost])
+    assert prefix == ["--continue"]
+    assert almost in cleaned
+
+
+def test_yolo_resume_no_id_regression_claude():
+    """--yolo-resume with no ID still maps to resume_last for claude."""
+    mod = _load_altergo()
+    prefix, cleaned, suffix = mod._translate_yolo_flags("claude", ["--yolo-resume"])
+    assert prefix == ["--continue"]
+    assert suffix == ["--dangerously-skip-permissions"]
+    assert cleaned == []
+
+
+def test_yolo_resume_no_id_regression_copilot():
+    """--yolo-resume with no ID still maps to resume_last for copilot."""
+    mod = _load_altergo()
+    prefix, cleaned, suffix = mod._translate_yolo_flags("copilot", ["--yolo-resume"])
+    assert prefix == ["--continue"]
+    assert suffix == ["--yolo"]
+
+
+def test_yolo_resume_by_id_with_user_args():
+    """ID is consumed even when other user args follow."""
+    mod = _load_altergo()
+    prefix, cleaned, suffix = mod._translate_yolo_flags("claude", ["--yolo-resume", _FAKE_ID, "--model", "sonnet"])
+    assert prefix == ["--resume", _FAKE_ID]
+    assert cleaned == ["--model", "sonnet"]
+    assert _FAKE_ID not in cleaned
+
+
+def test_looks_like_session_id():
+    """Sanity check on the UUID matcher."""
+    mod = _load_altergo()
+    assert mod._looks_like_session_id(_FAKE_ID)
+    assert mod._looks_like_session_id(_FAKE_ID.upper())
+    assert not mod._looks_like_session_id("not-a-uuid")
+    assert not mod._looks_like_session_id("")
+    # Trailing junk must not match.
+    assert not mod._looks_like_session_id(_FAKE_ID + "x")

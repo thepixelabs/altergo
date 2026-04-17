@@ -1,6 +1,26 @@
 # CHANGELOG
 
 
+## v0.39.0 (2026-04-17)
+
+### Features
+
+- Accept session ID with --yolo-resume ([#18](https://github.com/thepixelabs/altergo/pull/18),
+  [`d08102d`](https://github.com/thepixelabs/altergo/commit/d08102d16368046ceb03195f13917854b9e76918))
+
+Previously `altergo --yolo-resume <uuid>` silently passed the UUID through as a positional arg, so
+  providers received it as the first user prompt of the resumed session instead of using it to pick
+  a specific session.
+
+Now --yolo-resume accepts an optional session ID in either form: --yolo-resume=<ID> --yolo-resume
+  <ID> (only if the following token is UUID-shaped)
+
+When an ID is provided, it is substituted into each provider's resume_by_id template:
+  claude/gemini/copilot use `--resume <ID>`, codex uses the `resume <ID>` subcommand. With no ID the
+  flag continues to resume the most recent session. A non-UUID trailing token is left alone so
+  prompts passed on the command line still work.
+
+
 ## v0.38.0 (2026-04-17)
 
 ### Documentation

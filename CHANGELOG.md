@@ -1,6 +1,51 @@
 # CHANGELOG
 
 
+## v0.38.0 (2026-04-17)
+
+### Documentation
+
+- Align tagline, document MCP sync, catch up to v0.37
+  ([`636b238`](https://github.com/thepixelabs/altergo/commit/636b238f770204bc8514d00e7c8070f924bfaca7))
+
+Three-pass audit (tech-writer + CEO + CTO). Closes an ~18-release doc lag, documents the
+  bidirectional MCP-sync model (previously invisible to users), aligns the tagline across all public
+  surfaces, and adds a threat model to SECURITY.md.
+
+Canonical tagline: "Don't break flow. Switch accounts." Applied to README, launch/*, brand/identity,
+  pyproject.toml, altergo.py --help banner, Makefile, docs/index.html.
+
+README / how-it-works / architecture: - Replace stale '--config --name <n>' with positional form -
+  Remove removed subcommand '<name> use <provider>' (v0.22.0) - Add 'altergo native', '--rename',
+  '--search', '<name> <provider>' - Complete symlinked-items list (adds tasks/, commands/, skills/)
+  - New section: MCP servers, sync not symlink - New section: tmux session persistence - Provider
+  matrix for Claude/Gemini/Codex/Copilot - Account-lifecycle walkthrough - ASCII diagram:
+  real-isolated vs shared-inode vs merged
+
+SECURITY.md: - Fix inaccurate 'no network connections' claim (PyPI update checker fetches once per
+  24h) - Add threat model: shared settings.json hooks, shared CLAUDE.md prompt surface, MCP
+  propagation, default-on cloud catalog - Document single-user multi-account trust assumption
+
+migration.md: archive v0.5.0 auto-migration (removed v0.35.3), add v0.22.0 .claude.json
+  silent-unsymlink note.
+
+settings.md: remove '--update-check' CLI block (removed v0.35.3), add home-change-notice section,
+  enumerate package-manager catalog.
+
+### Features
+
+- Add --yolo/--yolo-resume flags and rename --list to --recall
+  ([`f0e7d6a`](https://github.com/thepixelabs/altergo/commit/f0e7d6a0ee31708e2bfa1c77354f1f14f8567a05))
+
+- --yolo translates to provider-native skip-permissions flag (claude:
+  --dangerously-skip-permissions, gemini/copilot: --yolo, codex:
+  --dangerously-bypass-approvals-and-sandbox). - --yolo-resume additionally resumes the last session
+  per provider (codex uses the `resume --last` subcommand form). - --recall opens the cross-account
+  session picker; bare --resume now passes through to the provider's own native resume UI. - Picker
+  gets a theme hotkey (t), separator row, and recall-session title; animated nav footer removed. -
+  Tests cover flag translation per provider and updated smoke suite.
+
+
 ## v0.37.1 (2026-04-16)
 
 ### Refactoring

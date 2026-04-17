@@ -169,10 +169,10 @@ That is the full workflow. The first time you run `altergo personal`, your confi
 | `altergo` | Launch the default account's AI assistant (backwards compatible) |
 | `altergo native` | Launch your configured provider against your real `$HOME` — no isolation, no symlinks |
 | `altergo native <provider>` | Same as above, but force a specific provider (e.g. `altergo native gemini`) |
-| `altergo --resume` | Open the interactive TUI session picker (all accounts) |
+| `altergo --recall` | Open the interactive TUI session picker (all accounts, all providers); account is resolved from the selected session |
+| `altergo --resume` | Pass `--resume` through to the provider's own native resume UI |
 | `altergo --resume <id>` | Resume a specific session by ID directly |
 | `altergo --search <query>` | Full-text search across every session from every account |
-| `altergo --list` | Print recent sessions as a plain table |
 | `altergo --config <name>` | Create or reconfigure a named account, wire symlinks automatically |
 | `altergo --rename <old> <new>` | Rename an existing account (credentials and history preserved) |
 | `altergo --teardown` | Remove symlinks (account directory and credentials untouched) |

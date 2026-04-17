@@ -200,7 +200,7 @@ altergo resolves this with a two-step check in `main()`:
 ```python
 _KNOWN_COMMANDS = frozenset([
     "shell", "use", "portal",
-    "--resume", "--list", "--search", "--config", "--rename",
+    "--resume", "--recall", "--search", "--config", "--rename",
     "--teardown", "--settings", "--version", "--use", "--launch",
     "--theme", "--star", "-h", "--help", "--"
 ])
@@ -452,8 +452,9 @@ Claude Code writes to several locations beyond `~/.claude/`. With HOME overridde
    │  (legacy v0.4.x auto-migration was removed in v0.35.3 — see migration.md)
    │
    ├─ Parse sys.argv
-   │  ├─ --config / --teardown / --list / --version / --help → handled, exit
-   │  ├─ --resume (no id) → session picker TUI → select → launch_claude("default", ["--resume", id])
+   │  ├─ --config / --teardown / --version / --help → handled, exit
+   │  ├─ --recall → session picker TUI → resolve account from session.provider → launch_claude(account, ["--resume", id])
+   │  ├─ --resume [id] → pass-through to the provider (handled downstream)
    │  ├─ _looks_like_account(args[0]) → account = args[0]; args = args[1:]
    │  ├─ [account] shell → launch_shell(account)
    │  ├─ [account] -- <cmd> → launch_command(account, args[1:])

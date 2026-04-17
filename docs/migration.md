@@ -117,7 +117,7 @@ source ~/.zshrc
 
 ```bash
 altergo --version   # should print the installed version
-altergo --list      # should show your sessions
+altergo --recall    # should show your sessions in the interactive picker
 altergo             # should launch Claude Code with alt credentials
 ```
 
@@ -180,7 +180,7 @@ You cannot rewrite already-pushed commits without a force-push and coordination 
 
 ### Troubleshooting
 
-**`altergo --list` shows no sessions after migration**
+**`altergo --recall` shows no sessions after migration**
 
 The symlinks inside `~/.altergo/accounts/default/.claude/` may not have been created yet. Run `altergo --config` and check the output for errors.
 
@@ -239,7 +239,7 @@ v0.5.0 introduced N-account support. The directory layout changed:
 3. Verify:
 
     ```bash
-    altergo --list      # should show your sessions
+    altergo --recall    # should show your sessions in the interactive picker
     altergo             # should launch Claude Code with your existing credentials
     ```
 

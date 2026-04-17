@@ -491,7 +491,7 @@ def test_merge_conflict_quarantine(sweep_home):
 def test_list_then_resume_roundtrip(sweep_home):
     """Session written to MAIN_CLAUDE/projects/ is found by get_sessions() and
     is reachable via account_claude/projects/ (the path Claude Code uses when
-    HOME=account_home).  This is the full --list then --resume chain.
+    HOME=account_home).  This is the full --recall then launch chain.
     """
     main_claude = sweep_home["main_claude"]
     accounts_dir = sweep_home["accounts_dir"]
@@ -521,7 +521,7 @@ def test_list_then_resume_roundtrip(sweep_home):
     via_account = account_claude / "projects" / "myproject" / f"{session_id}.jsonl"
     assert via_account.exists(), (
         "Session file not reachable via account_claude/projects symlink — "
-        "--resume would fail after --list found the session"
+        "--resume would fail after --recall found the session"
     )
     assert via_account.read_text() == session_content
 
@@ -585,7 +585,7 @@ def test_ensure_symlinked_dir_noop_when_correct(sweep_home):
 
 def test_providers_dict_structure():
     required_keys = {"display_name", "dot_dir", "binary", "credentials_file", "symlink_dirs", "symlink_files"}
-    optional_keys = set()
+    optional_keys = {"flags"}
     for pid, prov in altergo.PROVIDERS.items():
         actual_keys = set(prov.keys())
         missing = required_keys - actual_keys

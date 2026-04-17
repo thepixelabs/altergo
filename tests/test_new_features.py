@@ -1143,3 +1143,70 @@ def test_native_provider_no_detection_exits_with_message(tmp_path, monkeypatch):
         mod.launch_claude("native")
 
     assert exc.value.code != 0
+
+
+# =============================================================================
+# _translate_yolo_flags
+# =============================================================================
+
+
+@pytest.mark.parametrize("provider,expected_suffix", [
+    ("claude",  ["--dangerously-skip-permissions"]),
+    ("gemini",  ["--yolo"]),
+    ("codex",   ["--dangerously-bypass-approvals-and-sandbox"]),
+    ("copilot", ["--yolo"]),
+])
+def test_yolo_flag_per_provider(provider, expected_suffix):
+    """--yolo alone: prefix empty, synthetic flag stripped, suffix = provider skip_perms."""
+    mod = _load_altergo()
+    prefix, cleaned, suffix = mod._translate_yolo_flags(provider, ["--yolo", "do this"])
+    assert prefix == []
+    assert "--yolo" not in cleaned
+    assert "--yolo-resume" not in cleaned
+    assert suffix == expected_suffix
+    assert "do this" in cleaned
+
+
+def test_yolo_resume_codex():
+    """Codex --yolo-resume: resume subcommand goes to prefix, bypass flag to suffix."""
+    mod = _load_altergo()
+    prefix, cleaned, suffix = mod._translate_yolo_flags("codex", ["--yolo-resume", "task"])
+    assert prefix == ["resume", "--last"]
+    assert suffix == ["--dangerously-bypass-approvals-and-sandbox"]
+    assert "--yolo" not in cleaned
+    assert "--yolo-resume" not in cleaned
+    assert "task" in cleaned
+
+
+def test_yolo_resume_gemini():
+    """Gemini --yolo-resume: resume flags go to prefix, skip_perms to suffix."""
+    mod = _load_altergo()
+    prefix, cleaned, suffix = mod._translate_yolo_flags("gemini", ["--yolo-resume"])
+    assert prefix == ["--resume", "latest"]
+    assert suffix == ["--yolo"]
+    assert "--yolo" not in cleaned
+    assert "--yolo-resume" not in cleaned
+
+
+def test_no_yolo_flags_is_noop():
+    """Neither flag present: returns ([], original_args, []) without mutation."""
+    mod = _load_altergo()
+    original = ["--model", "sonnet"]
+    prefix, cleaned, suffix = mod._translate_yolo_flags("claude", original)
+    assert prefix == []
+    assert cleaned == ["--model", "sonnet"]
+    assert suffix == []
+
+
+def test_yolo_mixed_with_user_args():
+    """--yolo alongside real user args: only the synthetic flag is removed."""
+    mod = _load_altergo()
+    prefix, cleaned, suffix = mod._translate_yolo_flags(
+        "claude", ["--yolo", "do this", "--model", "sonnet"]
+    )
+    assert prefix == []
+    assert "--yolo" not in cleaned
+    assert "do this" in cleaned
+    assert "--model" in cleaned
+    assert "sonnet" in cleaned
+    assert suffix == ["--dangerously-skip-permissions"]

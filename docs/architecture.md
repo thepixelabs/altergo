@@ -228,7 +228,7 @@ When the first argument is not a known flag or subcommand, `main()` checks wheth
 ```
 _KNOWN_COMMANDS = frozenset([
     "shell", "use", "portal",
-    "--resume", "--list", "--search", "--config", "--rename",
+    "--resume", "--recall", "--search", "--config", "--rename",
     "--teardown", "--settings", "--version", "--use", "--launch",
     "--theme", "--star", "-h", "--help", "--"
 ])
@@ -378,12 +378,13 @@ User runs: altergo [account] [args]
 │   │   ├─ --config [--name <n>]  → do_config(n)      → sys.exit(0)
 │   │   ├─ --teardown [--name <n>] → do_teardown(n) → sys.exit(0)
 │   │   ├─ --settings       → interactive_settings() → sys.exit(0)
-│   │   ├─ --list           → get_sessions() → print table → sys.exit(0)
 │   │   │
-│   │   ├─ --resume (alone)
+│   │   ├─ --recall
 │   │   │   └─ get_sessions() → interactive_picker() → user selects
-│   │   │       ├─ selected  → launch_claude("default", ["--resume", id])
+│   │   │       ├─ selected  → _account_for_provider(s.provider) → launch_claude(acct, ["--resume", id])
 │   │   │       └─ cancelled → sys.exit(0)
+│   │   │
+│   │   ├─ --resume [id]    → (falls through to launch_claude(account, args) — provider sees --resume)
 │   │   │
 │   │   ├─ _looks_like_account(args[0]) ?
 │   │   │   ├─ yes, dir exists → account = args[0]; args = args[1:]

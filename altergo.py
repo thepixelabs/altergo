@@ -269,7 +269,7 @@ def show_banner(
         When True, a dry time-of-day line (from :mod:`altergo_greetings`)
         is rendered below the figlet. Only set True on interactive launch
         paths (``launch_claude``/``launch_shell``/``launch_command``/
-        ``interactive_launcher``). Silent on ``--help``/``--list`` etc. so
+        ``interactive_launcher``). Silent on ``--help``/``--version`` etc. so
         piped and scripted output stays grep-able.
     animate_duration
         If > 0 and we're on a TTY, wrap the final render in ``rich.live.Live``
@@ -540,10 +540,10 @@ def show_help():
         ("altergo --settings", kw("altergo --settings"), "Manage shared credentials"),
     ]
     SEC_SESSIONS = [
-        ("altergo --resume", kw("altergo --resume"), "Pick session interactively"),
+        ("altergo --recall", kw("altergo --recall"), "Pick session interactively"),
+        ("altergo --resume", kw("altergo --resume"), "Provider's native resume"),
         ("altergo --resume <id>", f"{kw('altergo --resume')} {arg('<id>')}", "Resume by session ID"),
         ("altergo --search", kw("altergo --search"), "Search conversation history"),
-        ("altergo --list", kw("altergo --list"), "List recent sessions"),
         ("altergo --star", kw("altergo --star"), "Star the last session"),
         ("altergo --star <id>", f"{kw('altergo --star')} {arg('<id>')}", "Star a session by ID"),
     ]
@@ -584,6 +584,8 @@ def show_help():
             f"{kw('altergo')} {arg('<name>')} {kw('--')} {arg('<cmd>')}",
             "Run command in account context",
         ),
+        ("altergo --yolo", kw("altergo --yolo"), "Skip all provider permission prompts"),
+        ("altergo --yolo-resume", kw("altergo --yolo-resume"), "Skip prompts + resume last session"),
     ]
     # Launcher keys rendered as freeform strings, not row() tuples
     _K = [
@@ -887,6 +889,10 @@ PROVIDERS = {
         # .claude.json is intentionally NOT in symlink_home_files — it is managed
         # by _sync_claude_mcps which does a bidirectional MCP merge while keeping
         # per-account oauthAccount metadata isolated.
+        "flags": {
+            "skip_perms": ["--dangerously-skip-permissions"],
+            "resume_last": ["--continue"],
+        },
     },
     "gemini": {
         "display_name": "Gemini CLI",
@@ -895,6 +901,10 @@ PROVIDERS = {
         "credentials_file": "oauth_creds.json",
         "symlink_dirs": ["tmp", "commands"],
         "symlink_files": ["settings.json", "GEMINI.md"],
+        "flags": {
+            "skip_perms": ["--yolo"],
+            "resume_last": ["--resume", "latest"],
+        },
     },
     "codex": {
         "display_name": "Codex CLI",
@@ -903,6 +913,11 @@ PROVIDERS = {
         "credentials_file": "auth.json",
         "symlink_dirs": ["sessions", "rules"],
         "symlink_files": ["config.toml", "AGENTS.md", "AGENTS.override.md"],
+        "flags": {
+            "skip_perms": ["--dangerously-bypass-approvals-and-sandbox"],
+            # resume_last is a subcommand, handled specially in launch_claude
+            "resume_subcommand": ["resume", "--last"],
+        },
     },
     "copilot": {
         "display_name": "GitHub Copilot",
@@ -911,6 +926,10 @@ PROVIDERS = {
         "credentials_file": "config.json",
         "symlink_dirs": ["session-state", "agents", "skills", "hooks"],
         "symlink_files": ["mcp-config.json", "lsp-config.json"],
+        "flags": {
+            "skip_perms": ["--yolo"],
+            "resume_last": ["--continue"],
+        },
     },
 }
 
@@ -1933,6 +1952,44 @@ def _is_newer(latest: str, current: str) -> bool:
     return a > b
 
 
+def _translate_yolo_flags(
+    provider: str, args: list[str]
+) -> tuple[list[str], list[str], list[str]]:
+    """Translate --yolo / --yolo-resume into provider-native flags.
+
+    Returns (prefix, cleaned_args, suffix) where the assembled command is:
+        [binary] + prefix + cleaned_args + suffix
+
+    Both synthetic flags are stripped from cleaned_args regardless of whether
+    the provider supports them.  If neither flag is present the call is a
+    pure no-op: ([], args, []).
+    """
+    yolo_resume = "--yolo-resume" in args
+    yolo = yolo_resume or "--yolo" in args
+
+    if not yolo:
+        return [], args, []
+
+    # Strip synthetic flags.
+    cleaned = [a for a in args if a not in ("--yolo", "--yolo-resume")]
+
+    prov_flags = PROVIDERS.get(provider, {}).get("flags", {})
+    prefix: list[str] = []
+    suffix: list[str] = []
+
+    if yolo_resume and provider == "codex":
+        # codex uses a subcommand: codex resume --last [user-args] --bypass
+        prefix = list(prov_flags.get("resume_subcommand", []))
+        suffix = list(prov_flags.get("skip_perms", []))
+    else:
+        if yolo_resume and "resume_last" in prov_flags:
+            prefix = list(prov_flags["resume_last"])
+        if yolo and "skip_perms" in prov_flags:
+            suffix = list(prov_flags["skip_perms"])
+
+    return prefix, cleaned, suffix
+
+
 def _fetch_latest_version() -> None:
     """Fetch altergo's latest version from PyPI and update the cache.
 
@@ -2317,6 +2374,30 @@ def get_active_account() -> str | None:
         return None
     except Exception:
         return None
+
+
+def _account_for_provider(provider_id: str) -> str | None:
+    """Return an account name suitable for launching sessions of ``provider_id``.
+
+    Prefers the active account if its provider matches; otherwise returns the
+    first account whose ``account.json`` names the same provider. Returns None
+    when no account is configured for that provider.
+    """
+    accounts = list_accounts()
+    if not accounts:
+        return None
+
+    def _provider_of(acct_name: str) -> str:
+        meta = load_account_meta(ACCOUNTS_DIR / acct_name)
+        return meta["provider"] if meta else "claude"
+
+    active = get_active_account()
+    if active and active in accounts and _provider_of(active) == provider_id:
+        return active
+    for acct in accounts:
+        if _provider_of(acct) == provider_id:
+            return acct
+    return None
 
 
 def set_active_account(name: str) -> None:
@@ -3386,12 +3467,10 @@ def _apply_resume_view(sessions, filter_provider, sort_mode, search_query):
 def _draw_picker(stdscr, sessions):
     curses.curs_set(0)
     attrs = _picker_attrs("resume")
-    stdscr.timeout(80)  # ~12fps animation tick — getch() returns -1 on timeout
 
     current = 0
     scroll_offset = 0
     preview_cache = {}  # session_id -> loaded preview dict
-    phase = 0
     search_query = ""  # active filter text ("" = show all)
     search_mode = False  # True while typing in the / search bar
 
@@ -3410,33 +3489,38 @@ def _draw_picker(stdscr, sessions):
         max_y, max_x = stdscr.getmaxyx()
         cols = _compute_columns(max_x)
 
-        # Title bar
+        # Title bar (row 0) — left: label, right: counts
         n_all = len([s for s in sessions if (filter_provider is None or s.get("provider") == filter_provider)])
+        title_left = " altergo — recall session"
         if search_query:
-            title = f" altergo — pick a session  ·  {len(filtered)}/{n_all} matching"
+            title_right = f"{len(filtered)}/{n_all} matching "
         elif filter_provider:
-            title = f" altergo — pick a session  ·  {len(filtered)} {filter_provider} sessions"
+            title_right = f"{len(filtered)} {filter_provider} sessions "
         else:
-            title = f" altergo — pick a session  ·  {len(sessions)} total"
-        _safe_addnstr(stdscr, 0, 0, title.ljust(max_x), max_x - 1, attrs["title"])
+            title_right = f"{len(sessions)} total "
+        header_row = title_left.ljust(max(0, max_x - len(title_right))) + title_right
+        _safe_addnstr(stdscr, 0, 0, header_row[:max_x], max_x - 1, attrs["title"])
 
-        # Status bar: provider filter + sort mode + key hints (row 1)
+        # Separator under the title (row 1) — matches the launcher's header look
+        _safe_addnstr(stdscr, 1, 0, ("─" * (max_x - 1))[: max_x - 1], max_x - 1, attrs["dim"])
+
+        # Status bar: provider filter + sort mode + key hints (row 2)
         prov_label = filter_provider if filter_provider else "all"
         sort_label = sort_mode
         group_label = "on" if group_mode else "off"
         status = f" provider: {prov_label}  sort: {sort_label}  group: {group_label}  [f]ilter [s]ort [g]roup"
-        _safe_addnstr(stdscr, 1, 0, _truncate(status, max_x - 1), max_x - 1, attrs["dim"])
+        _safe_addnstr(stdscr, 2, 0, _truncate(status, max_x - 1), max_x - 1, attrs["dim"])
 
-        # Column header row (row 2)
+        # Column header row (row 3)
         proj_h = "Project".ljust(cols["proj"])
         time_h = "When".ljust(cols["time"])
         size_h = "Size".rjust(cols["size"])
         topic_h = "Topic"
         col_header = f"  {proj_h}  {time_h}  {size_h}  {topic_h}"
-        _safe_addnstr(stdscr, 2, 0, col_header.ljust(max_x), max_x - 1, attrs["header"])
+        _safe_addnstr(stdscr, 3, 0, col_header.ljust(max_x), max_x - 1, attrs["header"])
 
-        # Visible area: title(1) + status(1) + col_header(1) + footer(2) = 5 used
-        visible_rows = max(1, max_y - 5)
+        # Visible area: title(1) + sep(1) + status(1) + col_header(1) + footer(2) = 6 used
+        visible_rows = max(1, max_y - 6)
 
         # Build display items: a session entry or a group divider string
         # Dividers are only inserted when group_mode is on.
@@ -3474,7 +3558,7 @@ def _draw_picker(stdscr, sessions):
             if di >= len(display_items):
                 break
             item = display_items[di]
-            row = i + 3
+            row = i + 4
 
             if item is None:
                 # Divider line
@@ -3541,19 +3625,16 @@ def _draw_picker(stdscr, sessions):
                 cwd = s.get("cwd") or decode_project_path(s["project"])
                 foot = f" {sid}  ·  {cwd}"
                 _safe_addnstr(stdscr, footer_row, 0, _truncate(foot, max_x - 1), max_x - 1, attrs["topic"])
+        theme_hint = f" · theme: {THEMES[get_current_theme()]['display_name']} (t)"
         nav = (
             " ↑↓/jk move  ·  / search  ·  G top  ·  p/Tab preview"
-            "  ·  f filter  ·  s sort  ·  g group  ·  * star  ·  Enter resume  ·  q quit  ·  pixelabs"
+            "  ·  f filter  ·  s sort  ·  g group  ·  * star  ·  Enter resume  ·  q quit"
+            + theme_hint
         )
-        _draw_animated_nav(stdscr, footer_row + 1, nav, max_x - 1, phase, attrs)
+        _safe_addnstr(stdscr, footer_row + 1, 0, _truncate(nav, max_x - 1), max_x - 1, attrs["dim"])
 
         stdscr.refresh()
         key = stdscr.getch()
-
-        # Animation tick: getch timed out (no key pressed) — advance phase and redraw
-        if key == -1:
-            phase += 1
-            continue
 
         # -- Search mode input handling --
         if search_mode:
@@ -3633,6 +3714,15 @@ def _draw_picker(stdscr, sessions):
                     if sess["id"] == s["id"]:
                         sess["starred"] = now_starred
                         break
+        elif key == ord("t"):
+            # Cycle to the next theme, re-init the picker attrs so the current
+            # draw picks up the new palette, and persist the choice immediately.
+            theme_ids = list(THEMES.keys())
+            cur = get_current_theme()
+            nxt = theme_ids[(theme_ids.index(cur) + 1) % len(theme_ids)] if cur in theme_ids else theme_ids[0]
+            set_current_theme(nxt)
+            save_persisted_theme(nxt)
+            attrs = _picker_attrs("resume")
         elif key in (ord("q"), 27):
             return None
         elif key == curses.KEY_RESIZE:
@@ -5250,7 +5340,10 @@ def launch_claude(account: str = "default", args=None, provider: str | None = No
             sys.exit(f"altergo: '{prov['binary']}' not found in PATH.\n  Install {prov['display_name']} and try again.")
 
     env = _build_alt_env(account)
-    cmd = [binary_path] + (args or [])
+
+    # Translate --yolo / --yolo-resume into provider-native flags.
+    extra_prefix, raw_args, extra_suffix = _translate_yolo_flags(provider, list(args or []))
+    cmd = [binary_path] + extra_prefix + raw_args + extra_suffix
     # Kick off the background PyPI check (no-op if opt-out or not yet due)
     # BEFORE the banner so the cache from a previous run drives the nag.
     maybe_refresh_update_cache()
@@ -5415,7 +5508,7 @@ _KNOWN_COMMANDS = frozenset(
         "use",
         "portal",
         "--resume",
-        "--list",
+        "--recall",
         "--search",
         "--config",
         "--rename",
@@ -6133,24 +6226,29 @@ def main():
         )
         sys.exit(0)
 
-    if args and args[0] == "--list":
+    # --recall → open the interactive session picker across all accounts.
+    # Account is resolved from the selected session's provider (not chosen
+    # up front), so multi-account setups don't need --use or a positional name.
+    if args and args[0] == "--recall":
+        if not list_accounts():
+            print("altergo: no accounts found. Run 'altergo --config' first.", file=sys.stderr)
+            sys.exit(1)
         show_banner()
         sessions = _status_wrap("Scanning sessions…", get_sessions)
-        if not sessions:
-            print("  No sessions found.")
+        selected = interactive_picker(sessions)
+        if not selected:
+            print("Cancelled.")
             sys.exit(0)
-        header_row = f"{'Project':<20} {'Modified':<18} {'Size':>6}  Session ID"
-        print(_c(C("dim"), header_row))
-        print(_c(C("dim"), "-" * 80))
-        for s in sessions[:30]:
-            project = format_project_name(s["project"])
-            modified = s["modified"].strftime("%Y-%m-%d %H:%M")
-            size = f"{s['size_mb']:.1f}MB"
+        provider_id = selected.get("provider", "claude")
+        recall_account = _account_for_provider(provider_id)
+        if recall_account is None:
             print(
-                f"{_c(C('command'), f'{project:<20}')} "
-                f"{_c(C('dim'), f'{modified:<18}')} "
-                f"{_c(C('warn'), f'{size:>6}')}  {s['id']}"
+                f"altergo: no account configured for provider '{provider_id}'.\n"
+                f"  Create one with: altergo --config <name> --provider {provider_id}",
+                file=sys.stderr,
             )
+            sys.exit(1)
+        launch_claude(recall_account, ["--resume", selected["id"]])
         sys.exit(0)
 
     if args and args[0] == "--use":
@@ -6193,34 +6291,6 @@ def main():
             print("Cancelled.")
         sys.exit(0)
 
-    # --resume with no ID → open interactive picker
-    if args and args[0] == "--resume" and len(args) == 1:
-        accounts = list_accounts()
-        if not accounts:
-            print("altergo: no accounts found. Run 'altergo --config' first.", file=sys.stderr)
-            sys.exit(1)
-        if len(accounts) == 1:
-            resume_account = accounts[0]
-        else:
-            active = get_active_account()
-            if active:
-                resume_account = active
-            else:
-                print(
-                    f"altergo: multiple accounts exist ({', '.join(accounts)}).\n"
-                    f"  Use 'altergo <name> --resume' to pick an account, or\n"
-                    f"  'altergo --use <name>' to set an active account.",
-                    file=sys.stderr,
-                )
-                sys.exit(1)
-        sessions = _status_wrap("Scanning sessions…", get_sessions)
-        selected = interactive_picker(sessions)
-        if selected:
-            launch_claude(resume_account, ["--resume", selected["id"]])
-        else:
-            print("Cancelled.")
-        sys.exit(0)
-
     # altergo portal [<account>] [<provider>] [flags...]
     if args and args[0] == "portal":
         portal_args = args[1:]
@@ -6245,7 +6315,7 @@ def main():
                 # Unknown positional token before any flags — not an account or provider
                 print(
                     f"altergo: portal: unknown account or provider '{tok}'.\n"
-                    f"  Run 'altergo --list' to see accounts, or 'altergo --help' for usage.",
+                    f"  Run 'altergo' to see accounts, or 'altergo --help' for usage.",
                     file=sys.stderr,
                 )
                 sys.exit(1)

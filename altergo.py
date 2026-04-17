@@ -586,6 +586,11 @@ def show_help():
         ),
         ("altergo --yolo", kw("altergo --yolo"), "Skip all provider permission prompts"),
         ("altergo --yolo-resume", kw("altergo --yolo-resume"), "Skip prompts + resume last session"),
+        (
+            "altergo --yolo-resume <id>",
+            f"{kw('altergo --yolo-resume')} {arg('<id>')}",
+            "Skip prompts + resume a specific session",
+        ),
     ]
     # Launcher keys rendered as freeform strings, not row() tuples
     _K = [
@@ -892,6 +897,7 @@ PROVIDERS = {
         "flags": {
             "skip_perms": ["--dangerously-skip-permissions"],
             "resume_last": ["--continue"],
+            "resume_by_id": ["--resume", "{id}"],
         },
     },
     "gemini": {
@@ -904,6 +910,7 @@ PROVIDERS = {
         "flags": {
             "skip_perms": ["--yolo"],
             "resume_last": ["--resume", "latest"],
+            "resume_by_id": ["--resume", "{id}"],
         },
     },
     "codex": {
@@ -917,6 +924,8 @@ PROVIDERS = {
             "skip_perms": ["--dangerously-bypass-approvals-and-sandbox"],
             # resume_last is a subcommand, handled specially in launch_claude
             "resume_subcommand": ["resume", "--last"],
+            # resume-by-id is also a subcommand: `codex resume <ID>`
+            "resume_by_id_subcommand": ["resume", "{id}"],
         },
     },
     "copilot": {
@@ -929,6 +938,9 @@ PROVIDERS = {
         "flags": {
             "skip_perms": ["--yolo"],
             "resume_last": ["--continue"],
+            # copilot CLI: `copilot --resume <SESSION-ID>` jumps to a specific session.
+            # Source: GitHub Copilot CLI docs (docs.github.com/en/copilot/how-tos/copilot-cli/chronicle).
+            "resume_by_id": ["--resume", "{id}"],
         },
     },
 }
@@ -1952,6 +1964,62 @@ def _is_newer(latest: str, current: str) -> bool:
     return a > b
 
 
+# Session IDs as produced by Claude Code, Gemini CLI, Codex, and Copilot are
+# all canonical UUIDs. We match case-insensitively and allow an optional
+# surrounding = sign from the --yolo-resume=ID form (handled before this regex
+# is consulted). Kept loose-ish to tolerate any future provider that emits a
+# UUID-shaped token; we deliberately do NOT accept arbitrary strings, so that
+# "altergo --yolo-resume 'write me a poem'" still sends the poem as a prompt.
+_SESSION_ID_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+    re.IGNORECASE,
+)
+
+
+def _looks_like_session_id(token: str) -> bool:
+    """Return True iff ``token`` matches the canonical UUID shape."""
+    return bool(_SESSION_ID_RE.match(token))
+
+
+def _extract_yolo_resume(args: list[str]) -> tuple[bool, str | None, list[str]]:
+    """Scan ``args`` for --yolo-resume, --yolo-resume=ID, or --yolo-resume ID.
+
+    Returns (present, session_id_or_None, args_with_flag_and_id_removed).
+
+    The paired-arg form (--yolo-resume ID) only consumes the following
+    token when it looks like a session ID — otherwise the token is left
+    untouched so a user passing a prompt isn't silently eaten.
+    """
+    present = False
+    session_id: str | None = None
+    out: list[str] = []
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a == "--yolo-resume":
+            present = True
+            # Consume next arg as ID only if it actually looks like one.
+            if i + 1 < len(args) and _looks_like_session_id(args[i + 1]):
+                session_id = args[i + 1]
+                i += 2
+                continue
+            i += 1
+            continue
+        if a.startswith("--yolo-resume="):
+            present = True
+            value = a.split("=", 1)[1]
+            # Honor whatever the user typed after the =; validating here
+            # would just produce a confusing "silently ignored" behavior.
+            # The provider CLI will reject a bad ID with its own error.
+            if value:
+                session_id = value
+            i += 1
+            continue
+        out.append(a)
+        i += 1
+    return present, session_id, out
+
+
 def _translate_yolo_flags(provider: str, args: list[str]) -> tuple[list[str], list[str], list[str]]:
     """Translate --yolo / --yolo-resume into provider-native flags.
 
@@ -1961,21 +2029,49 @@ def _translate_yolo_flags(provider: str, args: list[str]) -> tuple[list[str], li
     Both synthetic flags are stripped from cleaned_args regardless of whether
     the provider supports them.  If neither flag is present the call is a
     pure no-op: ([], args, []).
+
+    --yolo-resume accepts an optional session ID in either form:
+        --yolo-resume=<ID>
+        --yolo-resume <ID>   (only if the next token is UUID-shaped)
+    When present, the ID is substituted into the provider's ``resume_by_id``
+    template instead of using the last-session flags.
     """
-    yolo_resume = "--yolo-resume" in args
-    yolo = yolo_resume or "--yolo" in args
+    yolo_resume, session_id, args_after_resume = _extract_yolo_resume(list(args))
+    yolo = yolo_resume or "--yolo" in args_after_resume
 
     if not yolo:
         return [], args, []
 
-    # Strip synthetic flags.
-    cleaned = [a for a in args if a not in ("--yolo", "--yolo-resume")]
+    # Strip the remaining synthetic flag (--yolo). --yolo-resume was already
+    # consumed above along with any paired ID token.
+    cleaned = [a for a in args_after_resume if a != "--yolo"]
 
     prov_flags = PROVIDERS.get(provider, {}).get("flags", {})
     prefix: list[str] = []
     suffix: list[str] = []
 
-    if yolo_resume and provider == "codex":
+    if yolo_resume and session_id is not None:
+        # Resume-by-id: subcommand form (codex) wins over the flag form.
+        template: list[str] | None = None
+        if "resume_by_id_subcommand" in prov_flags:
+            template = list(prov_flags["resume_by_id_subcommand"])
+        elif "resume_by_id" in prov_flags:
+            template = list(prov_flags["resume_by_id"])
+        if template is None:
+            # Provider opted out of resume-by-id. Fail loud rather than
+            # silently dropping the ID (the original bug this change fixes).
+            display = PROVIDERS.get(provider, {}).get("display_name", provider)
+            print(
+                f"altergo: {display} does not support resume-by-id via altergo. "
+                f"Drop the session ID to resume the most recent session, or use "
+                f"the provider CLI directly.",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+        prefix = [tok.replace("{id}", session_id) for tok in template]
+        if "skip_perms" in prov_flags:
+            suffix = list(prov_flags["skip_perms"])
+    elif yolo_resume and provider == "codex":
         # codex uses a subcommand: codex resume --last [user-args] --bypass
         prefix = list(prov_flags.get("resume_subcommand", []))
         suffix = list(prov_flags.get("skip_perms", []))

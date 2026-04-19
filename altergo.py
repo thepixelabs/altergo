@@ -450,7 +450,7 @@ def show_banner(
 
 
 def show_help():
-    """Print --help output in a two-column layout with a shimmering divider."""
+    """Print --help output in a two-column layout."""
     grad = THEMES.get(get_current_theme(), THEMES[_DEFAULT_THEME])["banner"]
 
     def h(t):
@@ -468,11 +468,9 @@ def show_help():
     # ── layout constants ───────────────────────────────────────────────────────
     # Each column is COL_W visible chars wide (content only, no divider space).
     # Description offset within a column: _COL2 chars from column start.
-    # Divider sits at terminal column DIV_COL (1-indexed, between the columns).
     # Minimum terminal width for two-column mode: MIN_W.
     COL_W = 56  # visible width per column
     _COL2 = 32  # description offset inside a column (raw cmd + padding)
-    DIV_COL = 59  # 1-indexed terminal column of the │ character
     MIN_W = 118  # fall back to single-column below this
 
     # ── detect terminal width ──────────────────────────────────────────────────
@@ -592,13 +590,6 @@ def show_help():
             "Skip prompts + resume a specific session",
         ),
     ]
-    # Launcher keys rendered as freeform strings, not row() tuples
-    _K = [
-        f"  {kw('↑↓')} {kw('jk')}  move    {kw('←→')} {kw('hl')}  switch account",
-        f"  {kw('Enter')}  launch    {kw('t')}  cycle theme    {kw('s')}  shell",
-        f"  {kw('d')}  set default    {kw('p')} {kw('Tab')}  preview",
-        f"  {kw('/')}  search    {kw('g')} {kw('G')}  top/bottom    {kw('q')} {kw('Esc')}  quit",
-    ]
 
     # ── render a section into a list of padded strings ─────────────────────────
     def render_sec(title: str, items) -> list:
@@ -608,16 +599,6 @@ def show_help():
                 out.append(blank())
             else:
                 out.append(row(entry[0], entry[1], entry[2]))
-        return out
-
-    def render_keys(title: str, lines_raw: list) -> list:
-        out = [sec(title)]
-        for ln in lines_raw:
-            padded = ln
-            vis = _vis(padded)
-            if vis < COL_W:
-                padded += " " * (COL_W - vis)
-            out.append(padded)
         return out
 
     # ── build the two columns ──────────────────────────────────────────────────
@@ -630,7 +611,6 @@ def show_help():
         render_sec("Portal  ·  tmux-backed", SEC_PORTAL),
         render_sec("Customization", SEC_CUSTOM),
         render_sec("Advanced", SEC_ADVANCED),
-        render_keys("Launcher keys", _K),
     ]
 
     def _interleave_blank(sections: list[list]) -> list:
@@ -644,41 +624,6 @@ def show_help():
 
     left_rows = _interleave_blank(left_sections)
     right_rows = _interleave_blank(right_sections)
-
-    # ── shimmer animation for the divider ─────────────────────────────────────
-    _SHIMMER_PALETTE = [
-        "\033[38;5;255m",  # dist 0: bright white peak
-        "\033[38;5;231m",  # dist 1: off-white
-        "\033[38;5;195m",  # dist 2: pale cyan
-        "\033[38;5;159m",  # dist 3: light cyan
-        "\033[38;5;123m",  # dist 4: cyan
-        "\033[38;5;87m",  # dist 5: turquoise
-        "\033[38;5;45m",  # dist 6: cyan-blue
-        "\033[38;5;33m",  # dist 7: blue
-    ]
-    _SHIMMER_BASE = "\033[38;5;237m"
-    _RST = "\033[0m"
-
-    def _shimmer(num_rows: int, col: int) -> None:
-        """Animate a shimmering pass down the divider column."""
-        if not sys.stdout.isatty():
-            return
-        sys.stdout.write("\033[?25l")  # hide cursor
-        try:
-            for _ in range(2):  # two passes
-                for peak in range(-5, num_rows + 6):
-                    # Move cursor up to the first divider row
-                    sys.stdout.write(f"\033[{num_rows}A")
-                    for r in range(num_rows):
-                        d = abs(r - peak)
-                        color = _SHIMMER_PALETTE[d] if d < len(_SHIMMER_PALETTE) else _SHIMMER_BASE
-                        # Move to divider column, write │, move down one row, return to col 1
-                        sys.stdout.write(f"\033[{col}G{color}│{_RST}\033[B\033[1G")
-                    sys.stdout.flush()
-                    time.sleep(0.016)  # ~60 fps
-        finally:
-            sys.stdout.write("\033[?25h")  # show cursor
-            sys.stdout.flush()
 
     # ── print header ──────────────────────────────────────────────────────────
     pixelabs = _link("https://pixelabs.net", _c(C("brand"), "pixelabs.net"))
@@ -709,7 +654,6 @@ def show_help():
             lines += ["", sep(), "  " + h(title)]
             for entry in items:
                 lines.append(row1(entry[0], entry[1], entry[2]))
-        lines += ["", sep(), "  " + h("Launcher keys")] + _K
         lines += [
             "",
             dim("  altergo · open-source by pixelabs · not affiliated with Anthropic, Google, OpenAI, or GitHub"),
@@ -726,15 +670,15 @@ def show_help():
     left_rows += [blank()] * (n_rows - n_left)
     right_rows += [blank()] * (n_rows - n_right)
 
-    # DIV_COL is 1-indexed; the divider character is printed as part of the row
-    # render, so we use a dim │ placeholder in the static print, then shimmer.
     _div_char = _c(C("dim"), "│")
+
+    # Pad every left row to the widest left row so the divider column is
+    # straight even when individual rows exceed COL_W.
+    left_width = max(_vis(L) for L in left_rows)
 
     output_lines = []
     for L, R in zip(left_rows, right_rows):
-        # Pad L to exactly COL_W visible chars before the divider
-        vis_l = _vis(L)
-        gap = max(0, COL_W - vis_l)
+        gap = left_width - _vis(L)
         output_lines.append(f"{L}{' ' * gap} {_div_char} {R}")
 
     print("\n".join(output_lines))
@@ -743,19 +687,6 @@ def show_help():
     print()
     print(dim("  altergo · open-source by pixelabs · not affiliated with Anthropic, Google, OpenAI, or GitHub"))
     print()
-
-    # Shimmer: cursor is now just past the footer; walk back up past footer
-    # (2 lines: footer + blank), then animate the divider column.
-    if sys.stdout.isatty():
-        # After the two print()s and one print(footer), cursor is 3 lines below
-        # the last content row.  Step back up to the bottom of the content block,
-        # run the shimmer (which goes up n_rows then walks back down), then step
-        # back down over the 3 footer lines so the prompt lands correctly.
-        sys.stdout.write("\033[3A")  # up past: blank, footer, blank
-        sys.stdout.flush()
-        _shimmer(n_rows, DIV_COL)  # cursor ends at bottom of content block
-        sys.stdout.write("\033[3B\033[1G")  # back down over the 3 footer lines
-        sys.stdout.flush()
 
 
 # --- Config ---
@@ -5855,8 +5786,13 @@ def build_launcher_menu() -> list:
     return menu
 
 
-def _draw_launcher(stdscr, menu):
-    """Two-axis curses TUI: ↑↓ providers, ←→ account chips. Returns (account, shell_mode)."""
+def _draw_launcher(stdscr, menu, context_msg: str | None = None):
+    """Two-axis curses TUI: ↑↓ providers, ←→ account chips. Returns (account, shell_mode).
+
+    When ``context_msg`` is supplied, a banner row is rendered between the
+    header separator and the provider grid to explain why the user landed
+    here (e.g. pass-through of --yolo-resume <id>).
+    """
     curses.curs_set(0)
     attrs = _picker_attrs("launcher")
     stdscr.timeout(80)
@@ -5878,19 +5814,35 @@ def _draw_launcher(stdscr, menu):
         total_accounts = sum(len(p["accounts"]) for p in menu)
         n_providers = len(menu)
 
-        # Header
-        title = " altergo — launch"
+        # Header — styled like the settings tab bar (reverse video + bold)
+        # so the launcher visually matches the settings/help TUIs.
+        title = " altergo — pick account " if context_msg else " altergo — launch"
         prov_s = "s" if n_providers != 1 else ""
         acct_s = "s" if total_accounts != 1 else ""
         right = f"{n_providers} provider{prov_s} · {total_accounts} account{acct_s} "
         header = title.ljust(max_x - len(right)) + right
-        _safe_addnstr(stdscr, 0, 0, header[:max_x], max_x - 1, attrs["title"])
+        _safe_addnstr(stdscr, 0, 0, header[:max_x], max_x - 1, attrs["title"] | curses.A_REVERSE | curses.A_BOLD)
 
         # Separator
         _safe_addnstr(stdscr, 1, 0, ("─" * (max_x - 1))[: max_x - 1], max_x - 1, attrs["dim"])
 
-        # Provider rows (start at row 3, blank row between each)
-        row = 3
+        # Optional context banner — rendered when the picker is invoked as a
+        # single-shot pass-through (e.g. --yolo-resume with no active account).
+        grid_start = 3
+        if context_msg:
+            _safe_addnstr(stdscr, 2, 2, context_msg[: max_x - 3], max_x - 3, attrs["accent"] | curses.A_BOLD)
+            _safe_addnstr(
+                stdscr,
+                3,
+                2,
+                "The selected account will be set as default and receive the pending args.",
+                max_x - 3,
+                attrs["dim"],
+            )
+            grid_start = 5
+
+        # Provider rows (start below the optional banner, blank row between each)
+        row = grid_start
         for pi, prov in enumerate(menu):
             if row >= max_y - 3:
                 break
@@ -6168,22 +6120,38 @@ def _first_run_onboarding():
     interactive_launcher()
 
 
-def interactive_launcher():
+def interactive_launcher(pending_args: list | None = None, context_msg: str | None = None):
     """Show the provider+account picker and launch the selected account.
 
-    Loops: after each session exits the menu is shown again so the user
-    can launch another account or press q to quit.
+    When ``pending_args`` is supplied, the picker renders a context banner
+    (``context_msg``) explaining the pass-through, promotes the chosen
+    account to the active one via ``set_active_account``, forwards the
+    args to the single launch, and returns instead of looping — so the
+    user isn't dropped back into a picker after their --yolo-resume exits.
+
+    Otherwise it loops: after each session exits the menu is shown again
+    so the user can launch another account or press q to quit.
     """
+    single_shot = pending_args is not None
     while True:
         menu = build_launcher_menu()
         if not menu:
             print("altergo: no accounts found. Run 'altergo --config' first.", file=sys.stderr)
             sys.exit(1)
         show_banner()
-        result = curses.wrapper(_draw_launcher, menu)
+        result = curses.wrapper(_draw_launcher, menu, context_msg)
         account, shell_mode = result if result else (None, False)
         if not account:
             sys.exit(0)
+        if single_shot:
+            try:
+                set_active_account(account)
+            except Exception:
+                pass  # don't fail the launch if we can't persist the pick
+            if shell_mode:
+                sys.exit(launch_shell(account))
+            else:
+                sys.exit(launch_claude(account, list(pending_args or [])))
         if shell_mode:
             launch_shell(account)
         else:
@@ -6464,7 +6432,17 @@ def main():
         elif len(_all_accounts) == 1:
             account = _all_accounts[0]
         elif len(_all_accounts) > 1 and sys.stdout.isatty():
-            interactive_launcher()
+            # Pass-through case: the user ran `altergo <flags>` with no active
+            # account. We route the original args through the picker so e.g.
+            # --yolo-resume <id> isn't silently dropped when the user picks.
+            if args:
+                _preview = " ".join(args)
+                if len(_preview) > 60:
+                    _preview = _preview[:57] + "..."
+                _ctx = f"No default account set. Pick one — '{_preview}' will run against it."
+                interactive_launcher(pending_args=args, context_msg=_ctx)
+            else:
+                interactive_launcher()
             sys.exit(0)
         elif not _all_accounts:
             if sys.stdout.isatty():

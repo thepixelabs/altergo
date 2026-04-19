@@ -1,6 +1,24 @@
 # CHANGELOG
 
 
+## v0.39.1 (2026-04-19)
+
+### Bug Fixes
+
+- Simplify --help divider and drop launcher keys section
+  ([#19](https://github.com/thepixelabs/altergo/pull/19),
+  [`d7e2871`](https://github.com/thepixelabs/altergo/commit/d7e28714bf46b66241b1c3f4c1e697c376334635))
+
+* fix: simplify --help divider and drop launcher keys section
+
+Remove the shimmering divider animation in show_help() — it blocked the terminal for ~1.6s and
+  overwrote left-column text that extended past the fixed divider column. Divider is now pinned to
+  the widest left row so it renders as a single straight line regardless of row overflow. Also drop
+  the "Launcher keys" section from both the two-column and single-column layouts.
+
+* style: ruff format
+
+
 ## v0.39.0 (2026-04-17)
 
 ### Features

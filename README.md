@@ -135,6 +135,7 @@ That is the full workflow. The first time you run `altergo personal`, your confi
 
 - `altergo --search "docker build"` — full-text search across every session from every account
 - `altergo --resume` — interactive picker; press `/` to search, `f` to filter by provider, `s` to change sort
+- `altergo work --add-provider codex` — one identity, many tools: your `work` account can run claude AND codex AND gemini, switched by `altergo work codex` etc.
 - `altergo --settings` — enable **tmux sessions** so your AI keeps running when SSH drops
 - `altergo native` — launch your provider against your real `$HOME` (bypass isolation when you need it)
 - `altergo --rename old new` — rename an account without losing credentials or history
@@ -174,6 +175,9 @@ That is the full workflow. The first time you run `altergo personal`, your confi
 | `altergo --resume <id>` | Resume a specific session by ID directly |
 | `altergo --search <query>` | Full-text search across every session from every account |
 | `altergo --config <name>` | Create or reconfigure a named account, wire symlinks automatically |
+| `altergo <name> --add-provider <id>` | Add another provider to an existing account (reconciles any orphan data) |
+| `altergo <name> --remove-provider <id>` | Remove a provider from an account (session data in MAIN_HOME untouched) |
+| `altergo <name> --default-provider <id>` | Set which provider plain `altergo <name>` launches |
 | `altergo --rename <old> <new>` | Rename an existing account (credentials and history preserved) |
 | `altergo --teardown` | Remove symlinks (account directory and credentials untouched) |
 | `altergo --teardown --name <n>` | Remove a specific named account's symlinks |

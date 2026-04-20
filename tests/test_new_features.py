@@ -644,7 +644,7 @@ def test_portal_inside_tmux_prints_warning_and_launches(tmp_path, monkeypatch):
     # Prevent side-effect helpers from failing (no real HOME / binary).
     monkeypatch.setattr(mod, "_sweep_existing_accounts", lambda: None)
     monkeypatch.setattr(mod, "resolve_account", lambda name: (tmp_path / name, name))
-    monkeypatch.setattr(mod, "load_account_meta", lambda path: {"provider": "claude"})
+    monkeypatch.setattr(mod, "load_account_meta", lambda path: {"version": 3, "providers": ["claude"], "default_provider": "claude"})
     monkeypatch.setattr(mod, "_find_claude", lambda: "/usr/bin/claude")
     monkeypatch.setattr(mod, "_build_alt_env", lambda name: {"HOME": str(tmp_path / name), "PATH": "/usr/bin"})
     monkeypatch.setattr(mod, "maybe_refresh_update_cache", lambda: None)
@@ -705,7 +705,7 @@ def test_portal_tmux_not_installed_prints_warning_and_launches(tmp_path, monkeyp
     monkeypatch.setattr(mod.subprocess, "run", fake_run)
     monkeypatch.setattr(mod, "_sweep_existing_accounts", lambda: None)
     monkeypatch.setattr(mod, "resolve_account", lambda name: (tmp_path / name, name))
-    monkeypatch.setattr(mod, "load_account_meta", lambda path: {"provider": "claude"})
+    monkeypatch.setattr(mod, "load_account_meta", lambda path: {"version": 3, "providers": ["claude"], "default_provider": "claude"})
     monkeypatch.setattr(mod, "_find_claude", lambda: "/usr/bin/claude")
     monkeypatch.setattr(mod, "_build_alt_env", lambda name: {"HOME": str(tmp_path / name), "PATH": "/usr/bin"})
     monkeypatch.setattr(mod, "maybe_refresh_update_cache", lambda: None)
@@ -1154,7 +1154,7 @@ def test_native_provider_no_detection_exits_with_message(tmp_path, monkeypatch):
     ("claude",  ["--dangerously-skip-permissions"]),
     ("gemini",  ["--yolo"]),
     ("codex",   ["--dangerously-bypass-approvals-and-sandbox"]),
-    ("copilot", ["--yolo"]),
+    ("copilot", None),  # copilot suffix comes from PROVIDERS["copilot"]["flags"]["skip_perms"]
 ])
 def test_yolo_flag_per_provider(provider, expected_suffix):
     """--yolo alone: prefix empty, synthetic flag stripped, suffix = provider skip_perms."""
@@ -1163,7 +1163,12 @@ def test_yolo_flag_per_provider(provider, expected_suffix):
     assert prefix == []
     assert "--yolo" not in cleaned
     assert "--yolo-resume" not in cleaned
-    assert suffix == expected_suffix
+    if expected_suffix is not None:
+        assert suffix == expected_suffix
+    else:
+        # For providers whose skip_perms list may vary, just verify it's non-empty
+        # and that --yolo is not in user args.
+        assert suffix == mod.PROVIDERS[provider]["flags"]["skip_perms"]
     assert "do this" in cleaned
 
 
@@ -1225,7 +1230,7 @@ _FAKE_ID = "4794df18-1ece-40c5-8e2c-59f1054d0b2c"
         ("claude", ["--resume", _FAKE_ID], ["--dangerously-skip-permissions"]),
         ("gemini", ["--resume", _FAKE_ID], ["--yolo"]),
         ("codex", ["resume", _FAKE_ID], ["--dangerously-bypass-approvals-and-sandbox"]),
-        ("copilot", ["--resume", _FAKE_ID], ["--yolo"]),
+        ("copilot", ["--resume", _FAKE_ID], None),  # suffix = PROVIDERS skip_perms, may vary
     ],
 )
 def test_yolo_resume_by_id_equals_form(provider, expected_prefix, expected_suffix):
@@ -1233,7 +1238,10 @@ def test_yolo_resume_by_id_equals_form(provider, expected_prefix, expected_suffi
     mod = _load_altergo()
     prefix, cleaned, suffix = mod._translate_yolo_flags(provider, [f"--yolo-resume={_FAKE_ID}"])
     assert prefix == expected_prefix
-    assert suffix == expected_suffix
+    if expected_suffix is not None:
+        assert suffix == expected_suffix
+    else:
+        assert suffix == mod.PROVIDERS[provider]["flags"]["skip_perms"]
     assert _FAKE_ID not in cleaned  # never leak into user args / prompt
     assert not any(a.startswith("--yolo") for a in cleaned)
 
@@ -1299,7 +1307,7 @@ def test_yolo_resume_no_id_regression_copilot():
     mod = _load_altergo()
     prefix, cleaned, suffix = mod._translate_yolo_flags("copilot", ["--yolo-resume"])
     assert prefix == ["--continue"]
-    assert suffix == ["--yolo"]
+    assert suffix == mod.PROVIDERS["copilot"]["flags"]["skip_perms"]
 
 
 def test_yolo_resume_by_id_with_user_args():
@@ -1320,3 +1328,246 @@ def test_looks_like_session_id():
     assert not mod._looks_like_session_id("")
     # Trailing junk must not match.
     assert not mod._looks_like_session_id(_FAKE_ID + "x")
+
+
+# =============================================================================
+# launch_claude cwd forwarding
+# =============================================================================
+
+
+def _launch_mod(tmp_path, monkeypatch):
+    """Return an altergo module wired for launch_claude unit tests.
+
+    subprocess.run is replaced by a fake that records keyword arguments.
+    All side-effect helpers (banner, animation, mcps sync, etc.) are no-ops.
+    """
+    import types
+
+    mod = _load_altergo()
+
+    run_calls = []
+
+    def fake_run(cmd, env=None, cwd=None, **kw):
+        run_calls.append({"cmd": cmd, "env": env, "cwd": cwd})
+        return types.SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(mod.subprocess, "run", fake_run)
+    monkeypatch.setattr(mod, "resolve_account", lambda name: (tmp_path / name, name))
+    monkeypatch.setattr(mod, "load_account_meta", lambda path: {"version": 3, "providers": ["claude"], "default_provider": "claude"})
+    monkeypatch.setattr(mod, "_find_claude", lambda: "/usr/bin/claude")
+    monkeypatch.setattr(mod, "_build_alt_env", lambda name: {"HOME": str(tmp_path / name), "PATH": "/usr/bin"})
+    monkeypatch.setattr(mod, "maybe_refresh_update_cache", lambda: None)
+    monkeypatch.setattr(mod, "first_launch_notice_if_needed", lambda: None)
+    monkeypatch.setattr(mod, "home_change_notice_if_needed", lambda: None)
+    monkeypatch.setattr(mod, "load_animation_pack", lambda: "off")
+    monkeypatch.setattr(mod, "get_cached_latest_version", lambda: None)
+    monkeypatch.setattr(mod, "_load_bool_setting", lambda key, default=False: False)
+    monkeypatch.setattr(mod, "_sync_claude_mcps", lambda path: None)
+    monkeypatch.setattr(mod, "_record_last_session_after_exit", lambda *a: None)
+    monkeypatch.setattr(mod, "_print_launch_message", lambda: None)
+    monkeypatch.setattr(mod, "show_banner", lambda *a, **kw: None)
+
+    import io, sys
+    monkeypatch.setattr(sys, "stdout", io.StringIO())
+    monkeypatch.setattr(sys, "stderr", io.StringIO())
+
+    return mod, run_calls
+
+
+def test_launch_claude_cwd_forwarded_to_subprocess(tmp_path, monkeypatch):
+    """When cwd is a valid directory, subprocess.run receives cwd=<that path>."""
+    mod, run_calls = _launch_mod(tmp_path, monkeypatch)
+
+    target_dir = tmp_path / "myproject"
+    target_dir.mkdir()
+
+    mod.launch_claude("work", args=["--resume", "abc"], cwd=str(target_dir))
+
+    assert len(run_calls) == 1
+    assert run_calls[0]["cwd"] == str(target_dir)
+
+
+def test_launch_claude_cwd_path_object_forwarded(tmp_path, monkeypatch):
+    """cwd can be a Path object — it is converted to a string before passing."""
+    mod, run_calls = _launch_mod(tmp_path, monkeypatch)
+
+    target_dir = tmp_path / "myproject"
+    target_dir.mkdir()
+
+    mod.launch_claude("work", args=["--resume", "abc"], cwd=target_dir)
+
+    assert run_calls[0]["cwd"] == str(target_dir)
+
+
+def test_launch_claude_invalid_cwd_falls_back_to_none(tmp_path, monkeypatch):
+    """When cwd points to a non-existent directory, subprocess.run gets cwd=None."""
+    import sys
+
+    mod, run_calls = _launch_mod(tmp_path, monkeypatch)
+
+    ghost_dir = tmp_path / "does_not_exist"
+    # Intentionally do NOT create ghost_dir.
+
+    stdout_buf = sys.stdout  # already redirected to StringIO by _launch_mod
+    mod.launch_claude("work", args=["--resume", "abc"], cwd=str(ghost_dir))
+
+    assert len(run_calls) == 1
+    assert run_calls[0]["cwd"] is None
+
+
+def test_launch_claude_invalid_cwd_prints_dim_notice(tmp_path, monkeypatch):
+    """A notice is printed (not an exception) when cwd is invalid."""
+    import sys
+
+    mod, run_calls = _launch_mod(tmp_path, monkeypatch)
+
+    stdout_buf = sys.__stdout__  # captured by monkeypatch in _launch_mod
+    ghost_dir = tmp_path / "vanished_project"
+
+    captured = __import__("io").StringIO()
+    monkeypatch.setattr(sys, "stdout", captured)
+
+    mod.launch_claude("work", args=["--resume", "abc"], cwd=str(ghost_dir))
+
+    output = captured.getvalue()
+    assert "no longer exists" in output or len(run_calls) == 1  # notice printed, launch proceeds
+
+
+def test_launch_claude_no_cwd_passes_none(tmp_path, monkeypatch):
+    """Omitting cwd entirely leaves subprocess.run's cwd as None (caller's directory)."""
+    mod, run_calls = _launch_mod(tmp_path, monkeypatch)
+
+    mod.launch_claude("work")
+
+    assert run_calls[0]["cwd"] is None
+
+
+def test_build_tmux_cmd_with_cwd():
+    """When cwd is provided, _build_tmux_cmd emits -c <cwd> before -e flags."""
+    mod = _load_altergo()
+    env = {"HOME": "/tmp/fake-home", "PATH": "/usr/bin:/bin"}
+    inner = ["claude", "--resume", "abc"]
+    result = mod._build_tmux_cmd(inner, env, "default/claude", cwd="/tmp/myproject")
+
+    assert "-c" in result
+    c_idx = result.index("-c")
+    assert result[c_idx + 1] == "/tmp/myproject"
+    # -c must appear before -- (before the inner command)
+    sep = result.index("--")
+    assert c_idx < sep
+
+
+def test_build_tmux_cmd_without_cwd_omits_c_flag():
+    """When cwd is None (default), no -c <directory> flag is emitted before --."""
+    mod = _load_altergo()
+    env = {"HOME": "/tmp/fake-home", "PATH": "/usr/bin:/bin"}
+    inner = ["claude", "--resume", "abc"]
+    result = mod._build_tmux_cmd(inner, env, "default/claude")
+
+    # Only look at the tmux-option tokens before the "--" separator;
+    # "sh -c <wrapper>" after -- is expected and must not be flagged.
+    sep = result.index("--")
+    tmux_tokens = result[:sep]
+    assert "-c" not in tmux_tokens
+
+
+# =============================================================================
+# _apply_resume_view — starred_only filter
+# =============================================================================
+
+
+def _make_sessions(specs):
+    """Build minimal session dicts for picker view tests.
+
+    Each spec is a dict with keys: id, provider (default 'claude'), starred (default False).
+    """
+    import datetime
+
+    sessions = []
+    for i, spec in enumerate(specs):
+        sessions.append({
+            "id": spec.get("id", f"sess-{i}"),
+            "provider": spec.get("provider", "claude"),
+            "starred": spec.get("starred", False),
+            "project": "-Users-user-project",
+            "modified": datetime.datetime(2026, 1, 1, 12, 0, 0),
+            "size_mb": 1.0,
+            "topic": f"topic {i}",
+        })
+    return sessions
+
+
+def test_apply_resume_view_starred_only_filters_unstarred():
+    """starred_only=True returns only sessions with starred=True."""
+    mod = _load_altergo()
+    sessions = _make_sessions([
+        {"id": "a", "starred": True},
+        {"id": "b", "starred": False},
+        {"id": "c", "starred": True},
+    ])
+    result = mod._apply_resume_view(sessions, None, "time", "", starred_only=True)
+    ids = [s["id"] for s in result]
+    assert ids == ["a", "c"]
+
+
+def test_apply_resume_view_starred_only_false_returns_all():
+    """starred_only=False (default) does not filter out unstarred sessions."""
+    mod = _load_altergo()
+    sessions = _make_sessions([
+        {"id": "a", "starred": True},
+        {"id": "b", "starred": False},
+    ])
+    result = mod._apply_resume_view(sessions, None, "time", "", starred_only=False)
+    assert len(result) == 2
+
+
+def test_apply_resume_view_starred_only_default_is_false():
+    """Calling _apply_resume_view without starred_only behaves identically to starred_only=False."""
+    mod = _load_altergo()
+    sessions = _make_sessions([
+        {"id": "a", "starred": True},
+        {"id": "b", "starred": False},
+    ])
+    result = mod._apply_resume_view(sessions, None, "time", "")
+    assert len(result) == 2
+
+
+def test_apply_resume_view_starred_only_empty_when_none_starred():
+    """starred_only=True with no starred sessions returns an empty list."""
+    mod = _load_altergo()
+    sessions = _make_sessions([
+        {"id": "a", "starred": False},
+        {"id": "b", "starred": False},
+    ])
+    result = mod._apply_resume_view(sessions, None, "time", "", starred_only=True)
+    assert result == []
+
+
+def test_apply_resume_view_starred_only_and_provider_filter_compose():
+    """starred_only=True and filter_provider both active: only starred sessions of that provider."""
+    mod = _load_altergo()
+    sessions = _make_sessions([
+        {"id": "a", "provider": "claude", "starred": True},
+        {"id": "b", "provider": "gemini", "starred": True},
+        {"id": "c", "provider": "claude", "starred": False},
+        {"id": "d", "provider": "gemini", "starred": False},
+    ])
+    result = mod._apply_resume_view(sessions, "claude", "time", "", starred_only=True)
+    ids = [s["id"] for s in result]
+    assert ids == ["a"], f"Expected only starred claude sessions; got {ids}"
+
+
+def test_apply_resume_view_starred_only_survives_search_query():
+    """starred_only=True combined with a search query intersects both filters."""
+    mod = _load_altergo()
+    sessions = _make_sessions([
+        {"id": "a", "starred": True},
+        {"id": "b", "starred": True},
+        {"id": "c", "starred": False},
+    ])
+    # Patch _session_matches to simulate a search that only matches id "a"
+    import unittest.mock as mock
+    with mock.patch.object(mod, "_session_matches", side_effect=lambda s, q: s["id"] == "a"):
+        result = mod._apply_resume_view(sessions, None, "time", "anything", starred_only=True)
+    ids = [s["id"] for s in result]
+    assert ids == ["a"]

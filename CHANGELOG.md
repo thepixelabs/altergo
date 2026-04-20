@@ -1,6 +1,61 @@
 # CHANGELOG
 
 
+## v0.40.0 (2026-04-20)
+
+### Features
+
+- Multi-provider altergo accounts ([#23](https://github.com/thepixelabs/altergo/pull/23),
+  [`9c31513`](https://github.com/thepixelabs/altergo/commit/9c3151350ac42b8dacec35fcb4ee3b8540ebf0c7))
+
+* fix: launch resumed sessions in the session's saved cwd
+
+Thread an optional cwd parameter through launch_claude and _build_tmux_cmd so --recall and --search
+  resume the provider CLI in the directory where the session originally ran. Invalid/missing paths
+  fall back to None with a dim notice rather than aborting.
+
+* feat: scan Gemini, Codex, and Copilot sessions in --recall
+
+Adds per-provider session discoverers (_discover_codex_sessions, _discover_gemini_sessions,
+  _discover_copilot_sessions) alongside the existing Claude discoverer, unified under
+  get_sessions(). Each discoverer yields fully-populated session dicts (id, project, cwd, modified,
+  size_mb, path, topic, provider, starred). Per-provider head scanners extract topic and cwd from
+  each format. load_session_preview now dispatches by provider so the preview pane works for all
+  four. format_project_name passes plain labels through without dash-decoding. Includes 20 new unit
+  tests covering all providers, edge cases (sentinel skip, string content, fallback paths), and the
+  preview dispatch.
+
+* feat: add starred-only filter and rebind star toggle to b
+
+Press * in the recall picker to toggle a starred-only view (orthogonal to provider filter and
+  search). Press b to bookmark/unbookmark the highlighted session. Title bar, status bar, and nav
+  footer all reflect the new state. _apply_resume_view gains a starred_only parameter.
+
+* feat: multi-provider altergo accounts
+
+Let one altergo account declare multiple providers (Claude Code, Gemini CLI, Codex, Copilot) instead
+  of being pinned to one. account.json schema bumps to v3:
+
+{"version": 3, "providers": ["claude", "codex"], "default_provider": "claude"}
+
+v2 files (`{"provider": "claude"}`) load forever without being rewritten — disk flips to v3 only
+  when the user mutates the account via one of the new commands.
+
+New CLI: altergo <name> --add-provider <id> altergo <name> --remove-provider <id> [--yes] altergo
+  <name> --default-provider <id>
+
+--add-provider reconciles any account-local orphan data for that provider (from pre-multi-provider
+  era shells that wrote under the account's isolated .codex/.gemini/.copilot) by merging it into
+  MAIN_HOME. MAIN wins on collision; losers preserved under <dot_dir>.orphaned/<timestamp>/ —
+  nothing silently destroyed.
+
+Launcher renders a multi-provider account under each of its providers; picking a chip launches with
+  that provider explicitly. launch_claude gains a membership guard that refuses explicit `--provider
+  X` for an account that does not host X (with a remediation hint).
+
+No UX regression for existing single-provider accounts — opt-in and additive.
+
+
 ## v0.39.1 (2026-04-19)
 
 ### Bug Fixes

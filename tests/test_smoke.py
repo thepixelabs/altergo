@@ -688,8 +688,8 @@ def _write_account_json(account_home, data):
     (account_home / "account.json").write_text(json.dumps(data))
 
 
-def test_load_account_meta_v2_passthrough(tmp_path):
-    """v2 file is returned unchanged without any upgrade logic applied."""
+def test_load_account_meta_v2_presents_as_v3(tmp_path):
+    """A v2 file on disk is coerced to v3 shape in memory without being rewritten."""
     account_home = tmp_path / "acct"
     _write_account_json(account_home, {
         "version": 2,
@@ -697,9 +697,15 @@ def test_load_account_meta_v2_passthrough(tmp_path):
         "created": "2026-01-01T00:00:00",
     })
     result = altergo.load_account_meta(account_home)
-    assert result["version"] == 2
-    assert result["provider"] == "gemini"
+    assert result["version"] == 3
+    assert result["providers"] == ["gemini"]
+    assert result["default_provider"] == "gemini"
+    # Auxiliary fields survive coercion.
     assert result["created"] == "2026-01-01T00:00:00"
+    # Disk is NOT rewritten on read — v2 form remains on disk.
+    on_disk = json.loads((account_home / "account.json").read_text())
+    assert on_disk["version"] == 2
+    assert on_disk["provider"] == "gemini"
 
 
 # ---------------------------------------------------------------------------
@@ -727,7 +733,7 @@ def test_use_subcommand_exits_with_separate_account_message(fake_home, monkeypat
 
 # T-D: load_account_meta on a corrupt v2 file (missing "provider") returns safe default
 def test_load_account_meta_v2_missing_provider_returns_default(tmp_path):
-    """A v2 file without a 'provider' key returns a safe fallback without crashing."""
+    """A v2 file without a 'provider' key returns a safe v3 default without crashing."""
     account_home = tmp_path / "acct"
     _write_account_json(account_home, {
         "version": 2,
@@ -735,8 +741,9 @@ def test_load_account_meta_v2_missing_provider_returns_default(tmp_path):
         # "provider" key intentionally absent
     })
     result = altergo.load_account_meta(account_home)
-    assert result["version"] == 2
-    assert result["provider"] == "claude"
+    assert result["version"] == 3
+    assert result["providers"] == ["claude"]
+    assert result["default_provider"] == "claude"
 
 
 # T-E: integration — v1 multi-provider file on disk, 'use' subcommand exits 1 with --config hint

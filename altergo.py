@@ -6,8 +6,10 @@ __version__ = "0.39.1"
 import curses
 import json
 import os
+import plistlib
 import pwd
 import re
+import secrets
 import shlex
 import shutil
 import subprocess
@@ -537,6 +539,23 @@ def show_help():
         ("altergo --teardown", f"{kw('altergo --teardown')} {arg('[--name <n>]')}", "Remove account + symlinks"),
         ("altergo --settings", kw("altergo --settings"), "Manage shared credentials"),
     ]
+    SEC_MULTI_PROVIDER = [
+        (
+            "altergo <name> --add-provider",
+            f"{kw('altergo')} {arg('<name>')} {kw('--add-provider')} {arg('<id>')}",
+            "Add another provider to account",
+        ),
+        (
+            "altergo <name> --remove-provider",
+            f"{kw('altergo')} {arg('<name>')} {kw('--remove-provider')} {arg('<id>')}",
+            "Remove a provider from account",
+        ),
+        (
+            "altergo <name> --default-provider",
+            f"{kw('altergo')} {arg('<name>')} {kw('--default-provider')} {arg('<id>')}",
+            "Set default provider for account",
+        ),
+    ]
     SEC_SESSIONS = [
         ("altergo --recall", kw("altergo --recall"), "Pick session interactively"),
         ("altergo --resume", kw("altergo --resume"), "Provider's native resume"),
@@ -605,6 +624,7 @@ def show_help():
     left_sections: list[list] = [
         render_sec("Launch", SEC_LAUNCH),
         render_sec("Accounts", SEC_ACCOUNTS),
+        render_sec("Multi-provider", SEC_MULTI_PROVIDER),
         render_sec("Sessions", SEC_SESSIONS),
     ]
     right_sections: list[list] = [
@@ -646,6 +666,7 @@ def show_help():
         for title, items in [
             ("Launch", SEC_LAUNCH),
             ("Accounts", SEC_ACCOUNTS),
+            ("Multi-provider", SEC_MULTI_PROVIDER),
             ("Sessions", SEC_SESSIONS),
             ("Portal  ·  tmux-backed, reconnect from anywhere", SEC_PORTAL),
             ("Customization", SEC_CUSTOM),
@@ -867,7 +888,7 @@ PROVIDERS = {
         "symlink_dirs": ["session-state", "agents", "skills", "hooks"],
         "symlink_files": ["mcp-config.json", "lsp-config.json"],
         "flags": {
-            "skip_perms": ["--yolo"],
+            "skip_perms": ["--yolo", "--autopilot"],
             "resume_last": ["--continue"],
             # copilot CLI: `copilot --resume <SESSION-ID>` jumps to a specific session.
             # Source: GitHub Copilot CLI docs (docs.github.com/en/copilot/how-tos/copilot-cli/chronicle).
@@ -1058,30 +1079,61 @@ CATALOG = [
 
 
 def load_account_meta(account_home: Path) -> dict:
-    """Load account metadata. Returns dict with a single 'provider' string.
+    """Load account metadata. Returns v3-shape dict in memory regardless of on-disk form.
 
     Schema versions:
-      v2: {"version": 2, "provider": "<id>", ...}  — returned as-is
-      legacy: no account.json but .claude/ exists → {"version": 2, "provider": "claude"}
+      v3: {"version": 3, "providers": ["<id>", ...], "default_provider": "<id>"}
+      v2 (legacy): {"version": 2, "provider": "<id>", ...} — coerced in memory
+      legacy: no account.json but .claude/ exists → {"version": 3, "providers": ["claude"], ...}
       no account: returns None
+
+    Disk is not rewritten on read. v2 files load forever; disk flips to v3 only
+    when a mutating operation runs (e.g. --add-provider).
     """
     meta_file = account_home / "account.json"
     if meta_file.exists():
         try:
             data = json.loads(meta_file.read_text())
         except Exception:
-            return {"version": 2, "provider": "claude"}
-        if data.get("version") == 2:
-            if "provider" in data:
-                return data
-            # Corrupt v2 — provider key missing
-            return {"version": 2, "provider": "claude"}
-        # Unrecognised format — safe fallback
-        return {"version": 2, "provider": "claude"}
-    # Legacy account: .claude dir exists but no account.json
+            return _coerce_meta_v3({})
+        return _coerce_meta_v3(data)
     if (account_home / ".claude").exists():
-        return {"version": 2, "provider": "claude"}
+        return _coerce_meta_v3({"provider": "claude"})
     return None
+
+
+def _coerce_meta_v3(data: dict) -> dict:
+    """Return a v3-shape dict from v2 single-string or v3 list input.
+
+    Unknown provider IDs are filtered against PROVIDERS; empty result falls back
+    to ['claude']. Stale or missing default_provider coerces to providers[0].
+    Auxiliary keys on the input (e.g. ``created``, ``keychain``) are preserved
+    so downstream code that reads them still sees them after coercion. Pure
+    in-memory transform — no disk I/O.
+    """
+    out: dict = {k: v for k, v in data.items() if k not in ("version", "provider", "providers", "default_provider")}
+    if data.get("version") == 3 and isinstance(data.get("providers"), list) and data["providers"]:
+        seen: set[str] = set()
+        providers: list[str] = []
+        for p in data["providers"]:
+            if isinstance(p, str) and p in PROVIDERS and p not in seen:
+                seen.add(p)
+                providers.append(p)
+        if not providers:
+            providers = ["claude"]
+        default = data.get("default_provider")
+        if not isinstance(default, str) or default not in providers:
+            default = providers[0]
+    else:
+        provider = data.get("provider") if isinstance(data.get("provider"), str) else "claude"
+        if provider not in PROVIDERS:
+            provider = "claude"
+        providers = [provider]
+        default = provider
+    out["version"] = 3
+    out["providers"] = providers
+    out["default_provider"] = default
+    return out
 
 
 def _read_account_email(account_name: str) -> str | None:
@@ -2388,14 +2440,21 @@ def home_change_notice_if_needed() -> None:
 
 
 def get_active_account() -> str | None:
-    """Return the persisted active account name, or None if not set / no longer valid."""
+    """Return the persisted active account name, or None if not set / no longer valid.
+
+    The reserved "native" account is always considered valid (it doesn't live
+    under ACCOUNTS_DIR — it's a passthrough to the real $HOME).
+    """
     if not SETTINGS_FILE.exists():
         return None
     try:
         data = json.loads(SETTINGS_FILE.read_text())
         name = data.get("active_account")
-        if name and isinstance(name, str) and (ACCOUNTS_DIR / name).is_dir():
-            return name
+        if name and isinstance(name, str):
+            if name == _NATIVE_ACCOUNT:
+                return name
+            if (ACCOUNTS_DIR / name).is_dir():
+                return name
         return None
     except Exception:
         return None
@@ -2404,23 +2463,25 @@ def get_active_account() -> str | None:
 def _account_for_provider(provider_id: str) -> str | None:
     """Return an account name suitable for launching sessions of ``provider_id``.
 
-    Prefers the active account if its provider matches; otherwise returns the
-    first account whose ``account.json`` names the same provider. Returns None
-    when no account is configured for that provider.
+    Prefers the active account if its ``providers`` list includes the requested
+    id; otherwise returns the first account that does. Returns None when no
+    account is configured for that provider.
     """
     accounts = list_accounts()
     if not accounts:
         return None
 
-    def _provider_of(acct_name: str) -> str:
+    def _has_provider(acct_name: str) -> bool:
         meta = load_account_meta(ACCOUNTS_DIR / acct_name)
-        return meta["provider"] if meta else "claude"
+        if meta is None:
+            return provider_id == "claude"
+        return provider_id in meta["providers"]
 
     active = get_active_account()
-    if active and active in accounts and _provider_of(active) == provider_id:
+    if active and active in accounts and _has_provider(active):
         return active
     for acct in accounts:
-        if _provider_of(acct) == provider_id:
+        if _has_provider(acct):
             return acct
     return None
 
@@ -2713,7 +2774,132 @@ def do_star(session_id: str | None = None) -> None:
     print(_c(C("dim"), f"  {topic_hint}"))
 
 
-def do_config(account: str = "default", provider: str = "claude"):
+def _apply_provider_setup(
+    account_home: Path, provider_id: str, *, account_name: str = "", silent: bool = False
+) -> None:
+    """Idempotently install symlinks + credential check for one provider under account_home.
+
+    Creates:
+      - account_home/<dot_dir>/<sub> → MAIN_HOME/<dot_dir>/<sub>  (for each symlink_dirs)
+      - account_home/<dot_dir>/<file> → MAIN_HOME/<dot_dir>/<file>  (for each symlink_files)
+      - account_home/<home_file> → MAIN_HOME/<home_file>  (for each symlink_home_files)
+
+    Prints per-step status unless ``silent=True``.  For claude, additionally
+    invokes :func:`_sync_claude_mcps` so per-account oauthAccount metadata is
+    preserved across the shared .claude.json.
+    """
+    prov = PROVIDERS.get(provider_id)
+    if prov is None:
+        raise ValueError(f"unknown provider id: {provider_id!r}")
+
+    main_dot_dir = MAIN_HOME / prov["dot_dir"]
+    acct_dot_dir = account_home / prov["dot_dir"]
+
+    if not silent:
+        print()
+        print(_c(1, _c(36, f"=== Provider: {prov['display_name']} ===")))
+
+    acct_dot_dir.mkdir(parents=True, exist_ok=True)
+
+    for name in prov["symlink_dirs"]:
+        src = main_dot_dir / name
+        dst = acct_dot_dir / name
+
+        if dst.is_symlink():
+            target = dst.resolve()
+            if not silent:
+                if target == src.resolve():
+                    print(f"  {_c(32, '✓')} {name}/ already symlinked")
+                else:
+                    print(f"  {_c(33, '⚠')} {name}/ symlinked to {target} (expected {src})")
+            continue
+
+        was_absent = not dst.exists()
+        _ensure_symlinked_dir(name, src, dst, acct_dot_dir)
+        if was_absent and dst.is_symlink() and not silent:
+            print(f"  {_c(32, '✓')} Symlinked {name}/")
+
+    for name in prov["symlink_files"]:
+        src = main_dot_dir / name
+        dst = acct_dot_dir / name
+
+        if not src.exists():
+            continue
+
+        if dst.is_symlink():
+            if not silent:
+                print(f"  {_c(32, '✓')} {name} already symlinked")
+            continue
+
+        if dst.exists():
+            dst.unlink()
+
+        dst.symlink_to(src)
+        if not silent:
+            print(f"  {_c(32, '✓')} Symlinked {name}")
+
+    for name in prov.get("symlink_home_files", []):
+        _ensure_home_file_symlink(name, MAIN_HOME / name, account_home / name)
+
+    creds = acct_dot_dir / prov["credentials_file"]
+    if not silent:
+        print()
+        if creds.exists():
+            print(f"  {_c(32, '✓')} {prov['display_name']} credentials found")
+        else:
+            print(f"  {_c(33, '⚠')} No {prov['display_name']} credentials found.")
+            hint_cmd = f"altergo {account_name}" if account_name and account_name != "default" else "altergo"
+            print(f"     Run '{hint_cmd}' to authenticate.\n")
+
+    if provider_id == "claude":
+        _sync_claude_mcps(account_home)
+
+
+def _remove_provider_setup(account_home: Path, provider_id: str, *, silent: bool = False) -> None:
+    """Remove the symlinks installed by :func:`_apply_provider_setup` for one provider.
+
+    Session data in MAIN_HOME is untouched — only the per-account symlinks are
+    removed, so the account loses its view of that provider without destroying
+    anything. Home-level symlinks are only removed if they still point at the
+    canonical MAIN_HOME source (to avoid touching user-customised links).
+    """
+    prov = PROVIDERS.get(provider_id)
+    if prov is None:
+        return
+
+    acct_dot_dir = account_home / prov["dot_dir"]
+
+    for name in prov["symlink_dirs"]:
+        dst = acct_dot_dir / name
+        if dst.is_symlink():
+            dst.unlink()
+            if not silent:
+                print(f"  {_c(33, '✓')} Removed symlink: {prov['dot_dir']}/{name}/")
+
+    for name in prov["symlink_files"]:
+        dst = acct_dot_dir / name
+        if dst.is_symlink():
+            dst.unlink()
+            if not silent:
+                print(f"  {_c(33, '✓')} Removed symlink: {prov['dot_dir']}/{name}")
+
+    for name in prov.get("symlink_home_files", []):
+        dst = account_home / name
+        src = MAIN_HOME / name
+        try:
+            if dst.is_symlink() and dst.resolve() == src.resolve():
+                dst.unlink()
+                if not silent:
+                    print(f"  {_c(33, '✓')} Removed symlink: {name}")
+        except OSError:
+            pass
+
+
+def do_config(account: str = "default", provider: str = "claude", *, keychain_arg: str | None = None):
+    """Configure (or reconfigure) an altergo account.
+
+    keychain_arg: "isolated", "shared", or None (prompt when tty; default shared when non-tty).
+    """
     if account == _NATIVE_ACCOUNT:
         print(
             f"altergo: '{_NATIVE_ACCOUNT}' is a reserved passthrough account that uses the real $HOME. "
@@ -2738,75 +2924,8 @@ def do_config(account: str = "default", provider: str = "claude"):
     else:
         print(f"  {_c(32, '✓')} Account home exists: {account_home}")
 
-    # 2. Wire the single provider
-    prov = PROVIDERS[provider]
-    main_dot_dir = MAIN_HOME / prov["dot_dir"]
-    acct_dot_dir = account_home / prov["dot_dir"]
-
-    print()
-    print(_c(1, _c(36, f"=== Provider: {prov['display_name']} ===")))
-
-    # Ensure provider dot-dir exists
-    acct_dot_dir.mkdir(parents=True, exist_ok=True)
-
-    # Symlink directories
-    for name in prov["symlink_dirs"]:
-        src = main_dot_dir / name
-        dst = acct_dot_dir / name
-
-        if dst.is_symlink():
-            target = dst.resolve()
-            if target == src.resolve():
-                print(f"  {_c(32, '✓')} {name}/ already symlinked")
-            else:
-                print(f"  {_c(33, '⚠')} {name}/ symlinked to {target} (expected {src})")
-            continue
-
-        # _ensure_symlinked_dir handles all real-dir migration cases (empty
-        # real dir, non-empty real dir, merge conflicts).  It prints its own
-        # richer messages for promotion/merge/conflict cases.  For the normal
-        # fresh-install path (dst absent) it silently creates the symlink and
-        # returns True, so we print the standard checkmark here.
-        was_absent = not dst.exists()
-        _ensure_symlinked_dir(name, src, dst, acct_dot_dir)
-        if was_absent and dst.is_symlink():
-            print(f"  {_c(32, '✓')} Symlinked {name}/")
-
-    # Symlink files
-    for name in prov["symlink_files"]:
-        src = main_dot_dir / name
-        dst = acct_dot_dir / name
-
-        if not src.exists():
-            continue
-
-        if dst.is_symlink():
-            print(f"  {_c(32, '✓')} {name} already symlinked")
-            continue
-
-        if dst.exists():
-            dst.unlink()
-
-        dst.symlink_to(src)
-        print(f"  {_c(32, '✓')} Symlinked {name}")
-
-    # Symlink home-level files (live at $HOME/<name>, not inside <dot_dir>/)
-    for name in prov.get("symlink_home_files", []):
-        _ensure_home_file_symlink(name, MAIN_HOME / name, account_home / name)
-
-    # Check credentials for this provider
-    creds = acct_dot_dir / prov["credentials_file"]
-    print()
-    if creds.exists():
-        print(f"  {_c(32, '✓')} {prov['display_name']} credentials found")
-    else:
-        print(f"  {_c(33, '⚠')} No {prov['display_name']} credentials found.")
-        cmd = f"altergo {account}" if account != "default" else "altergo"
-        print(f"     Run '{cmd}' to authenticate.\n")
-
-    # Sync MCP servers for Claude provider (bidirectional, keeps oauthAccount per-account)
-    if provider == "claude":
-        _sync_claude_mcps(account_home)
+    # 2. Wire the requested provider
+    _apply_provider_setup(account_home, provider, account_name=account)
 
     # 3. Apply catalog entries (shared CLI tool credentials) at account_home level
     overrides = load_settings()
@@ -2817,15 +2936,69 @@ def do_config(account: str = "default", provider: str = "claude"):
 
     _status_wrap("Linking shared credentials…", _apply_catalog_entries)
 
-    # 4. Save account metadata (v2 schema — one account, one provider)
-    save_account_meta(
-        account_home,
-        {
-            "version": 2,
-            "provider": provider,
-            "created": (meta.get("created") if meta else None) or datetime.now().isoformat(timespec="seconds"),
-        },
-    )
+    # 5. Keychain isolation (macOS only, opt-in)
+    keychain_mode = "shared"  # default: no isolation
+    if sys.platform == "darwin":
+        if keychain_arg is not None:
+            # Non-interactive: honour explicit flag from CLI.
+            keychain_mode = keychain_arg
+        elif meta and meta.get("keychain") == "isolated":
+            # Re-config of an existing isolated account — keep isolation by default.
+            keychain_mode = "isolated"
+        elif sys.stdin.isatty():
+            # Interactive prompt — default No.
+            print()
+            print(_c(C("header"), "  Keychain isolation (macOS)"))
+            print(_c(2, "  Isolate this account's AI-provider tokens in a per-account macOS keychain."))
+            try:
+                answer = input("  Keychain isolation? [y/N] ").strip().lower()
+            except (KeyboardInterrupt, EOFError):
+                answer = ""
+            keychain_mode = "isolated" if answer in ("y", "yes") else "shared"
+
+        if keychain_mode == "isolated":
+            try:
+                _create_account_keychain(account_home, account)
+            except KeychainError as e:
+                print(f"  {_c(33, '⚠')} Keychain setup failed: {e}", file=sys.stderr)
+                print("    Continuing with shared keychain.", file=sys.stderr)
+                keychain_mode = "shared"
+            else:
+                print(f"  {_c(32, '✓')} Per-account keychain created/verified")
+                print(
+                    _c(
+                        2,
+                        "  NOTE: keychain isolation requires your login keychain to be unlocked "
+                        "(standard on GUI login; check Keychain Access → Preferences if auto-lock is aggressive)",
+                    )
+                )
+
+    # Downgrade cleanup: if the account was previously isolated but is now
+    # moving to shared, remove the orphaned per-account keychain and its
+    # login-keychain unlock entry.
+    if keychain_mode == "shared" and (meta or {}).get("keychain") == "isolated":
+        try:
+            _delete_account_keychain(account_home, account)
+            print(_c(2, "  Removed per-account keychain (downgraded to shared)"))
+        except KeychainError as e:
+            print(f"  {_c(33, '⚠')} Could not remove per-account keychain: {e}", file=sys.stderr)
+
+    # 4. Save account metadata.  New writes emit v3 (providers list + default).
+    #    Existing v3 accounts preserve extra providers beyond the single one
+    #    passed into do_config — do_config only rewrites the default.
+    prior_providers: list = []
+    if meta is not None:
+        prior_providers = list(meta.get("providers", []))
+    providers_list = [provider] + [p for p in prior_providers if p != provider]
+    meta_to_save: dict = {
+        "version": 3,
+        "providers": providers_list,
+        "default_provider": provider,
+        "created": (meta.get("created") if meta else None) or datetime.now().isoformat(timespec="seconds"),
+    }
+    if keychain_mode == "isolated":
+        meta_to_save["keychain"] = "isolated"
+    save_account_meta(account_home, meta_to_save)
 
     launch_cmd = f"altergo {account}" if account != "default" else "altergo"
     print()
@@ -2834,6 +3007,231 @@ def do_config(account: str = "default", provider: str = "claude"):
     print()
     print(_c(2, "  Isolates credentials per provider. Shares AWS, GCP, Docker, and kubectl by default."))
     print(_c(2, f"  Change sharing settings: {_c(0, 'altergo --settings')}"))
+
+
+def _reconcile_orphan_dot_dir(account_home: Path, provider_id: str) -> None:
+    """Merge an account-local provider dot-dir into the shared MAIN_HOME store.
+
+    When an account used a provider WITHOUT altergo having installed symlinks
+    for it (e.g. a pre-multi-provider era claude-account that ran `codex`
+    inside its shell), the provider wrote data under
+    ``account_home/<dot_dir>/`` directly.  After --add-provider installs the
+    symlinks, those orphaned files would be lost to the main view unless
+    merged. This helper performs that merge:
+
+      - For each path inside the account-local dot-dir, move to the
+        corresponding MAIN_HOME path if the target doesn't exist.
+      - On collision, MAIN wins: the loser is preserved under
+        ``account_home/<dot_dir>.orphaned/<timestamp>/`` so nothing is silently
+        destroyed.
+      - The now-empty account-local dot-dir is removed so the symlink can be
+        created cleanly afterwards.
+
+    Silent no-op when the local dot-dir is absent or already a symlink.
+    """
+    prov = PROVIDERS.get(provider_id)
+    if prov is None:
+        return
+    acct_dot = account_home / prov["dot_dir"]
+    if acct_dot.is_symlink() or not acct_dot.exists():
+        return
+    if not acct_dot.is_dir():
+        return
+
+    main_dot = MAIN_HOME / prov["dot_dir"]
+    main_dot.mkdir(parents=True, exist_ok=True)
+
+    orphan_root = account_home / f"{prov['dot_dir']}.orphaned" / datetime.now().strftime("%Y%m%dT%H%M%S")
+    moved = 0
+    archived = 0
+
+    def _move_recursive(src: Path, dst: Path, rel: Path) -> None:
+        nonlocal moved, archived
+        if dst.exists():
+            # Target already exists in MAIN — archive the account-local loser.
+            archive_dst = orphan_root / rel
+            archive_dst.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                src.rename(archive_dst)
+            except OSError:
+                # Cross-device fallback: copy + remove
+                import shutil as _sh
+
+                try:
+                    if src.is_dir():
+                        _sh.copytree(src, archive_dst, symlinks=True, dirs_exist_ok=True)
+                        _sh.rmtree(src)
+                    else:
+                        _sh.copy2(src, archive_dst)
+                        src.unlink()
+                except Exception:
+                    return
+            archived += 1
+            return
+        try:
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            src.rename(dst)
+            moved += 1
+        except OSError:
+            import shutil as _sh
+
+            try:
+                if src.is_dir():
+                    _sh.copytree(src, dst, symlinks=True)
+                    _sh.rmtree(src)
+                else:
+                    _sh.copy2(src, dst)
+                    src.unlink()
+                moved += 1
+            except Exception:
+                return
+
+    for child in list(acct_dot.iterdir()):
+        rel = Path(child.name)
+        target = main_dot / rel
+        _move_recursive(child, target, rel)
+
+    # Remove the now-empty local dot-dir; if something couldn't be moved, leave it.
+    try:
+        if acct_dot.exists() and not any(acct_dot.iterdir()):
+            acct_dot.rmdir()
+    except OSError:
+        pass
+
+    if moved or archived:
+        print(
+            f"  {_c(32, '✓')} Reconciled orphan {prov['dot_dir']}/  "
+            f"({moved} merged into MAIN, {archived} archived to {prov['dot_dir']}.orphaned/)"
+        )
+
+
+def do_add_provider(account: str, provider_id: str) -> int:
+    """Install an additional provider on an existing altergo account.
+
+    Idempotent: no-op (with a dim notice) if the provider is already installed.
+    Reconciles any account-local orphan data for that provider into MAIN_HOME
+    before creating the symlinks, so existing sessions remain visible to
+    ``altergo --recall``.
+    """
+    account_home, _ = resolve_account(account)
+    meta = load_account_meta(account_home)
+    if meta is None:
+        print(
+            f"altergo: account '{account}' has no account.json. Run 'altergo --config {account}' first.",
+            file=sys.stderr,
+        )
+        return 1
+
+    if provider_id in meta["providers"]:
+        print(_c(C("dim"), f"  altergo: account '{account}' already has provider '{provider_id}'."))
+        return 0
+
+    print(_c(C("header"), f"=== Altergo — add provider '{provider_id}' to '{account}' ==="))
+    print()
+
+    _reconcile_orphan_dot_dir(account_home, provider_id)
+    _apply_provider_setup(account_home, provider_id, account_name=account)
+
+    new_meta = dict(meta)
+    new_meta["version"] = 3
+    new_meta["providers"] = list(meta["providers"]) + [provider_id]
+    new_meta["default_provider"] = meta["default_provider"]
+    save_account_meta(account_home, new_meta)
+
+    print()
+    print(_c(32, f"Added provider '{provider_id}' to account '{account}'."))
+    launch = f"altergo {account} {provider_id}" if provider_id != new_meta["default_provider"] else f"altergo {account}"
+    print(_c(C("dim"), f"  Launch: {launch}"))
+    return 0
+
+
+def do_remove_provider(account: str, provider_id: str, *, assume_yes: bool = False) -> int:
+    """Remove a provider from an altergo account.
+
+    Refuses to remove the last remaining provider (use --delete instead).
+    If the provider being removed is the account's default, rebinds the
+    default to providers[0] of the remaining list.
+    """
+    account_home, _ = resolve_account(account)
+    meta = load_account_meta(account_home)
+    if meta is None:
+        print(f"altergo: account '{account}' has no account.json.", file=sys.stderr)
+        return 1
+
+    if provider_id not in meta["providers"]:
+        print(_c(C("dim"), f"  altergo: account '{account}' does not have provider '{provider_id}'."))
+        return 0
+
+    if len(meta["providers"]) == 1:
+        print(
+            f"altergo: cannot remove last provider from '{account}'.\n"
+            f"  Use 'altergo --delete {account}' to remove the whole account instead.",
+            file=sys.stderr,
+        )
+        return 2
+
+    if not assume_yes and sys.stdin.isatty():
+        print(_c(C("header"), f"=== Remove provider '{provider_id}' from '{account}' ==="))
+        print()
+        print(_c(C("dim"), f"  Session data under MAIN_HOME/.{provider_id}/ is preserved."))
+        try:
+            answer = input(f"  Remove '{provider_id}' from '{account}'? [y/N] ").strip().lower()
+        except (KeyboardInterrupt, EOFError):
+            answer = ""
+        if answer not in ("y", "yes"):
+            print("Cancelled.")
+            return 0
+
+    _remove_provider_setup(account_home, provider_id)
+
+    remaining = [p for p in meta["providers"] if p != provider_id]
+    new_default = meta["default_provider"]
+    if new_default == provider_id:
+        new_default = remaining[0]
+        print(_c(C("dim"), f"  Default provider rebound to '{new_default}'."))
+
+    new_meta = dict(meta)
+    new_meta["version"] = 3
+    new_meta["providers"] = remaining
+    new_meta["default_provider"] = new_default
+    save_account_meta(account_home, new_meta)
+
+    print()
+    print(_c(32, f"Removed provider '{provider_id}' from account '{account}'."))
+    return 0
+
+
+def do_default_provider(account: str, provider_id: str) -> int:
+    """Change the default provider for an account.
+
+    The requested provider must already be in the account's providers list —
+    this is metadata-only, with zero filesystem effect.
+    """
+    account_home, _ = resolve_account(account)
+    meta = load_account_meta(account_home)
+    if meta is None:
+        print(f"altergo: account '{account}' has no account.json.", file=sys.stderr)
+        return 1
+
+    if provider_id not in meta["providers"]:
+        print(
+            f"altergo: account '{account}' does not have provider '{provider_id}' installed.\n"
+            f"  Available: {', '.join(meta['providers'])}\n"
+            f"  Add it with: altergo {account} --add-provider {provider_id}",
+            file=sys.stderr,
+        )
+        return 1
+
+    if meta["default_provider"] == provider_id:
+        print(_c(C("dim"), f"  altergo: default provider is already '{provider_id}'."))
+        return 0
+
+    new_meta = dict(meta)
+    new_meta["version"] = 3
+    new_meta["default_provider"] = provider_id
+    save_account_meta(account_home, new_meta)
+    print(_c(32, f"Default provider for '{account}' is now '{provider_id}'."))
+    return 0
 
 
 def do_teardown(account: str = "default"):
@@ -2852,30 +3250,9 @@ def do_teardown(account: str = "default"):
     meta = load_account_meta(account_home)
 
     if meta is not None:
-        # Modern account with account.json — tear down the single provider's symlinks
-        pid = meta.get("provider", "claude")
-        prov = PROVIDERS.get(pid)
-        if prov is not None:
-            acct_dot_dir = account_home / prov["dot_dir"]
-
-            for name in prov["symlink_dirs"]:
-                dst = acct_dot_dir / name
-                if dst.is_symlink():
-                    dst.unlink()
-                    print(f"  {_c(33, '✓')} Removed symlink: {prov['dot_dir']}/{name}/")
-
-            for name in prov["symlink_files"]:
-                dst = acct_dot_dir / name
-                if dst.is_symlink():
-                    dst.unlink()
-                    print(f"  {_c(33, '✓')} Removed symlink: {prov['dot_dir']}/{name}")
-
-            for name in prov.get("symlink_home_files", []):
-                dst = account_home / name
-                src = MAIN_HOME / name
-                if dst.is_symlink() and dst.resolve() == src.resolve():
-                    dst.unlink()
-                    print(f"  {_c(33, '✓')} Removed symlink: {name}")
+        # Modern account with account.json — tear down each provider's symlinks
+        for pid in meta["providers"]:
+            _remove_provider_setup(account_home, pid)
     else:
         # Legacy account (no account.json) — fall back to SYMLINK_DIRS + SYMLINK_FILES
         for name in SYMLINK_DIRS:
@@ -2901,6 +3278,68 @@ def do_teardown(account: str = "default"):
 
     print()
     print(_c(32, "Teardown complete.") + " Account home and credentials left intact.")
+
+
+def do_delete_account(account: str) -> bool:
+    """Fully delete an account: tear down symlinks, remove the home dir, clear active.
+
+    Returns True on success, False when the account can't be removed.
+    """
+    if account == _NATIVE_ACCOUNT:
+        print(
+            f"altergo: '{_NATIVE_ACCOUNT}' is a reserved passthrough account — it cannot be deleted.",
+            file=sys.stderr,
+        )
+        return False
+
+    account_home, _ = resolve_account(account)
+    if not account_home.exists():
+        print(f"altergo: account '{account}' does not exist.", file=sys.stderr)
+        return False
+
+    # Remove symlinks first so we don't follow them into the main $HOME when
+    # rmtree walks the tree. do_teardown prints its own progress.
+    try:
+        do_teardown(account)
+    except SystemExit:
+        # Teardown exits on the reserved-native case; already guarded above.
+        pass
+
+    # Keychain teardown — must happen before rmtree removes the keychain file,
+    # but security delete-keychain also deregisters from the system db.
+    if sys.platform == "darwin":
+        acct_meta = load_account_meta(account_home)
+        if _is_keychain_isolated(acct_meta):
+            try:
+                _delete_account_keychain(account_home, account)
+                print(f"  {_c(33, '✓')} Removed per-account keychain")
+            except KeychainError as e:
+                print(f"altergo: warning during keychain teardown: {e}", file=sys.stderr)
+                # proceed with rmtree anyway
+
+    try:
+        shutil.rmtree(account_home)
+    except Exception as e:
+        print(f"altergo: failed to remove {account_home}: {e}", file=sys.stderr)
+        return False
+    print(f"  {_c(31, '✗')} Removed account home: {account_home}")
+
+    if get_active_account() == account:
+        try:
+            if SETTINGS_FILE.exists():
+                data = json.loads(SETTINGS_FILE.read_text())
+                if data.get("active_account") == account:
+                    data.pop("active_account", None)
+                    tmp = SETTINGS_FILE.with_suffix(".json.tmp")
+                    tmp.write_text(json.dumps(data, indent=2))
+                    os.replace(str(tmp), str(SETTINGS_FILE))
+                    print(f"  {_c(33, '✓')} Cleared active-account pointer")
+        except Exception:
+            pass
+
+    print()
+    print(_c(32, f"Account '{account}' deleted."))
+    return True
 
 
 def do_rename(old_name: str, new_name: str):
@@ -2939,93 +3378,75 @@ def _build_provider_map() -> dict:
     for acct_name in list_accounts():
         acct_home = ACCOUNTS_DIR / acct_name
         meta = load_account_meta(acct_home)
-        if meta is None:
-            provider_id = "claude"
-        else:
-            provider_id = meta.get("provider", "claude")
+        provider_ids = meta["providers"] if meta is not None else ["claude"]
 
-        prov = PROVIDERS.get(provider_id)
-        if prov is None:
-            continue
+        for provider_id in provider_ids:
+            prov = PROVIDERS.get(provider_id)
+            if prov is None:
+                continue
+            acct_projects = acct_home / prov["dot_dir"] / "projects"
+            try:
+                resolved_projects = acct_projects.resolve()
+            except OSError:
+                continue
+            if not resolved_projects.is_dir():
+                continue
 
-        # The provider's projects dir may be a symlink (the common case) or a
-        # real dir (unusual, but we handle it).  We resolve to the canonical
-        # path so comparisons against session paths work regardless.
-        acct_projects = acct_home / prov["dot_dir"] / "projects"
-        try:
-            resolved_projects = acct_projects.resolve()
-        except OSError:
-            continue
-        if not resolved_projects.is_dir():
-            continue
-
-        try:
-            for proj_dir in resolved_projects.iterdir():
-                if not proj_dir.is_dir():
-                    continue
-                try:
-                    for sf in proj_dir.iterdir():
-                        if sf.suffix == ".jsonl":
-                            try:
-                                path_to_provider[sf.resolve()] = provider_id
-                            except OSError:
-                                pass
-                except OSError:
-                    continue
-        except OSError:
-            continue
+            try:
+                for proj_dir in resolved_projects.iterdir():
+                    if not proj_dir.is_dir():
+                        continue
+                    try:
+                        for sf in proj_dir.iterdir():
+                            if sf.suffix == ".jsonl":
+                                try:
+                                    path_to_provider[sf.resolve()] = provider_id
+                                except OSError:
+                                    pass
+                    except OSError:
+                        continue
+            except OSError:
+                continue
 
     return path_to_provider
 
 
-def get_sessions():
-    """Find all sessions across all projects, return sorted by modification time.
+# ---------------------------------------------------------------------------
+# Per-provider session discoverers
+# ---------------------------------------------------------------------------
 
-    Cheap pass: stat + first-user-message extraction only. Full preview content
-    is loaded on demand by ``load_session_preview`` when the user opens the
-    preview pane.
+_CODEX_TOPIC_SENTINELS = ("<permissions ", "<collaboration_mode>", "<skills_instructions>")
 
-    Each returned session dict includes a ``provider`` field (e.g. ``"claude"``,
-    ``"gemini"``) derived by matching the session file against account ownership
-    via :func:`_build_provider_map`.
-    """
+
+def _discover_claude_sessions(starred_ids: set) -> list:
+    """Yield session dicts for Claude Code (~/.claude/projects/*/*.jsonl)."""
     sessions = []
     projects_dir = MAIN_CLAUDE / "projects"
-
     if not projects_dir.exists():
         return sessions
 
     provider_map = _build_provider_map()
-    starred_ids = load_starred_ids()
 
     for project_dir in projects_dir.iterdir():
         if not project_dir.is_dir():
             continue
-
         project_name = project_dir.name
-
         for f in project_dir.iterdir():
             if f.suffix != ".jsonl" or f.parent.name == "subagents":
                 continue
-
             try:
                 st = f.stat()
             except OSError:
                 continue
-
             session_id = f.stem
             mod_dt = datetime.fromtimestamp(st.st_mtime)
             size_mb = st.st_size / (1024 * 1024)
-
             topic, cwd = _scan_session_head(f)
-
-            # Attribute to a provider; fall back to "claude" for unowned sessions
             try:
                 resolved_path = f.resolve()
             except OSError:
                 resolved_path = f
             provider_id = provider_map.get(resolved_path, "claude")
-
             sessions.append(
                 {
                     "id": session_id,
@@ -3039,7 +3460,229 @@ def get_sessions():
                     "starred": session_id in starred_ids,
                 }
             )
+    return sessions
 
+
+def _discover_codex_sessions(starred_ids: set) -> list:
+    """Yield session dicts for Codex CLI (~/.codex/sessions/YYYY/MM/DD/*.jsonl)."""
+    sessions = []
+    codex_sessions_dir = MAIN_HOME / ".codex" / "sessions"
+    if not codex_sessions_dir.exists():
+        return sessions
+
+    # Walk YYYY/MM/DD sub-directories
+    try:
+        year_dirs = sorted(codex_sessions_dir.iterdir())
+    except OSError:
+        return sessions
+
+    for year_dir in year_dirs:
+        if not year_dir.is_dir():
+            continue
+        try:
+            month_dirs = sorted(year_dir.iterdir())
+        except OSError:
+            continue
+        for month_dir in month_dirs:
+            if not month_dir.is_dir():
+                continue
+            try:
+                day_dirs = sorted(month_dir.iterdir())
+            except OSError:
+                continue
+            for day_dir in day_dirs:
+                if not day_dir.is_dir():
+                    continue
+                try:
+                    files = list(day_dir.iterdir())
+                except OSError:
+                    continue
+                for f in files:
+                    if f.suffix != ".jsonl":
+                        continue
+                    try:
+                        st = f.stat()
+                    except OSError:
+                        continue
+                    mod_dt = datetime.fromtimestamp(st.st_mtime)
+                    size_mb = st.st_size / (1024 * 1024)
+                    session_id, topic, cwd = _scan_codex_session_head(f)
+                    if not session_id:
+                        # Fall back to filename stem UUID portion
+                        session_id = f.stem
+                    project = cwd.rstrip("/").rsplit("/", 1)[-1] if cwd else f.stem
+                    sessions.append(
+                        {
+                            "id": session_id,
+                            "project": project,
+                            "cwd": cwd,
+                            "modified": mod_dt,
+                            "size_mb": size_mb,
+                            "path": f,
+                            "topic": topic,
+                            "provider": "codex",
+                            "starred": session_id in starred_ids,
+                        }
+                    )
+    return sessions
+
+
+def _discover_gemini_sessions(starred_ids: set) -> list:
+    """Yield session dicts for Gemini CLI (~/.gemini/tmp/<proj>/chats/*.json)."""
+    sessions = []
+    gemini_tmp_dir = MAIN_HOME / ".gemini" / "tmp"
+    if not gemini_tmp_dir.exists():
+        return sessions
+
+    try:
+        proj_dirs = list(gemini_tmp_dir.iterdir())
+    except OSError:
+        return sessions
+
+    for proj_dir in proj_dirs:
+        if not proj_dir.is_dir():
+            continue
+        chats_dir = proj_dir / "chats"
+        if not chats_dir.is_dir():
+            continue
+
+        # Try to read the canonical project root from .project_root sentinel file
+        project_root_file = proj_dir / ".project_root"
+        cwd_base = ""
+        if project_root_file.is_file():
+            try:
+                cwd_base = project_root_file.read_text(encoding="utf-8").strip()
+            except OSError:
+                pass
+        if not cwd_base:
+            cwd_base = proj_dir.name  # dirname as fallback (relative hint)
+
+        project_label = proj_dir.name
+
+        try:
+            chat_files = list(chats_dir.iterdir())
+        except OSError:
+            continue
+
+        for f in chat_files:
+            if f.suffix != ".json":
+                continue
+            try:
+                st = f.stat()
+            except OSError:
+                continue
+            mod_dt = datetime.fromtimestamp(st.st_mtime)
+            size_mb = st.st_size / (1024 * 1024)
+            session_id, topic, cwd = _scan_gemini_session(f, cwd_base)
+            if not session_id:
+                session_id = f.stem
+            sessions.append(
+                {
+                    "id": session_id,
+                    "project": project_label,
+                    "cwd": cwd or cwd_base,
+                    "modified": mod_dt,
+                    "size_mb": size_mb,
+                    "path": f,
+                    "topic": topic,
+                    "provider": "gemini",
+                    "starred": session_id in starred_ids,
+                }
+            )
+    return sessions
+
+
+def _discover_copilot_sessions(starred_ids: set) -> list:
+    """Yield session dicts for GitHub Copilot (~/.copilot/session-state/<uuid>/)."""
+    sessions = []
+    copilot_state_dir = MAIN_HOME / ".copilot" / "session-state"
+    if not copilot_state_dir.exists():
+        return sessions
+
+    try:
+        session_dirs = list(copilot_state_dir.iterdir())
+    except OSError:
+        return sessions
+
+    for session_dir in session_dirs:
+        if not session_dir.is_dir():
+            continue
+        session_id = session_dir.name
+        workspace_yaml = session_dir / "workspace.yaml"
+        events_jsonl = session_dir / "events.jsonl"
+
+        # Prefer workspace.yaml — tiny key:value file, fast to parse
+        meta = _parse_copilot_workspace_yaml(workspace_yaml)
+        if meta:
+            cwd = meta.get("cwd", "")
+            topic = meta.get("summary", "")
+            # Try to get a more accurate mtime from updated_at
+            mod_dt = None
+            updated_at = meta.get("updated_at", "")
+            if updated_at:
+                try:
+                    mod_dt = datetime.fromisoformat(updated_at.replace("Z", "+00:00")).replace(tzinfo=None)
+                except (ValueError, AttributeError):
+                    pass
+            sid = meta.get("id", session_id)
+        else:
+            # Fall back to events.jsonl
+            sid, cwd, topic, mod_dt = _scan_copilot_events_head(events_jsonl)
+            if not sid:
+                sid = session_id
+
+        # Compute size: total bytes under session dir
+        size_bytes = 0
+        try:
+            for entry in session_dir.iterdir():
+                try:
+                    size_bytes += entry.stat().st_size
+                except OSError:
+                    pass
+        except OSError:
+            pass
+
+        if mod_dt is None:
+            try:
+                st = session_dir.stat()
+                mod_dt = datetime.fromtimestamp(st.st_mtime)
+            except OSError:
+                mod_dt = datetime.fromtimestamp(0)
+
+        project = cwd.rstrip("/").rsplit("/", 1)[-1] if cwd else session_dir.name
+
+        sessions.append(
+            {
+                "id": sid,
+                "project": project,
+                "cwd": cwd,
+                "modified": mod_dt,
+                "size_mb": size_bytes / (1024 * 1024),
+                "path": session_dir,
+                "topic": topic,
+                "provider": "copilot",
+                "starred": sid in starred_ids,
+            }
+        )
+    return sessions
+
+
+def get_sessions():
+    """Find all sessions across all projects, return sorted by modification time.
+
+    Cheap pass: stat + first-user-message extraction only. Full preview content
+    is loaded on demand by ``load_session_preview`` when the user opens the
+    preview pane.
+
+    Each returned session dict includes a ``provider`` field (e.g. ``"claude"``,
+    ``"gemini"``, ``"codex"``, ``"copilot"``).
+    """
+    starred_ids = load_starred_ids()
+    sessions = []
+    sessions.extend(_discover_claude_sessions(starred_ids))
+    sessions.extend(_discover_codex_sessions(starred_ids))
+    sessions.extend(_discover_gemini_sessions(starred_ids))
+    sessions.extend(_discover_copilot_sessions(starred_ids))
     sessions.sort(key=lambda s: s["modified"], reverse=True)
     return sessions
 
@@ -3134,13 +3777,179 @@ def _scan_session_head(jsonl_path, max_lines: int = 40) -> tuple:
     return topic, cwd
 
 
-def load_session_preview(jsonl_path, max_messages: int = 4, max_lines: int = 400) -> dict:
+def _scan_codex_session_head(jsonl_path, max_lines: int = 80) -> tuple:
+    """Return (session_id, topic, cwd) from the head of a Codex session JSONL."""
+    session_id = ""
+    topic = ""
+    cwd = ""
+    try:
+        with open(jsonl_path, "r", encoding="utf-8", errors="replace") as fh:
+            for i, line in enumerate(fh):
+                if i >= max_lines and session_id and topic:
+                    break
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                t = obj.get("type")
+                payload = obj.get("payload") if isinstance(obj.get("payload"), dict) else {}
+                if t == "session_meta" and not session_id:
+                    session_id = payload.get("id", "")
+                    cwd = payload.get("cwd", "")
+                if not topic and t == "response_item":
+                    if payload.get("type") == "message" and payload.get("role") == "user":
+                        content_items = payload.get("content", [])
+                        for item in content_items:
+                            if not isinstance(item, dict):
+                                continue
+                            if item.get("type") != "input_text":
+                                continue
+                            text = item.get("text", "")
+                            if any(text.startswith(s) for s in _CODEX_TOPIC_SENTINELS):
+                                continue
+                            topic = _clean_topic(text)
+                            break
+    except OSError:
+        pass
+    return session_id, topic, cwd
+
+
+def _scan_gemini_session(json_path, cwd_fallback: str = "") -> tuple:
+    """Return (session_id, topic, cwd) by parsing a Gemini session JSON file."""
+    session_id = ""
+    topic = ""
+    cwd = cwd_fallback
+    try:
+        raw = json_path.read_text(encoding="utf-8", errors="replace")
+        data = json.loads(raw)
+    except (OSError, json.JSONDecodeError):
+        return session_id, topic, cwd
+
+    session_id = data.get("sessionId", "")
+    # cwd: use .project_root content (already passed as cwd_fallback)
+    # Topic: first user message
+    messages = data.get("messages", [])
+    for msg in messages:
+        if not isinstance(msg, dict):
+            continue
+        if msg.get("type") != "user":
+            continue
+        content = msg.get("content", "")
+        if isinstance(content, str):
+            text = content
+        elif isinstance(content, list):
+            parts = []
+            for c in content:
+                if isinstance(c, dict) and isinstance(c.get("text"), str):
+                    parts.append(c["text"])
+                elif isinstance(c, str):
+                    parts.append(c)
+            text = " ".join(parts)
+        else:
+            continue
+        text = text.strip()
+        if text:
+            topic = _clean_topic(text)
+            break
+
+    return session_id, topic, cwd
+
+
+def _parse_copilot_workspace_yaml(yaml_path) -> dict:
+    """Parse a minimal Copilot workspace.yaml into a plain dict.
+
+    Only handles simple ``key: value`` lines — no full YAML parser needed
+    because Copilot's workspace.yaml is a flat document with scalar values.
+    Returns an empty dict if the file is absent or unreadable.
+    """
+    result = {}
+    try:
+        text = yaml_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return result
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if ":" not in line:
+            continue
+        key, _, val = line.partition(":")
+        key = key.strip()
+        val = val.strip()
+        # Strip surrounding quotes if present
+        if len(val) >= 2 and val[0] in ('"', "'") and val[-1] == val[0]:
+            val = val[1:-1]
+        result[key] = val
+    return result
+
+
+def _scan_copilot_events_head(jsonl_path, max_lines: int = 40) -> tuple:
+    """Return (session_id, cwd, topic, mod_dt) from events.jsonl head."""
+    session_id = ""
+    cwd = ""
+    topic = ""
+    mod_dt = None
+    try:
+        with open(jsonl_path, "r", encoding="utf-8", errors="replace") as fh:
+            for i, line in enumerate(fh):
+                if i >= max_lines and session_id and topic:
+                    break
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                t = obj.get("type", "")
+                data = obj.get("data") if isinstance(obj.get("data"), dict) else {}
+                if t == "session.start" and not session_id:
+                    session_id = data.get("sessionId", "")
+                    ctx = data.get("context") if isinstance(data.get("context"), dict) else {}
+                    cwd = ctx.get("cwd", "") or ctx.get("gitRoot", "")
+                    ts = data.get("timestamp", "")
+                    if ts:
+                        try:
+                            mod_dt = datetime.fromisoformat(ts.replace("Z", "+00:00")).replace(tzinfo=None)
+                        except (ValueError, AttributeError):
+                            pass
+                elif t == "user.message" and not topic:
+                    content = data.get("content", "")
+                    if isinstance(content, str) and content.strip():
+                        topic = _clean_topic(content)
+    except OSError:
+        pass
+    return session_id, cwd, topic, mod_dt
+
+
+def load_session_preview(
+    session_or_path, max_messages: int = 4, max_lines: int = 400, provider: str = "claude"
+) -> dict:
     """Load opening prompt + first few message turns for the preview pane.
 
-    Reads at most ``max_lines`` lines and returns once ``max_messages`` real
-    user/assistant turns have been collected. ``truncated`` is True if the
-    session has more content than was returned.
+    Dispatches to a per-provider loader based on ``provider``.  The first
+    argument may be a Path to a file (Claude/Codex JSONL) or to a directory
+    (Copilot session dir), or a Path to a JSON file (Gemini).
+
+    Reads at most ``max_lines`` lines/entries and returns once ``max_messages``
+    real user/assistant turns have been collected.  ``truncated`` is True if
+    the session has more content than was returned.
     """
+    if provider == "gemini":
+        return _load_gemini_preview(session_or_path, max_messages=max_messages)
+    if provider == "codex":
+        return _load_codex_preview(session_or_path, max_messages=max_messages, max_lines=max_lines)
+    if provider == "copilot":
+        return _load_copilot_preview(session_or_path, max_messages=max_messages)
+    # Default: Claude JSONL
+    return _load_claude_preview(session_or_path, max_messages=max_messages, max_lines=max_lines)
+
+
+def _load_claude_preview(jsonl_path, max_messages: int = 4, max_lines: int = 400) -> dict:
+    """Load preview for a Claude Code JSONL session."""
     messages = []
     cwd = ""
     total_lines = 0
@@ -3181,6 +3990,144 @@ def load_session_preview(jsonl_path, max_messages: int = 4, max_lines: int = 400
     return {"messages": messages, "cwd": cwd, "truncated": truncated, "error": None}
 
 
+def _load_codex_preview(jsonl_path, max_messages: int = 4, max_lines: int = 400) -> dict:
+    """Load preview for a Codex CLI JSONL session."""
+    messages = []
+    cwd = ""
+    total_lines = 0
+    truncated = False
+    try:
+        with open(jsonl_path, "r", encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                total_lines += 1
+                if total_lines > max_lines:
+                    truncated = True
+                    break
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                t = obj.get("type")
+                payload = obj.get("payload") if isinstance(obj.get("payload"), dict) else {}
+                if t == "session_meta" and not cwd:
+                    cwd = payload.get("cwd", "")
+                if t == "response_item" and payload.get("type") == "message":
+                    role = payload.get("role", "")
+                    content_items = payload.get("content", [])
+                    text_parts = []
+                    for item in content_items:
+                        if isinstance(item, dict) and item.get("type") in ("input_text", "output_text"):
+                            text_parts.append(item.get("text", ""))
+                        elif isinstance(item, str):
+                            text_parts.append(item)
+                    text = " ".join(text_parts).strip()
+                    if role == "user" and text:
+                        if not any(text.startswith(s) for s in _CODEX_TOPIC_SENTINELS):
+                            messages.append(("user", text))
+                    elif role == "assistant" and text:
+                        messages.append(("assistant", text))
+                if len(messages) >= max_messages:
+                    truncated = bool(fh.readline())
+                    break
+    except OSError as e:
+        return {"messages": [], "cwd": "", "truncated": False, "error": str(e)}
+    return {"messages": messages, "cwd": cwd, "truncated": truncated, "error": None}
+
+
+def _load_gemini_preview(json_path, max_messages: int = 4) -> dict:
+    """Load preview for a Gemini CLI JSON session file."""
+    messages = []
+    cwd = ""
+    truncated = False
+    try:
+        raw = json_path.read_text(encoding="utf-8", errors="replace")
+        data = json.loads(raw)
+    except (OSError, json.JSONDecodeError) as e:
+        return {"messages": [], "cwd": "", "truncated": False, "error": str(e)}
+
+    msg_list = data.get("messages", [])
+    for msg in msg_list:
+        if not isinstance(msg, dict):
+            continue
+        msg_type = msg.get("type", "")
+        content = msg.get("content", "")
+        if isinstance(content, str):
+            text = content.strip()
+        elif isinstance(content, list):
+            parts = []
+            for c in content:
+                if isinstance(c, dict) and isinstance(c.get("text"), str):
+                    parts.append(c["text"])
+                elif isinstance(c, str):
+                    parts.append(c)
+            text = " ".join(parts).strip()
+        else:
+            text = ""
+        if not text:
+            continue
+        if msg_type == "user":
+            messages.append(("user", text))
+        elif msg_type in ("assistant", "gemini", "model"):
+            messages.append(("assistant", text))
+        if len(messages) >= max_messages:
+            truncated = True
+            break
+
+    return {"messages": messages, "cwd": cwd, "truncated": truncated, "error": None}
+
+
+def _load_copilot_preview(session_dir, max_messages: int = 4) -> dict:
+    """Load preview for a GitHub Copilot session directory."""
+    messages = []
+    cwd = ""
+    truncated = False
+
+    # Try workspace.yaml for cwd
+    workspace_yaml = session_dir / "workspace.yaml"
+    meta = _parse_copilot_workspace_yaml(workspace_yaml)
+    if meta:
+        cwd = meta.get("cwd", "")
+
+    # Read events.jsonl for messages
+    events_jsonl = session_dir / "events.jsonl"
+    try:
+        with open(events_jsonl, "r", encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                t = obj.get("type", "")
+                data = obj.get("data") if isinstance(obj.get("data"), dict) else {}
+                if t == "session.start" and not cwd:
+                    ctx = data.get("context") if isinstance(data.get("context"), dict) else {}
+                    cwd = ctx.get("cwd", "") or ctx.get("gitRoot", "")
+                elif t == "user.message":
+                    content = data.get("content", "")
+                    if isinstance(content, str) and content.strip():
+                        messages.append(("user", content.strip()))
+                elif t in ("assistant.message", "copilot.message"):
+                    content = data.get("content", "")
+                    if isinstance(content, str) and content.strip():
+                        messages.append(("assistant", content.strip()))
+                if len(messages) >= max_messages:
+                    truncated = True
+                    break
+    except OSError:
+        # events.jsonl may not exist; fall back to summary from workspace.yaml
+        summary = meta.get("summary", "") if meta else ""
+        if summary:
+            messages = [("user", summary)]
+
+    return {"messages": messages, "cwd": cwd, "truncated": truncated, "error": None}
+
+
 def decode_project_path(encoded: str) -> str:
     """Decode Claude Code's project dir name back into a readable path.
 
@@ -3199,9 +4146,23 @@ def decode_project_path(encoded: str) -> str:
 
 
 def format_project_name(encoded):
-    """Short, readable project name (last path component)."""
+    """Short, readable project name (last path component).
+
+    For Claude Code sessions ``encoded`` is a dash-encoded directory name
+    (e.g. ``-Users-netz-Documents-git-altergo``).  For every other provider
+    we store a plain label directly (e.g. ``altergo`` or ``myproject``), so
+    we skip the Claude-style decode in those cases.
+
+    Heuristic: if the value already contains a ``/`` (an absolute path crept
+    in) or does NOT start with ``-`` (the Claude dash-encoding marker), return
+    the last path component without further decoding.
+    """
     if not encoded:
         return ""
+    # Non-Claude providers store a plain label or basename — return it directly.
+    if "/" in encoded or not encoded.startswith("-"):
+        return encoded.rstrip("/").rsplit("/", 1)[-1] or encoded
+    # Claude dash-encoded path
     decoded = decode_project_path(encoded)
     name = decoded.rstrip("/").rsplit("/", 1)[-1]
     return name or encoded
@@ -3465,12 +4426,18 @@ _RESUME_PROVIDER_CYCLE = [None, "claude", "gemini", "codex", "copilot"]
 _RESUME_SORT_MODES = ["time", "project", "provider"]
 
 
-def _apply_resume_view(sessions, filter_provider, sort_mode, search_query):
+def _apply_resume_view(sessions, filter_provider, sort_mode, search_query, starred_only: bool = False):
     """Return the sorted+filtered session list for the resume picker.
 
-    Applied in order: provider filter → search filter → sort.
+    Applied in order: starred filter → provider filter → search filter → sort.
+    ``starred_only`` and ``filter_provider`` are orthogonal — both can be
+    active at the same time.
     """
     result = sessions
+
+    # Starred-only filter
+    if starred_only:
+        result = [s for s in result if s.get("starred")]
 
     # Provider filter
     if filter_provider is not None:
@@ -3503,8 +4470,9 @@ def _draw_picker(stdscr, sessions):
     filter_provider = None  # None = all; or a provider id string
     sort_mode = "time"  # "time" | "project" | "provider"
     group_mode = False  # True = insert divider lines between project+provider groups
+    starred_only = False  # True = show only starred sessions
 
-    filtered = _apply_resume_view(sessions, filter_provider, sort_mode, search_query)
+    filtered = _apply_resume_view(sessions, filter_provider, sort_mode, search_query, starred_only)
 
     # Starred state is live-edited inside the picker without restarting.
     # sessions dicts carry a "starred" bool that we mutate in place on toggle.
@@ -3519,6 +4487,10 @@ def _draw_picker(stdscr, sessions):
         title_left = " altergo — recall session"
         if search_query:
             title_right = f"{len(filtered)}/{n_all} matching "
+        elif starred_only and filter_provider:
+            title_right = f"{len(filtered)} starred {filter_provider} "
+        elif starred_only:
+            title_right = f"{len(filtered)} starred "
         elif filter_provider:
             title_right = f"{len(filtered)} {filter_provider} sessions "
         else:
@@ -3533,7 +4505,11 @@ def _draw_picker(stdscr, sessions):
         prov_label = filter_provider if filter_provider else "all"
         sort_label = sort_mode
         group_label = "on" if group_mode else "off"
-        status = f" provider: {prov_label}  sort: {sort_label}  group: {group_label}  [f]ilter [s]ort [g]roup"
+        starred_label = "on" if starred_only else "off"
+        status = (
+            f" provider: {prov_label}  sort: {sort_label}  group: {group_label}"
+            f"  starred: {starred_label}  [f]ilter [s]ort [g]roup [*]starred [b]ookmark"
+        )
         _safe_addnstr(stdscr, 2, 0, _truncate(status, max_x - 1), max_x - 1, attrs["dim"])
 
         # Column header row (row 3)
@@ -3653,7 +4629,8 @@ def _draw_picker(stdscr, sessions):
         theme_hint = f" · theme: {THEMES[get_current_theme()]['display_name']} (t)"
         nav = (
             " ↑↓/jk move  ·  / search  ·  G top  ·  p/Tab preview"
-            "  ·  f filter  ·  s sort  ·  g group  ·  * star  ·  Enter resume  ·  q quit" + theme_hint
+            "  ·  f filter  ·  s sort  ·  g group  ·  b bookmark  ·  * starred-only  ·  Enter resume  ·  q quit"
+            + theme_hint
         )
         _safe_addnstr(stdscr, footer_row + 1, 0, _truncate(nav, max_x - 1), max_x - 1, attrs["dim"])
 
@@ -3665,19 +4642,19 @@ def _draw_picker(stdscr, sessions):
             if key == 27:  # Esc — cancel search, restore full list
                 search_mode = False
                 search_query = ""
-                filtered = _apply_resume_view(sessions, filter_provider, sort_mode, "")
+                filtered = _apply_resume_view(sessions, filter_provider, sort_mode, "", starred_only)
                 current = 0
                 scroll_offset = 0
             elif key in (curses.KEY_ENTER, 10, 13):  # Enter — accept filter
                 search_mode = False
             elif key in (curses.KEY_BACKSPACE, 127, 8):
                 search_query = search_query[:-1]
-                filtered = _apply_resume_view(sessions, filter_provider, sort_mode, search_query)
+                filtered = _apply_resume_view(sessions, filter_provider, sort_mode, search_query, starred_only)
                 current = min(current, max(len(filtered) - 1, 0))
                 scroll_offset = 0
             elif 32 <= key <= 126:  # printable character
                 search_query += chr(key)
-                filtered = _apply_resume_view(sessions, filter_provider, sort_mode, search_query)
+                filtered = _apply_resume_view(sessions, filter_provider, sort_mode, search_query, starred_only)
                 current = min(current, max(len(filtered) - 1, 0))
                 scroll_offset = 0
             continue
@@ -3700,7 +4677,7 @@ def _draw_picker(stdscr, sessions):
             if filtered and 0 <= current < len(filtered):
                 s = filtered[current]
                 if s["id"] not in preview_cache:
-                    preview_cache[s["id"]] = load_session_preview(s["path"])
+                    preview_cache[s["id"]] = load_session_preview(s["path"], provider=s.get("provider", "claude"))
                 action = _draw_preview(stdscr, attrs, s, preview_cache[s["id"]])
                 if action == "resume":
                     return s
@@ -3712,20 +4689,27 @@ def _draw_picker(stdscr, sessions):
             # Cycle provider filter: None → claude → gemini → codex → copilot → None
             idx = _RESUME_PROVIDER_CYCLE.index(filter_provider) if filter_provider in _RESUME_PROVIDER_CYCLE else 0
             filter_provider = _RESUME_PROVIDER_CYCLE[(idx + 1) % len(_RESUME_PROVIDER_CYCLE)]
-            filtered = _apply_resume_view(sessions, filter_provider, sort_mode, search_query)
+            filtered = _apply_resume_view(sessions, filter_provider, sort_mode, search_query, starred_only)
             current = 0
             scroll_offset = 0
         elif key == ord("s"):
             # Cycle sort mode: time → project → provider → time
             idx = _RESUME_SORT_MODES.index(sort_mode) if sort_mode in _RESUME_SORT_MODES else 0
             sort_mode = _RESUME_SORT_MODES[(idx + 1) % len(_RESUME_SORT_MODES)]
-            filtered = _apply_resume_view(sessions, filter_provider, sort_mode, search_query)
+            filtered = _apply_resume_view(sessions, filter_provider, sort_mode, search_query, starred_only)
             current = 0
             scroll_offset = 0
         elif key == ord("g"):
             group_mode = not group_mode
             scroll_offset = 0
         elif key == ord("*"):
+            # Toggle starred-only filter; keep search/provider filters intact
+            starred_only = not starred_only
+            filtered = _apply_resume_view(sessions, filter_provider, sort_mode, search_query, starred_only)
+            current = 0
+            scroll_offset = 0
+        elif key == ord("b"):
+            # Bookmark (star) toggle on the highlighted row
             if filtered and 0 <= current < len(filtered):
                 s = filtered[current]
                 now_starred = toggle_starred_session(
@@ -3738,6 +4722,10 @@ def _draw_picker(stdscr, sessions):
                     if sess["id"] == s["id"]:
                         sess["starred"] = now_starred
                         break
+                # Recompute filtered: if starred_only is on and we just un-starred
+                # the current row it will disappear — clamp logic below handles cursor.
+                filtered = _apply_resume_view(sessions, filter_provider, sort_mode, search_query, starred_only)
+                current = min(current, max(len(filtered) - 1, 0))
         elif key == ord("t"):
             # Cycle to the next theme, re-init the picker attrs so the current
             # draw picks up the new palette, and persist the choice immediately.
@@ -4538,9 +5526,13 @@ def _draw_settings(stdscr):
         _PRV_X = 42  # preview text start
         _preview_avail = max(0, max_x - _PRV_X - 1)
 
-        # Pre-render the focused font preview
+        # Pre-render the focused font preview (follows cursor, not the committed selection)
         _preview_lines: list[str] = []
-        _preview_font = _banner_fonts[current_font_idx] if _banner_fonts else _DEFAULT_BANNER_FONT
+        _font_off_local = _p0_font_offset()
+        if _banner_fonts and _font_off_local <= page0_cursor < _font_off_local + len(_banner_fonts):
+            _preview_font = _banner_fonts[page0_cursor - _font_off_local]
+        else:
+            _preview_font = _banner_fonts[current_font_idx] if _banner_fonts else _DEFAULT_BANNER_FONT
         if _preview_avail > 10:
             try:
                 import pyfiglet as _pf
@@ -5005,8 +5997,16 @@ def _draw_settings(stdscr):
                         new_cur += 1
                     page0_cursor = min(page0_n - 1, new_cur)
                 _page0_ensure_visible()
-            elif key == ord(" "):
-                if page0_cursor == _p0_rand_idx():
+            elif key in (ord(" "), curses.KEY_ENTER, 10, 13):
+                _poff_sp = _p0_pack_offset()
+                if page0_cursor < len(theme_names):
+                    current_theme_idx = page0_cursor
+                    set_current_theme(theme_names[current_theme_idx])
+                elif _foff <= page0_cursor < _foff + len(_banner_fonts):
+                    current_font_idx = page0_cursor - _foff
+                elif _poff_sp <= page0_cursor < _poff_sp + len(_VALID_ANIM_PACKS):
+                    current_pack_idx = page0_cursor - _poff_sp
+                elif page0_cursor == _p0_rand_idx():
                     random_theme_on = not random_theme_on
             elif key in (curses.KEY_LEFT, ord("h")):
                 if page0_cursor == _p0_freq_idx() and random_theme_on:
@@ -5031,19 +6031,12 @@ def _draw_settings(stdscr):
                             page0_cursor = _foff + target_fi
                             _page0_ensure_visible()
 
-            # Theme selection follows cursor — live preview IS the selection
-            if page0_cursor < len(theme_names) and current_theme_idx != page0_cursor:
-                current_theme_idx = page0_cursor
-                set_current_theme(theme_names[current_theme_idx])
-
-            # Font selection follows cursor
-            if _foff <= page0_cursor < _foff + len(_banner_fonts):
-                current_font_idx = page0_cursor - _foff
-
-            # Animation pack selection follows cursor
-            _poff = _p0_pack_offset()
-            if _poff <= page0_cursor < _poff + len(_VALID_ANIM_PACKS):
-                current_pack_idx = page0_cursor - _poff
+            # Theme live preview follows cursor, but the committed selection
+            # (current_theme_idx / ◆ marker) only moves on Space/Enter above.
+            if page0_cursor < len(theme_names):
+                hover_theme = theme_names[page0_cursor]
+                if hover_theme != get_current_theme():
+                    set_current_theme(hover_theme)
 
         elif current_page == 1:
             if key in (curses.KEY_UP, ord("k")):
@@ -5135,6 +6128,190 @@ def interactive_settings():
     print(_c(C("success"), "Settings saved and applied."))
 
 
+### Keychain isolation (macOS)
+#
+# [keychain-impl] Empirical verifications performed 2026-04-20 on macOS 25.2.0:
+#
+# 1. DbName suffix: ~/Library/Preferences/com.apple.security.plist on this Mac
+#    uses "~/Library/Keychains/login.keychain" (NO "-db" suffix). Plan B's
+#    claim of "-db" was wrong — we use the no-suffix form to match the OS.
+#    The on-disk file is "login.keychain-db" but the plist references the
+#    legacy name without suffix; macOS resolves both.
+#
+# 2. set-keychain-settings with no flags: confirmed from `man security` that
+#    omitting -l and -u means no lock-on-sleep and no timeout (never locks).
+#    No -t flag needed.
+#
+# 3. -T /usr/bin/security trust: sufficient on this macOS version. The security
+#    binary can find-generic-password -w without a GUI prompt because the
+#    unlock entry is stored in the already-unlocked login keychain (open since
+#    GUI login). Verified by end-to-end test on a throwaway account.
+
+SECURITY_CMD = "/usr/bin/security"
+_KC_SERVICE = "com.altergo.account-unlock"
+_KC_GUID = "{87191ca3-0fc9-11d4-849a-000502b52122}"  # Apple CSSM DL GUID — constant across all Macs
+_KC_SUBSERVICE_TYPE = 6  # CSSM_SERVICE_DL
+
+
+class KeychainError(Exception):
+    """Raised when a /usr/bin/security operation fails in an unexpected way."""
+
+
+def _sec(argv: list, *, check: bool = True, timeout: int = 10) -> subprocess.CompletedProcess:
+    """Thin wrapper around /usr/bin/security.
+
+    Prepends SECURITY_CMD to argv and runs it. If check=True and the process
+    exits non-zero, raises KeychainError with stderr context. Catches a missing
+    binary and re-raises as KeychainError so callers get a uniform exception.
+    """
+    try:
+        r = subprocess.run(
+            [SECURITY_CMD] + argv,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except FileNotFoundError:
+        raise KeychainError("/usr/bin/security not found — macOS Security framework unavailable")
+    if check and r.returncode != 0:
+        raise KeychainError(f"security {argv[0]} failed (exit {r.returncode}): {r.stderr.strip()}")
+    return r
+
+
+def _keychain_path(account_home: Path) -> Path:
+    """Return the per-account keychain file path. Pure."""
+    return account_home / "Library" / "Keychains" / "login.keychain-db"
+
+
+def _keychain_prefs_path(account_home: Path) -> Path:
+    """Return the per-account security preferences plist path. Pure."""
+    return account_home / "Library" / "Preferences" / "com.apple.security.plist"
+
+
+def _write_keychain_prefs(account_home: Path) -> None:
+    """Write com.apple.security.plist so processes with HOME=account_home use the per-account keychain.
+
+    Uses the legacy DbName form ("login.keychain" without "-db") — this is what
+    macOS itself writes and what the Security framework resolves. The on-disk
+    keychain file is still named login.keychain-db; both names work.
+    """
+    prefs_path = _keychain_prefs_path(account_home)
+    prefs_path.parent.mkdir(parents=True, exist_ok=True)
+    plist_data = {
+        "DLDBSearchList": [
+            {
+                "GUID": _KC_GUID,
+                "DbName": "~/Library/Keychains/login.keychain",
+                "SubserviceType": _KC_SUBSERVICE_TYPE,
+            }
+        ]
+    }
+    with open(prefs_path, "wb") as f:
+        plistlib.dump(plist_data, f, fmt=plistlib.FMT_XML)
+
+
+def _create_account_keychain(account_home: Path, slug: str) -> None:
+    """Create the per-account keychain and register an unlock entry in the login keychain.
+
+    Idempotent: if the keychain file already exists, skips creation and reuses
+    whatever password is already stored. The unlock entry in the login keychain
+    is deleted and re-added to ensure it is current (pre-flight idempotency).
+
+    Requires macOS (darwin). Callers should guard with sys.platform == "darwin".
+    """
+    kc_path = _keychain_path(account_home)
+    kc_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if kc_path.exists():
+        # Check whether the login-keychain unlock entry still exists.
+        # We cannot self-heal by re-keying: the keychain file on disk is
+        # encrypted with the original P that only lives in the login keychain.
+        # Generating a new P and re-adding it to the login keychain would leave
+        # the file encrypted with the old P, so unlock-keychain would still fail
+        # (errSecAuthFailed). The user must manually remove the orphaned file and
+        # re-run --config to regenerate everything from scratch.
+        r = _sec(["find-generic-password", "-s", _KC_SERVICE, "-a", slug, "-w"], check=False)
+        if r.returncode != 0:
+            print(
+                _c(
+                    33,
+                    f"  WARNING: per-account keychain exists at {kc_path} but no unlock entry "
+                    f"was found in the login keychain for account '{slug}'.\n"
+                    f"  The keychain file is orphaned and cannot be unlocked.\n"
+                    f"  To recover: manually remove {kc_path} and re-run 'altergo --config {slug}'.",
+                ),
+                file=sys.stderr,
+            )
+            return
+        # Unlock entry still valid — just ensure the plist is current.
+        print(_c(2, "  Keychain already exists, reusing"))
+        _write_keychain_prefs(account_home)
+        return
+
+    P = secrets.token_bytes(32).hex()  # 64 hex chars, 256-bit entropy
+
+    _sec(["create-keychain", "-p", P, str(kc_path)])
+    # No flags = no auto-lock, no lock-on-sleep, no timeout (confirmed from man security).
+    _sec(["set-keychain-settings", str(kc_path)])
+
+    # Idempotent pre-flight: remove any stale unlock entry before adding.
+    _sec(["delete-generic-password", "-s", _KC_SERVICE, "-a", slug], check=False)
+
+    # Store unlock password in the real login keychain. -T /usr/bin/security
+    # grants the security binary ACL access so unlock-keychain works in
+    # non-GUI contexts (SSH, tmux, cron) without a GUI authorization prompt.
+    _sec(["add-generic-password", "-s", _KC_SERVICE, "-a", slug, "-w", P, "-T", SECURITY_CMD])
+
+    _write_keychain_prefs(account_home)
+
+
+def _unlock_account_keychain(account_home: Path, slug: str) -> None:
+    """Unlock the per-account keychain using the stored password.
+
+    Reads the unlock password from the real login keychain (already unlocked
+    since GUI login) and calls security unlock-keychain on the per-account
+    keychain. The keychain stays unlocked for the lifetime of the session.
+    """
+    r = _sec(["find-generic-password", "-s", _KC_SERVICE, "-a", slug, "-w"], check=False)
+    if r.returncode != 0:
+        stderr = r.stderr.strip()
+        if "interaction is not allowed" in stderr or "errSecInteractionNotAllowed" in stderr:
+            raise KeychainError(
+                "login keychain is locked — open Keychain Access and unlock 'login', or disable its auto-lock timer"
+            )
+        if "could not be found" in stderr or "The specified item could not be found" in stderr:
+            raise KeychainError(
+                f"no unlock entry found for account '{slug}' — run 'altergo --config {slug}' to re-create"
+            )
+        raise KeychainError(f"failed to read unlock entry: {stderr}")
+
+    P = r.stdout.rstrip("\n")
+    try:
+        _sec(["unlock-keychain", "-p", P, str(_keychain_path(account_home))])
+    except KeychainError as e:
+        if "errSecAuthFailed" in str(e) or "authorization failed" in str(e).lower():
+            raise KeychainError(
+                f"keychain password mismatch for account '{slug}' — "
+                f"run 'altergo --config {slug}' to re-create the keychain"
+            ) from e
+        raise
+
+
+def _delete_account_keychain(account_home: Path, slug: str) -> None:
+    """Remove the per-account keychain and its unlock entry from the login keychain.
+
+    Tolerates missing keychain file or missing unlock entry (both check=False).
+    The caller (do_delete_account) handles rmtree for any residue.
+    """
+    _sec(["delete-keychain", str(_keychain_path(account_home))], check=False)
+    _sec(["delete-generic-password", "-s", _KC_SERVICE, "-a", slug], check=False)
+
+
+def _is_keychain_isolated(meta: dict | None) -> bool:
+    """Return True if the account metadata requests per-account keychain isolation."""
+    return bool(meta) and meta.get("keychain") == "isolated"
+
+
 # --- Launch ---
 
 
@@ -5155,6 +6332,13 @@ def _build_alt_env(account: str = "default") -> dict:
     if account == _NATIVE_ACCOUNT:
         return os.environ.copy()
     account_home, _ = resolve_account(account)
+    meta = load_account_meta(account_home)
+    if sys.platform == "darwin" and _is_keychain_isolated(meta):
+        try:
+            _unlock_account_keychain(account_home, account)
+        except KeychainError as e:
+            print(f"altergo: {e}", file=sys.stderr)
+            sys.exit(1)
     env = os.environ.copy()
     env["HOME"] = str(account_home)
     acct_local_bin = account_home / ".local" / "bin"
@@ -5204,22 +6388,16 @@ def _sweep_existing_accounts() -> bool:
         meta = load_account_meta(account_home)
 
         if meta is not None:
-            pid = meta.get("provider", "claude")
-            prov = PROVIDERS.get(pid)
-            if prov is not None:
+            for pid in meta["providers"]:
+                prov = PROVIDERS.get(pid)
+                if prov is None:
+                    continue
                 main_dot = MAIN_HOME / prov["dot_dir"]
                 acct_dot = account_home / prov["dot_dir"]
                 for name in prov["symlink_dirs"]:
                     src = main_dot / name
                     dst = acct_dot / name
                     if _ensure_symlinked_dir(name, src, dst, acct_dot):
-                        changed = True
-            else:
-                # Unknown provider id — fall back to Claude-only
-                for name in SYMLINK_DIRS:
-                    src = MAIN_CLAUDE / name
-                    dst = account_claude / name
-                    if _ensure_symlinked_dir(name, src, dst, account_claude):
                         changed = True
         else:
             # Legacy account (no account.json at all) — fall back to Claude-only
@@ -5276,12 +6454,15 @@ def _tmux_unique_session_name(base: str) -> str:
         n += 1
 
 
-def _build_tmux_cmd(inner_cmd: list, env: dict, session_name: str) -> list:
+def _build_tmux_cmd(inner_cmd: list, env: dict, session_name: str, cwd: str | None = None) -> list:
     """Wrap *inner_cmd* in a ``tmux new-session`` call.
 
     The altered HOME and PATH from the altergo account env are forwarded into
     the tmux window via ``-e`` flags so the account context is fully preserved
     inside the session.  tmux itself runs in the caller's real environment.
+
+    If *cwd* is provided, ``-c <cwd>`` is passed to ``tmux new-session`` so the
+    window starts in the session's original working directory.
 
     On non-zero exit the pane pauses with a prompt so the user can read any
     error output before tmux closes the alternate screen and the text is lost.
@@ -5308,6 +6489,8 @@ def _build_tmux_cmd(inner_cmd: list, env: dict, session_name: str) -> list:
         'fi; exit "$_ret"'
     )
     tmux_cmd = ["tmux", "new-session", "-s", session_name]
+    if cwd:
+        tmux_cmd += ["-c", cwd]
     for key in ("HOME", "PATH"):
         if key in env:
             tmux_cmd += ["-e", f"{key}={env[key]}"]
@@ -5315,11 +6498,23 @@ def _build_tmux_cmd(inner_cmd: list, env: dict, session_name: str) -> list:
     return tmux_cmd
 
 
-def launch_claude(account: str = "default", args=None, provider: str | None = None, force_tmux: bool = False):
+def launch_claude(
+    account: str = "default",
+    args=None,
+    provider: str | None = None,
+    force_tmux: bool = False,
+    cwd: "str | Path | None" = None,
+):
     """Launch a provider CLI with account HOME, passing args through unchanged.
 
     If provider is None, reads account.json to determine which provider to use.
     Falls back to "claude" for legacy accounts with no metadata.
+
+    If *cwd* is provided and resolves to an existing directory the provider CLI
+    is started with that as its working directory.  This lets ``--recall`` and
+    ``--search`` resume a session in the folder where it originally ran.  If the
+    path no longer exists a dim notice is printed and the launch continues from
+    the caller's cwd instead.
     """
     account_home, _ = resolve_account(account)
 
@@ -5343,7 +6538,16 @@ def launch_claude(account: str = "default", args=None, provider: str | None = No
                 )
         else:
             meta = load_account_meta(account_home)
-            provider = meta["provider"] if meta is not None else "claude"
+            provider = meta["default_provider"] if meta is not None else "claude"
+    elif account != _NATIVE_ACCOUNT:
+        # Explicit provider requested — reject if the account hasn't installed it.
+        meta = load_account_meta(account_home)
+        if meta is not None and provider not in meta["providers"]:
+            sys.exit(
+                f"altergo: account '{account}' does not have provider '{provider}' installed.\n"
+                f"  Available: {', '.join(meta['providers'])}\n"
+                f"  Add it with: altergo {account} --add-provider {provider}"
+            )
 
     # Find the binary
     if provider == "claude":
@@ -5364,6 +6568,15 @@ def launch_claude(account: str = "default", args=None, provider: str | None = No
             sys.exit(f"altergo: '{prov['binary']}' not found in PATH.\n  Install {prov['display_name']} and try again.")
 
     env = _build_alt_env(account)
+
+    # Validate cwd early so we can emit the notice before the banner.
+    launch_cwd: str | None = None
+    if cwd is not None:
+        _cwd_path = Path(cwd)
+        if _cwd_path.is_dir():
+            launch_cwd = str(_cwd_path)
+        else:
+            print(_c(C("dim"), f"  altergo: session cwd '{cwd}' no longer exists — launching from current directory"))
 
     # Translate --yolo / --yolo-resume into provider-native flags.
     extra_prefix, raw_args, extra_suffix = _translate_yolo_flags(provider, list(args or []))
@@ -5402,8 +6615,11 @@ def launch_claude(account: str = "default", args=None, provider: str | None = No
     if use_tmux and not os.environ.get("TMUX"):
         if _tmux_available():
             sname = _tmux_unique_session_name(_tmux_session_name(account, provider))
-            cmd = _build_tmux_cmd(cmd, env, sname)
+            cmd = _build_tmux_cmd(cmd, env, sname, cwd=launch_cwd)
             run_env = None  # tmux runs in the caller's real env; account env is in -e flags
+            # When tmux owns the cwd (-c flag), subprocess.run must not also set
+            # it — the outer tmux process runs from the caller's directory.
+            launch_cwd = None
             print(_c(C("dim"), f"  tmux session: {sname}  (detach: Ctrl-b d  ·  quit: type 'exit' or Ctrl-C)"))
         else:
             print(
@@ -5416,7 +6632,7 @@ def launch_claude(account: str = "default", args=None, provider: str | None = No
             )
 
     launch_wall = time.time()
-    result = subprocess.run(cmd, env=run_env)
+    result = subprocess.run(cmd, env=run_env, cwd=launch_cwd)
     # Record the last session so `altergo --star` works with no ID argument.
     try:
         _record_last_session_after_exit(provider, launch_wall)
@@ -5563,21 +6779,141 @@ def _looks_like_account(token: str) -> bool:
 # --- Interactive prompt helpers ---
 
 
-def _prompt_account_name() -> str:
-    """Interactively prompt for account name. Shows existing accounts."""
-    existing = list_accounts()
-    if existing:
-        print(f"  Existing accounts: {', '.join(_c(36, a) for a in existing)}")
-    while True:
-        raw = input("  Account name: ").strip()
-        if not raw:
-            print("  Please enter an account name.")
-            continue
-        try:
-            validate_account_name(raw)
-            return raw
-        except SystemExit:
-            print(f"  Invalid name '{raw}'. Use letters, digits, - or _ only.")
+def _prompt_new_account_name_tui(existing: list) -> str | None:
+    """Full-screen curses name-entry for a brand-new account.
+
+    Returns the validated name on Enter, or None on Esc/cancel.
+    Exits with a clear error when curses isn't available — altergo has no
+    text-based naming fallback anymore.
+    """
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        print(
+            "altergo: creating an account requires an interactive terminal.\n"
+            "  Use: altergo --config <name> --provider <provider>",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    def _draw(stdscr, state):
+        curses.curs_set(1)
+        attrs = _picker_attrs("onboarding")
+        stdscr.timeout(80)
+        phase = 0
+
+        while True:
+            stdscr.erase()
+            max_y, max_x = stdscr.getmaxyx()
+
+            title = " altergo — new account "
+            right = " choose a name "
+            pad = max(1, max_x - len(right))
+            header = title.ljust(pad) + right
+            _safe_addnstr(
+                stdscr,
+                0,
+                0,
+                header[:max_x],
+                max_x - 1,
+                attrs["title"] | curses.A_REVERSE | curses.A_BOLD,
+            )
+            _safe_addnstr(stdscr, 1, 0, ("─" * (max_x - 1))[: max_x - 1], max_x - 1, attrs["dim"])
+
+            row = 3
+            if existing:
+                chip_line = "  existing: " + "  ".join(existing)
+                _safe_addnstr(stdscr, row, 0, chip_line[: max_x - 1], max_x - 1, attrs["dim"])
+                row += 2
+            else:
+                row += 1
+
+            _safe_addnstr(stdscr, row, 2, "Account name", 12, attrs["project"] | curses.A_BOLD)
+            row += 2
+
+            box_w = min(max(40, max_x - 6), 64)
+            box_x = 2
+            box_y = row
+            top = "┌" + "─" * (box_w - 2) + "┐"
+            bot = "└" + "─" * (box_w - 2) + "┘"
+            _safe_addnstr(stdscr, box_y, box_x, top, box_w, attrs["accent"])
+            _safe_addnstr(stdscr, box_y + 2, box_x, bot, box_w, attrs["accent"])
+            _safe_addnstr(stdscr, box_y + 1, box_x, "│", 1, attrs["accent"])
+            _safe_addnstr(stdscr, box_y + 1, box_x + box_w - 1, "│", 1, attrs["accent"])
+
+            buf = state["buffer"]
+            inner = box_w - 4
+            display = buf[-inner:] if len(buf) > inner else buf
+            _safe_addnstr(
+                stdscr,
+                box_y + 1,
+                box_x + 2,
+                display,
+                inner,
+                attrs["project"] | curses.A_BOLD,
+            )
+
+            err = state["error"]
+            status_row = box_y + 4
+            if err:
+                _safe_addnstr(stdscr, status_row, 2, err[: max_x - 3], max_x - 3, attrs["size_warn"] | curses.A_BOLD)
+            else:
+                hint = "Letters, digits, - or _. Must not start with a digit. Max 64 chars."
+                _safe_addnstr(stdscr, status_row, 2, hint[: max_x - 3], max_x - 3, attrs["dim"])
+
+            nav = "  Confirm (Enter)  ·  Edit (Backspace)  ·  Cancel (Esc)"
+            _draw_animated_nav(stdscr, max_y - 1, nav, max_x - 1, phase, attrs)
+
+            cursor_col = box_x + 2 + min(len(buf), inner)
+            try:
+                stdscr.move(box_y + 1, cursor_col)
+            except curses.error:
+                pass
+
+            stdscr.refresh()
+            key = stdscr.getch()
+
+            if key == -1:
+                phase += 1
+                continue
+            if key in (curses.KEY_ENTER, 10, 13):
+                name = buf.strip()
+                if not name:
+                    state["error"] = "Name can't be empty."
+                    continue
+                if not re.match(r"^[a-zA-Z0-9][a-zA-Z0-9_-]*$", name) or len(name) > 64:
+                    state["error"] = f"Invalid name '{name}'. Use letters/digits/-/_, must not start with digit."
+                    continue
+                if name in _RESERVED_NAMES:
+                    state["error"] = f"'{name}' is a reserved name. Pick another."
+                    continue
+                if name in existing:
+                    state["error"] = f"'{name}' already exists. Pick a new name or reconfigure from the menu."
+                    continue
+                state["result"] = name
+                return
+            elif key == 27:
+                state["cancelled"] = True
+                return
+            elif key in (curses.KEY_BACKSPACE, 127, 8):
+                state["buffer"] = buf[:-1]
+                state["error"] = ""
+            elif key == curses.KEY_RESIZE:
+                continue
+            elif 32 <= key < 127:
+                ch = chr(key)
+                if len(buf) < 64:
+                    state["buffer"] = buf + ch
+                    state["error"] = ""
+
+    state = {"buffer": "", "error": "", "result": None, "cancelled": False}
+    try:
+        curses.wrapper(_draw, state)
+    except Exception as e:
+        print(f"altergo: unable to show name-entry TUI ({e}).", file=sys.stderr)
+        sys.exit(1)
+
+    if state["cancelled"]:
+        return None
+    return state["result"]
 
 
 def _prompt_provider_picker(current_provider: str | None = None) -> str:
@@ -5685,6 +7021,363 @@ def _prompt_provider_picker(current_provider: str | None = None) -> str:
     return ordered[state["cursor"]]
 
 
+def _build_config_rows(accounts: list) -> list:
+    """Produce the row list rendered by the --config picker.
+
+    Row kinds:
+        ("account", name, provider_id, is_active, email)
+        ("native",  "native", None, is_active, None)   — passthrough to real $HOME
+        ("create",  None, None, False, None)
+    """
+    active = get_active_account()
+    rows = []
+    for acct in accounts:
+        meta = load_account_meta(ACCOUNTS_DIR / acct)
+        pid = meta["default_provider"] if meta else "claude"
+        email = None
+        try:
+            email = _read_account_email(acct)
+        except Exception:
+            pass
+        rows.append(("account", acct, pid, acct == active, email))
+
+    # Only offer native when at least one provider binary is actually on PATH —
+    # otherwise picking it would immediately fail at launch time.
+    if any(shutil.which(p["binary"]) for p in PROVIDERS.values()):
+        rows.append(("native", _NATIVE_ACCOUNT, None, active == _NATIVE_ACCOUNT, None))
+
+    rows.append(("create", None, None, False, None))
+    return rows
+
+
+def _confirm_delete_account_tui(account: str, path) -> bool:
+    """Full-screen warning/confirm for irreversible account deletion.
+
+    Returns True if the user pressed 'y', False on n/Esc/anything else.
+    """
+
+    def _draw(stdscr, state):
+        curses.curs_set(0)
+        attrs = _picker_attrs("onboarding")
+        stdscr.timeout(80)
+        phase = 0
+
+        while True:
+            stdscr.erase()
+            max_y, max_x = stdscr.getmaxyx()
+
+            title = " altergo — remove account "
+            right = " irreversible "
+            pad = max(1, max_x - len(right))
+            header = title.ljust(pad) + right
+            _safe_addnstr(
+                stdscr,
+                0,
+                0,
+                header[:max_x],
+                max_x - 1,
+                attrs["size_warn"] | curses.A_REVERSE | curses.A_BOLD,
+            )
+            _safe_addnstr(stdscr, 1, 0, ("─" * (max_x - 1))[: max_x - 1], max_x - 1, attrs["dim"])
+
+            lines = [
+                ("warn_big", f"  ⚠  Remove account '{account}'?"),
+                ("blank", ""),
+                ("dim", "  This will:"),
+                ("dim", "    · tear down all provider symlinks"),
+                ("dim", f"    · remove {path}"),
+                ("dim", "    · wipe credentials and sessions stored there"),
+                ("blank", ""),
+                ("warn", "  This is IRREVERSIBLE."),
+                ("dim", "  Provider credentials, MCP config, and local session"),
+                ("dim", "  history for this account will be lost."),
+            ]
+            for i, (kind, ln) in enumerate(lines):
+                if 3 + i >= max_y - 2:
+                    break
+                if kind == "warn_big":
+                    attr = attrs["size_warn"] | curses.A_BOLD
+                elif kind == "warn":
+                    attr = attrs["size_warn"] | curses.A_BOLD
+                else:
+                    attr = attrs["dim"]
+                _safe_addnstr(stdscr, 3 + i, 0, ln[: max_x - 1], max_x - 1, attr)
+
+            nav = "  Confirm remove (y)  ·  Cancel (n/Esc/Enter)"
+            _draw_animated_nav(stdscr, max_y - 1, nav, max_x - 1, phase, attrs)
+
+            stdscr.refresh()
+            key = stdscr.getch()
+
+            if key == -1:
+                phase += 1
+                continue
+            if key in (ord("y"), ord("Y")):
+                state["confirmed"] = True
+                return
+            if key in (ord("n"), ord("N"), 27, curses.KEY_ENTER, 10, 13, ord("q")):
+                state["confirmed"] = False
+                return
+            if key == curses.KEY_RESIZE:
+                continue
+
+    state = {"confirmed": False}
+    try:
+        curses.wrapper(_draw, state)
+    except Exception:
+        return False
+    return state["confirmed"]
+
+
+def _run_config_picker(accounts: list, start_cursor: int = 0) -> tuple | None:
+    """Render the config picker once and return an action tuple:
+
+        ("account", name)     — reconfigure this account
+        ("create",)           — create a new account
+        ("remove", name, idx) — user pressed r/Delete (awaiting confirmation)
+        None                  — user quit
+
+    Set-default (d) is handled inline with a confirmation flash — the row
+    list is rebuilt in place so the ● marker moves without returning.
+    """
+
+    def _draw(stdscr, state):
+        curses.curs_set(0)
+        attrs = _picker_attrs("onboarding")
+        stdscr.timeout(80)
+        phase = 0
+        cursor = state["cursor"]
+        rows = _build_config_rows(accounts)
+
+        def _clamp(c):
+            return max(0, min(c, len(rows) - 1))
+
+        while True:
+            stdscr.erase()
+            max_y, max_x = stdscr.getmaxyx()
+
+            n_accts = sum(1 for r in rows if r[0] == "account")
+            has_native = any(r[0] == "native" for r in rows)
+            n_active = sum(1 for r in rows if r[0] in ("account", "native") and r[3])
+            acct_s = "s" if n_accts != 1 else ""
+            native_tag = " +native" if has_native else ""
+            right = f"{n_accts} account{acct_s}{native_tag} · {n_active} active "
+            title = " altergo — configure account "
+            pad = max(1, max_x - len(right))
+            header = title.ljust(pad) + right
+            _safe_addnstr(
+                stdscr,
+                0,
+                0,
+                header[:max_x],
+                max_x - 1,
+                attrs["title"] | curses.A_REVERSE | curses.A_BOLD,
+            )
+            _safe_addnstr(stdscr, 1, 0, ("─" * (max_x - 1))[: max_x - 1], max_x - 1, attrs["dim"])
+
+            name_w = 14
+            prov_w = 14
+
+            base = 3
+            y_offset = 0
+            for i, r in enumerate(rows):
+                y = base + i + y_offset
+                # Spacer rows above 'native' and 'create' entries.
+                if r[0] in ("native", "create") and i > 0 and rows[i - 1][0] == "account":
+                    y_offset += 1
+                    y += 1
+                elif r[0] == "create" and i > 0 and rows[i - 1][0] == "native":
+                    y_offset += 1
+                    y += 1
+                if y >= max_y - 3:
+                    break
+                is_cursor = i == cursor
+
+                if r[0] == "account":
+                    _kind, name, pid, is_active, email = r
+                    prov_label = PROVIDERS.get(pid, {}).get("display_name", pid or "")
+                    marker = "●" if is_active else " "
+                    email_str = email or ""
+                    line = f"  {marker} {name[:name_w].ljust(name_w)}  {prov_label[:prov_w].ljust(prov_w)}  {email_str}"
+                    row_attr = attrs["selected"] if is_cursor else attrs["dim"]
+                    if is_active and not is_cursor:
+                        row_attr = attrs["accent"]
+                    _safe_addnstr(stdscr, y, 0, line[: max_x - 1].ljust(max_x - 1), max_x - 1, row_attr)
+                elif r[0] == "native":
+                    _kind, name, _pid, is_active, _ = r
+                    marker = "●" if is_active else " "
+                    line = (
+                        f"  {marker} {name[:name_w].ljust(name_w)}  "
+                        f"{'real $HOME'.ljust(prov_w)}  (passthrough · no isolation)"
+                    )
+                    if is_cursor:
+                        row_attr = attrs["selected"]
+                    elif is_active:
+                        row_attr = attrs["accent"]
+                    else:
+                        row_attr = attrs["time"]
+                    _safe_addnstr(stdscr, y, 0, line[: max_x - 1].ljust(max_x - 1), max_x - 1, row_attr)
+                else:
+                    label = "  + Create new account"
+                    row_attr = attrs["selected"] if is_cursor else attrs["accent"] | curses.A_BOLD
+                    _safe_addnstr(stdscr, y, 0, label[: max_x - 1].ljust(max_x - 1), max_x - 1, row_attr)
+
+            # Context hint — varies with the highlighted row.
+            cur_kind = rows[cursor][0] if rows else ""
+            if cur_kind == "native":
+                hint = "  native passthrough — press d to make it default. Enter also sets default."
+            elif cur_kind == "account":
+                hint = "  Enter = reconfigure · d = set as default · r/Delete = remove (irreversible)"
+            else:
+                hint = "  Create a new account."
+            _safe_addnstr(stdscr, max_y - 3, 0, hint[: max_x - 1], max_x - 1, attrs["dim"])
+
+            nav = "  Enter · Default (d) · Remove (r) · ↑↓/jk · Quit (q/Esc)"
+            _draw_animated_nav(stdscr, max_y - 1, nav, max_x - 1, phase, attrs)
+
+            stdscr.refresh()
+            key = stdscr.getch()
+
+            if key == -1:
+                phase += 1
+                continue
+            if key in (curses.KEY_UP, ord("k")):
+                cursor = _clamp(cursor - 1)
+            elif key in (curses.KEY_DOWN, ord("j")):
+                cursor = _clamp(cursor + 1)
+            elif key in (curses.KEY_ENTER, 10, 13):
+                state["cursor"] = cursor
+                picked = rows[cursor]
+                if picked[0] == "native":
+                    # Native can't be "configured" — Enter here means "make default".
+                    set_active_account(picked[1])
+                    rows = _build_config_rows(accounts)
+                    confirm = f" ✓ '{picked[1]}' set as default account "
+                    _safe_addnstr(
+                        stdscr,
+                        max_y - 1,
+                        0,
+                        confirm[: max_x - 1].ljust(max_x - 1),
+                        max_x - 1,
+                        attrs["accent"],
+                    )
+                    stdscr.refresh()
+                    curses.napms(800)
+                    continue
+                state["action"] = "select"
+                return
+            elif key in (ord("d"), ord("D")):
+                picked = rows[cursor]
+                if picked[0] in ("account", "native"):
+                    set_active_account(picked[1])
+                    rows = _build_config_rows(accounts)
+                    confirm = f" ✓ '{picked[1]}' set as default account "
+                    _safe_addnstr(
+                        stdscr,
+                        max_y - 1,
+                        0,
+                        confirm[: max_x - 1].ljust(max_x - 1),
+                        max_x - 1,
+                        attrs["accent"],
+                    )
+                    stdscr.refresh()
+                    curses.napms(800)
+            elif key in (ord("r"), ord("R"), curses.KEY_DC):
+                picked = rows[cursor]
+                if picked[0] == "account":
+                    state["cursor"] = cursor
+                    state["action"] = "remove"
+                    return
+                elif picked[0] == "native":
+                    msg = " native is a reserved passthrough — nothing to remove "
+                    _safe_addnstr(
+                        stdscr,
+                        max_y - 1,
+                        0,
+                        msg[: max_x - 1].ljust(max_x - 1),
+                        max_x - 1,
+                        attrs["size_warn"],
+                    )
+                    stdscr.refresh()
+                    curses.napms(900)
+            elif key in (ord("q"), 27):
+                state["action"] = "quit"
+                return
+            elif key == curses.KEY_RESIZE:
+                continue
+
+    # Clamp relative to the rows we're about to build.
+    prelim_rows = _build_config_rows(accounts)
+    clamped = max(0, min(start_cursor, len(prelim_rows) - 1))
+    state = {"cursor": clamped, "action": None}
+    try:
+        curses.wrapper(_draw, state)
+    except Exception as e:
+        print(f"altergo: unable to show config TUI ({e}).", file=sys.stderr)
+        sys.exit(1)
+
+    if state["action"] == "quit" or state["action"] is None:
+        return None
+
+    # Rebuild once more to decode the final cursor position — rows may have
+    # shifted during set-default flashes (cursor index stays stable so this is
+    # purely to read the row kind at that index).
+    final_rows = _build_config_rows(accounts)
+    idx = max(0, min(state["cursor"], len(final_rows) - 1))
+    picked = final_rows[idx]
+    if state["action"] == "remove" and picked[0] == "account":
+        return ("remove", picked[1], idx)
+    if picked[0] == "account":
+        return ("account", picked[1])
+    return ("create",)
+
+
+def _prompt_config_menu(existing: list) -> str | None:
+    """Curses TUI listing existing accounts + a 'Create new' entry.
+
+    Returns the selected account name (either an existing one to reconfigure,
+    or a freshly typed name for a new account). Returns None when the user
+    cancels with q/Esc.
+
+    Requires a TTY — there is no text-prompt fallback.
+    """
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        print(
+            "altergo: --config requires an interactive terminal.\n  Use: altergo --config <name> --provider <provider>",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    cursor = 0
+    accounts = list(existing)
+    while True:
+        if not accounts:
+            # All accounts deleted during this session — fall through to the
+            # new-account name entry rather than stranding the user.
+            return _prompt_new_account_name_tui([])
+
+        action = _run_config_picker(accounts, start_cursor=cursor)
+        if action is None:
+            return None
+
+        kind = action[0]
+        if kind == "account":
+            return action[1]
+        if kind == "create":
+            return _prompt_new_account_name_tui(accounts)
+        if kind == "remove":
+            target = action[1]
+            cursor = action[2]
+            if _confirm_delete_account_tui(target, ACCOUNTS_DIR / target):
+                do_delete_account(target)
+                try:
+                    input("  Press Enter to continue… ")
+                except (KeyboardInterrupt, EOFError):
+                    return None
+            accounts = list_accounts()
+            cursor = min(cursor, max(0, len(accounts) - 1))
+
+
 # --- Goodbye messages ---
 #
 # The bank lives in :mod:`altergo_greetings` (``GOODBYES``) alongside the
@@ -5728,13 +7421,16 @@ def build_launcher_menu() -> list:
         [{"provider_id": str, "label": str, "accounts": [{"name": str, "age": str, "available": bool}]}]
     """
     accounts = list_accounts()
-    # Group accounts by their provider from account.json
+    # Group accounts by their provider(s) from account.json.  Multi-provider
+    # accounts appear under every provider they host — the user picks which
+    # tool to launch by selecting the chip under the right provider header.
     provider_accounts: dict = {}
     for acct in accounts:
         acct_home = ACCOUNTS_DIR / acct
         meta = load_account_meta(acct_home)
-        provider_for_acct = meta["provider"] if meta else "claude"
-        provider_accounts.setdefault(provider_for_acct, []).append(acct)
+        providers_for_acct = meta["providers"] if meta else ["claude"]
+        for pid in providers_for_acct:
+            provider_accounts.setdefault(pid, []).append(acct)
 
     # Resolve most-recent session age per account (best-effort) — wrapped
     # in a spinner because JSONL scanning can be 1–2s for heavy users.
@@ -5787,7 +7483,7 @@ def build_launcher_menu() -> list:
 
 
 def _draw_launcher(stdscr, menu, context_msg: str | None = None):
-    """Two-axis curses TUI: ↑↓ providers, ←→ account chips. Returns (account, shell_mode).
+    """Two-axis curses TUI: ↑↓ providers, ←→ account chips. Returns (account, provider_id, shell_mode).
 
     When ``context_msg`` is supplied, a banner row is rendered between the
     header separator and the provider grid to explain why the user landed
@@ -5910,12 +7606,12 @@ def _draw_launcher(stdscr, menu, context_msg: str | None = None):
             if menu and menu[cursor_row]["accounts"]:
                 chip = menu[cursor_row]["accounts"][cursor_col]
                 if chip["available"]:
-                    return chip["name"], False
+                    return chip["name"], menu[cursor_row]["provider_id"], False
         elif key == ord("s"):
             if menu and menu[cursor_row]["accounts"]:
                 chip = menu[cursor_row]["accounts"][cursor_col]
                 if chip["available"]:
-                    return chip["name"], True
+                    return chip["name"], menu[cursor_row]["provider_id"], True
         elif key == ord("d"):
             if menu and menu[cursor_row]["accounts"]:
                 chip = menu[cursor_row]["accounts"][cursor_col]
@@ -5941,7 +7637,7 @@ def _draw_launcher(stdscr, menu, context_msg: str | None = None):
             stdscr.refresh()
             curses.napms(700)
         elif key in (ord("q"), 27):
-            return None, False
+            return None, None, False
         elif key == curses.KEY_RESIZE:
             continue
 
@@ -6140,7 +7836,7 @@ def interactive_launcher(pending_args: list | None = None, context_msg: str | No
             sys.exit(1)
         show_banner()
         result = curses.wrapper(_draw_launcher, menu, context_msg)
-        account, shell_mode = result if result else (None, False)
+        account, provider_id, shell_mode = result if result else (None, None, False)
         if not account:
             sys.exit(0)
         if single_shot:
@@ -6151,11 +7847,11 @@ def interactive_launcher(pending_args: list | None = None, context_msg: str | No
             if shell_mode:
                 sys.exit(launch_shell(account))
             else:
-                sys.exit(launch_claude(account, list(pending_args or [])))
+                sys.exit(launch_claude(account, list(pending_args or []), provider=provider_id))
         if shell_mode:
             launch_shell(account)
         else:
-            launch_claude(account)
+            launch_claude(account, provider=provider_id)
         # Session exited — loop back to the menu
 
 
@@ -6182,17 +7878,28 @@ def main():
 
     if args and args[0] == "--config":
         # Supported forms:
-        #   altergo --config                           (interactive)
-        #   altergo --config <name>                    (named, interactive provider picker)
-        #   altergo --config <name> --provider claude  (fully specified)
-        #   altergo --config --provider gemini         (interactive name, specified provider)
+        #   altergo --config                                    (interactive)
+        #   altergo --config <name>                             (named, interactive provider picker)
+        #   altergo --config <name> --provider claude           (fully specified)
+        #   altergo --config --provider gemini                  (interactive name, specified provider)
+        #   altergo --config <name> --keychain isolated|shared  (non-interactive keychain mode)
         remaining = args[1:]
         name = None
         provider_arg = None
+        keychain_arg = None  # "isolated", "shared", or None (prompt/default)
         i = 0
         while i < len(remaining):
             if remaining[i] == "--provider" and i + 1 < len(remaining):
                 provider_arg = remaining[i + 1]
+                i += 2
+            elif remaining[i] == "--keychain" and i + 1 < len(remaining):
+                keychain_arg = remaining[i + 1]
+                if keychain_arg not in ("isolated", "shared"):
+                    print(
+                        f"altergo: --keychain must be 'isolated' or 'shared', got '{keychain_arg}'",
+                        file=sys.stderr,
+                    )
+                    sys.exit(1)
                 i += 2
             elif not remaining[i].startswith("--") and name is None:
                 name = remaining[i]
@@ -6204,9 +7911,17 @@ def main():
         # Resolve name
         if name is None:
             if sys.stdin.isatty():
-                name = _prompt_account_name()
+                existing_accts = list_accounts()
+                if existing_accts:
+                    picked = _prompt_config_menu(existing_accts)
+                else:
+                    picked = _prompt_new_account_name_tui([])
+                if picked is None:
+                    sys.exit(0)
+                name = picked
             else:
                 name = "default"
+            validate_account_name(name)
 
         # Resolve provider (exactly one)
         if provider_arg is not None:
@@ -6218,15 +7933,15 @@ def main():
             if sys.stdin.isatty():
                 account_home, _ = resolve_account(name)
                 meta = load_account_meta(account_home)
-                current = meta["provider"] if meta else None
+                current = meta["default_provider"] if meta else None
                 cfg_provider = _prompt_provider_picker(current)
             else:
                 # Non-interactive: default to claude (backwards compat)
                 account_home, _ = resolve_account(name)
                 meta = load_account_meta(account_home)
-                cfg_provider = meta["provider"] if meta else "claude"
+                cfg_provider = meta["default_provider"] if meta else "claude"
 
-        do_config(name, cfg_provider)
+        do_config(name, cfg_provider, keychain_arg=keychain_arg)
         sys.exit(0)
 
     if args and args[0] == "--rename":
@@ -6309,7 +8024,8 @@ def main():
                 file=sys.stderr,
             )
             sys.exit(1)
-        launch_claude(recall_account, ["--resume", selected["id"]])
+        recall_cwd = selected.get("cwd") or decode_project_path(selected.get("project", ""))
+        launch_claude(recall_account, ["--resume", selected["id"]], cwd=recall_cwd or None)
         sys.exit(0)
 
     if args and args[0] == "--use":
@@ -6347,7 +8063,8 @@ def main():
             else:
                 active = get_active_account()
                 search_account = active if active else accounts[0]
-            launch_claude(search_account, ["--resume", selected["id"]])
+            search_cwd = selected.get("cwd") or decode_project_path(selected.get("project", ""))
+            launch_claude(search_account, ["--resume", selected["id"]], cwd=search_cwd or None)
         else:
             print("Cancelled.")
         sys.exit(0)
@@ -6462,6 +8179,34 @@ def main():
             sys.exit(1)
 
     # ── Sub-commands (after optional account prefix) ──────────────────────────
+
+    # altergo <name> --add-provider <id>
+    # altergo <name> --remove-provider <id> [--yes]
+    # altergo <name> --default-provider <id>
+    if args and args[0] in ("--add-provider", "--remove-provider", "--default-provider"):
+        if account == _NATIVE_ACCOUNT:
+            print(
+                f"altergo: '{_NATIVE_ACCOUNT}' has no account.json and cannot manage providers.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        if len(args) < 2 or args[1].startswith("-"):
+            print(f"altergo: usage: altergo <name> {args[0]} <provider-id>", file=sys.stderr)
+            sys.exit(1)
+        sub, pid = args[0], args[1]
+        yes = "--yes" in args[2:]
+        if pid not in PROVIDERS:
+            print(
+                f"altergo: unknown provider '{pid}'. Known: {', '.join(PROVIDERS)}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        if sub == "--add-provider":
+            sys.exit(do_add_provider(account, pid))
+        if sub == "--remove-provider":
+            sys.exit(do_remove_provider(account, pid, assume_yes=yes))
+        if sub == "--default-provider":
+            sys.exit(do_default_provider(account, pid))
 
     # altergo [<name>] shell
     if args and args[0] == "shell":

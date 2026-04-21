@@ -1,6 +1,6 @@
 # Settings
 
-**Applies to:** altergo v0.37.0+
+**Applies to:** altergo v0.40.0+
 
 Run `altergo --settings` to open the multi-page settings TUI. All settings are global — they apply to every account.
 
@@ -23,7 +23,12 @@ Theme selection with live preview. Moving the cursor over a theme immediately re
 | Mono | Grayscale — minimal, distraction-free |
 | Rainbow | Every color, still readable |
 
-This page also has a **Launch animation** toggle that controls whether the star spinner plays during provider handoff.
+This page also has:
+
+- **Banner font picker** — choose the figlet font used for the altergo wordmark. Live preview of the selected font.
+- **Animation pack picker** — choose the spinner style used during provider handoff. A live frame of the selected pack is shown as you navigate.
+- **Randomize theme** — toggle automatic theme rotation and set the frequency (rarely ↔ often). When enabled, altergo rotates through themes every N sessions as configured.
+- **Launch animation** toggle — turn the launch spinner on or off entirely.
 
 ### Behavior
 
@@ -66,6 +71,8 @@ All package-manager entries ship **off by default** — each account gets a clea
 ---
 
 ## Keyboard shortcuts
+
+These shortcuts apply to the `altergo --settings` TUI only. For the `altergo --recall` session picker, see [how-it-works.md — The session picker TUI](how-it-works.md#the-session-picker-tui).
 
 | Key | Action |
 |---|---|
@@ -115,6 +122,23 @@ If the notice prompts you to share a package manager across accounts, the shortc
 
 ---
 
+## Keychain isolation (macOS, per-account)
+
+Keychain isolation is a **per-account** setting stored in `account.json`, not in the global `.altergo.json`. It does not appear in the `altergo --settings` TUI.
+
+Toggle it via the CLI:
+
+```bash
+altergo --config <name> --keychain isolated   # enable
+altergo --config <name> --keychain shared     # disable and clean up
+```
+
+Or answer "y" to the keychain isolation prompt during interactive `altergo --config <name>`.
+
+See [docs/keychain-isolation.md](keychain-isolation.md) for the full guide.
+
+---
+
 ## CLI shortcuts
 
 You do not need to open the settings TUI for every change. These CLI flags modify the same settings file:
@@ -139,6 +163,10 @@ All settings are stored in `~/.altergo/.altergo.json`. This file is above the `a
 {
   "version": 1,
   "theme": "ocean",
+  "banner_font": "smslant",
+  "animation_pack": "dots",
+  "random_theme_enabled": false,
+  "random_theme_frequency": 3,
   "update_check": true,
   "show_greeting": true,
   "show_goodbye": true,
@@ -152,6 +180,8 @@ All settings are stored in `~/.altergo/.altergo.json`. This file is above the `a
 }
 ```
 
-Missing keys fall back to their defaults (`tmux_session` defaults to `false`; all other boolean settings default to `true`; theme defaults to `"ocean"`). The `shared` dict only stores entries that differ from catalog defaults — an empty `shared` object means everything is at its default.
+Missing keys fall back to their defaults (`tmux_session` defaults to `false`; `random_theme_enabled` defaults to `false`; `random_theme_frequency` defaults to `3`; all other boolean settings default to `true`; theme defaults to `"ocean"`). The `shared` dict only stores entries that differ from catalog defaults — an empty `shared` object means everything is at its default.
+
+The `keychain` setting is **not** in this file — it lives in `account.json` per account.
 
 Editing this file by hand is supported. Changes take effect on the next `altergo` invocation.

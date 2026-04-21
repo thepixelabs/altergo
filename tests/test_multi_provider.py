@@ -173,11 +173,45 @@ def test_add_provider_reconciles_orphan_codex(mod):
 
     rc = mod.do_add_provider("hocus", "codex")
     assert rc == 0
-    # Orphan data moved to MAIN_HOME and local dot-dir became a symlink (or was
-    # replaced by a symlinked sessions/).  Verify the data now lives under MAIN.
+    # Orphan session data (shareable per PROVIDERS["codex"]["symlink_dirs"])
+    # should have moved into MAIN_HOME/.codex/sessions/.
     main_codex = mod.MAIN_HOME / ".codex" / "sessions" / "2026" / "04" / "20" / "rollout-test.jsonl"
     assert main_codex.exists()
     assert main_codex.read_text().startswith('{"type":"session_meta"')
+
+
+def test_add_provider_preserves_credentials_per_account(mod):
+    """Credentials and per-account state MUST stay in the account-local dot-dir.
+
+    Moving them into MAIN_HOME would pool identities across accounts and
+    defeat altergo's isolation model.  The orphan reconciler only migrates
+    entries listed in PROVIDERS[id]["symlink_dirs"] + ["symlink_files"].
+    """
+    home = _write_account(mod, "hocus", {"version": 2, "provider": "claude"})
+    # Orphan Codex tree: a mix of shareable (sessions) and per-account
+    # (auth.json = credentials, logs_2.sqlite = local state) artifacts.
+    (home / ".codex").mkdir(exist_ok=True)
+    auth = home / ".codex" / "auth.json"
+    auth.write_text('{"tokens":{"id_token":"TOP_SECRET"}}')
+    local_state = home / ".codex" / "logs_2.sqlite"
+    local_state.write_text("SQLite format 3\x00... fake binary ...")
+    (home / ".codex" / "sessions" / "2026" / "04" / "20").mkdir(parents=True)
+    (home / ".codex" / "sessions" / "2026" / "04" / "20" / "rollout-x.jsonl").write_text("{}\n")
+
+    rc = mod.do_add_provider("hocus", "codex")
+    assert rc == 0
+
+    # sessions/ IS in codex's symlink_dirs → migrated out.
+    assert (mod.MAIN_HOME / ".codex" / "sessions" / "2026" / "04" / "20" / "rollout-x.jsonl").exists()
+
+    # auth.json is credentials — must stay per-account.
+    assert auth.exists(), "credentials file was moved into MAIN_HOME — isolation broken!"
+    assert auth.read_text() == '{"tokens":{"id_token":"TOP_SECRET"}}'
+    assert not (mod.MAIN_HOME / ".codex" / "auth.json").exists()
+
+    # logs_2.sqlite is per-account local state — must stay per-account.
+    assert local_state.exists(), "local sqlite state was moved into MAIN_HOME"
+    assert not (mod.MAIN_HOME / ".codex" / "logs_2.sqlite").exists()
 
 
 def test_remove_provider_rejects_last(mod, capsys):

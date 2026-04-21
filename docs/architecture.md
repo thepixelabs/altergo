@@ -1,6 +1,6 @@
 # Architecture reference
 
-**Applies to:** altergo v0.37.0+  
+**Applies to:** altergo v0.40.0+  
 **Audience:** Engineers maintaining altergo, debugging symlink issues, or auditing what altergo touches on disk.
 
 For a prose explanation of why the architecture is designed this way, see [how-it-works.md](how-it-works.md).
@@ -11,13 +11,14 @@ For a prose explanation of why the architecture is designed this way, see [how-i
 
 ```
 altergo/
-    altergo.py              ← Main implementation (single file, ~3700 lines)
+    altergo.py              ← Main implementation (single file, ~7959 lines)
     altergo_greetings.py    ← Greeting messages, time-of-day copy, theme spinners
     pyproject.toml          ← Package metadata, entry point, dependencies
     tests/
         test_smoke.py       ← Core functionality tests
         test_integration.py ← Integration tests for config, teardown, launch
         test_new_features.py ← Tests for newer features
+        test_keychain.py    ← macOS keychain isolation tests (60 tests)
         conftest.py         ← Shared test fixtures
     docs/
         how-it-works.md     ← Technical deep dive
@@ -48,20 +49,22 @@ The entire program is one file. Here is a map of its logical sections:
 | Banner | `show_banner()` | Rich-rendered figlet logo, version, greeting |
 | Help | `show_help()` | Colored, hyperlinked help output |
 | Config | `MAIN_HOME`, `ACCOUNTS_DIR`, `SETTINGS_FILE` | Path constants |
-| Account helpers | `resolve_account()`, `list_accounts()`, `load_account_meta()`, `save_account_meta()` | Account directory resolution, v2 account.json I/O |
+| Account helpers | `resolve_account()`, `list_accounts()`, `load_account_meta()`, `save_account_meta()` | Account directory resolution, v3 account.json I/O |
 | Providers | `PROVIDERS`, `CATALOG` | Multi-provider support, credential sharing catalog |
 | Symlink plumbing | `_ensure_symlinked_dir()`, `_ensure_home_file_symlink()`, `_sync_claude_mcps()` | Per-provider directory symlinks, home-level file symlinks, MCP bidirectional merge |
 | Self-heal (dormant) | `_sweep_existing_accounts()` | Repair pass kept for tests; no longer invoked from launch paths (see below) |
 | Settings helpers | `load_settings()`, `save_settings()`, `_load_bool_setting()` | Settings persistence |
 | Preferences | `_load_bool_setting()` | Boolean settings: greeting, goodbye, animation |
 | Update checker | `load_update_check_enabled()`, PyPI cache | Background version check |
-| Config / Teardown | `do_config()`, `do_teardown()` | Account creation and removal |
-| Session discovery | `get_sessions()`, `get_session_preview()` | JSONL session scanning |
-| Session picker | `_draw_picker()` | Curses session resume TUI |
+| Config / Teardown | `do_config()`, `do_teardown()`, `do_delete_account()` | Account creation, removal, and full delete |
+| Multi-provider | `do_add_provider()`, `do_remove_provider()`, `do_default_provider()` | Provider list mutations |
+| Session discovery | `get_sessions()`, `_discover_claude_sessions()`, `_discover_codex_sessions()`, `_discover_gemini_sessions()`, `_discover_copilot_sessions()` | Per-provider JSONL session scanning, unified under `get_sessions()` |
+| Session picker | `_draw_picker()` | Curses session resume TUI (starred filter, provider filter, sort) |
 | Search | `_draw_search()` | Full-text conversation search |
 | Settings TUI | `_draw_settings()`, `interactive_settings()` | Multi-page settings (Appearance, Behavior, Credentials) |
 | Launcher | `_draw_launcher()`, `interactive_launcher()` | Provider + account picker |
 | Onboarding | `_first_run_onboarding()` | First-run account creation flow |
+| Keychain | `_create_account_keychain()`, `_write_keychain_prefs()`, `_unlock_account_keychain()` | macOS per-account keychain lifecycle (v0.41.0+) |
 | Launch | `launch_claude()`, `launch_shell()`, `launch_command()` | Provider binary execution |
 | `main()` | `main()` | Argument dispatch |
 
@@ -104,7 +107,7 @@ All altergo accounts live under `~/.altergo/accounts/`. The `default` account is
     version_check.json              ← PyPI version cache (daily refresh; see "Network activity")
     accounts/
         default/                    ← Default account home (HOME for plain `altergo`)
-            account.json            ← v2 metadata: {"version": 2, "provider": "claude", ...}
+            account.json            ← v3 metadata: {"version": 3, "providers": [...], "default_provider": "claude"}
             .claude/                ← Provider dot-dir (only present for Claude accounts)
                 .credentials.json   ← Real file. Isolated credentials. Created on first login.
                 .claude.json        ← Real file. `mcpServers` bidirectionally merged with main;
@@ -132,7 +135,7 @@ All altergo accounts live under `~/.altergo/accounts/`. The `default` account is
 
         work/                       ← Named account home (HOME for `altergo work`)
             account.json
-            .claude/                ← (or .gemini/, .codex/, .copilot/ — one per account in v2)
+            .claude/                ← (or .gemini/, .codex/, .copilot/ — one dot-dir per active provider; v3 accounts can have multiple)
                 .credentials.json   ← Real file. Isolated credentials.
                 projects/           ← Symlink → ~/.claude/projects/ (same target)
                 ...                 ← Same symlink structure as default
@@ -172,6 +175,14 @@ Three treatments:
 ### Settings file placement
 
 `~/.altergo/.altergo.json` sits at the `~/.altergo/` level, above `accounts/`. It is global — one file shared across all accounts. This is intentional: credential-sharing preferences (AWS, Docker, etc.) apply to the relationship between the main home and the alt account, not to a specific account. See [how-it-works.md](how-it-works.md) for the rationale.
+
+Additional state files at `~/.altergo/` level:
+
+| File | Purpose |
+|---|---|
+| `~/.altergo/starred.json` | Starred-session catalog. Written by `altergo --star`. |
+| `~/.altergo/last_session.json` | Snapshot of the last-exited session. Written at session exit; read by `altergo --star` (no-arg form). |
+| `~/.altergo/version_check.json` | PyPI version cache (daily refresh). |
 
 As of v0.16, the settings file stores theme, preference toggles, and credential overrides:
 
@@ -262,7 +273,7 @@ Every entry in the per-provider `symlink_dirs`/`symlink_files` lists and in `CAT
 
 ### Provider matrix
 
-Altergo supports four providers in v2. Each account binds to exactly one provider (`account.json.provider`), and only that provider's dot-dir is created and wired in the account home.
+Since v0.40.0 one account can declare multiple providers. The v3 `account.json` stores a `providers` list and a `default_provider` — see [v3 account.json schema](#v3-accountjson-schema-v0400) below. Each active provider gets its own dot-dir in the account home.
 
 | Provider | dot_dir | Credentials file | Symlinked dirs | Symlinked files | Per-provider behaviours |
 |---|---|---|---|---|---|
@@ -327,7 +338,7 @@ These symlinks live directly in the account home (e.g., `~/.altergo/accounts/wor
 |---|---|
 | `~/.altergo/accounts/<name>/.claude/.credentials.json` | This is the entire purpose of altergo. Each account must authenticate separately. |
 | `~/.altergo/accounts/<name>/.claude/.claude.json` | Holds `oauthAccount` (per-account identity). Symlinking would leak identity across accounts. `mcpServers` inside it is bidirectionally synced separately. |
-| `~/.altergo/accounts/<name>/account.json` | v2 metadata pinning the account to exactly one provider. Written by `save_account_meta`. |
+| `~/.altergo/accounts/<name>/account.json` | v3 metadata: providers list, default_provider, optional keychain flag. Written by `save_account_meta`. v2 files (`{"version": 2, "provider": "..."}`) load forever but are only rewritten to v3 on mutation. |
 
 ### Unmanaged (written by the provider CLI, not tracked by altergo)
 
@@ -348,6 +359,8 @@ These symlinks live directly in the account home (e.g., `~/.altergo/accounts/wor
 | `PATH` | `~/.altergo/accounts/<name>/.local/bin` prepended | Only if that directory exists on disk AND is not already in PATH |
 | `PS1` | `(altergo:<name>) ` prefix prepended | Only in `launch_shell()`, only for bash/sh |
 | `PROMPT` | `(altergo:<name>) ` prefix prepended | Only in `launch_shell()`, only for zsh |
+
+Additionally, before the environment dict is returned on macOS when keychain isolation is enabled, `_unlock_account_keychain(account_home, account)` is called. It reads the unlock password from the real login keychain (silent) and unlocks the per-account `login.keychain-db`. The keychain remains unlocked for the session. On `KeychainError`, `_build_alt_env` exits 1.
 
 All other environment variables pass through unchanged.
 
@@ -419,25 +432,28 @@ User runs: altergo [account] [args]
 
 ---
 
-## Session file format
+## Session file formats
 
-Claude Code stores sessions as JSONL files at:
+Since v0.40.0, `get_sessions()` scans all four providers. Each provider stores sessions differently:
 
-```
-~/.claude/projects/<encoded-path>/<session-id>.jsonl
-```
+| Provider | Path pattern | Format |
+|---|---|---|
+| Claude Code | `~/.claude/projects/<dash-encoded>/*.jsonl` | JSONL — one JSON object per line |
+| Codex CLI | `~/.codex/sessions/YYYY/MM/DD/*.jsonl` | JSONL |
+| Gemini CLI | `~/.gemini/tmp/<project>/chats/*.json` | Single-JSON document |
+| GitHub Copilot | `~/.copilot/session-state/<UUID>/` (directory) | `workspace.yaml` + `events.jsonl` |
 
-where `<encoded-path>` is the absolute working directory path with `/` replaced by `-`. Example:
+**Claude Code** encodes the working directory path with `/` replaced by `-`:
 
 ```
 ~/.claude/projects/-Users-alice-code-myapp/a1b2c3d4-e5f6-7890-abcd-ef1234567890.jsonl
 ```
 
-Each line in the JSONL file is a JSON object. altergo only reads lines where `"type": "human"` to extract the last user message for the session preview. It reads only the last 8KB of the file to avoid parsing multi-megabyte session histories in full.
+Each line is a JSON object. altergo reads only lines where `"type": "human"` to extract the last user message for the preview. It reads only the last 8KB to avoid parsing multi-megabyte files in full. The session ID (filename stem) is a UUID passed verbatim to `claude --resume <id>`.
 
-The session ID (the filename stem) is a UUID that Claude Code generates. altergo passes it verbatim to `claude --resume <id>`.
+Because `projects/` is symlinked to the same target for every account, Claude Code sessions are globally visible across all altergo accounts regardless of which account created them.
 
-Because `projects/` is symlinked to the same target for every account, sessions are globally visible across all altergo accounts regardless of which account created them.
+**Resumed sessions launch in their saved cwd.** `launch_claude` accepts a `cwd` argument: if the path exists, the provider process starts with that working directory. If it no longer exists, altergo prints a dim notice and falls back to the caller's cwd. This applies to both `--recall` and `--search`.
 
 ---
 
@@ -500,28 +516,49 @@ No polling, no background thread. The merge is a few lines of JSON and runs inli
 9. **Report credentials state.** If the provider's credentials file is absent, print a hint to authenticate by running `altergo <name>`.
 10. **MCP sync (Claude only).** `_sync_claude_mcps(account_home)`.
 11. **Apply the CLI-credentials catalog.** For each `CATALOG` entry, honour the user's override in `.altergo.json` or fall back to `default_on`. Link or unlink accordingly at the account-home level (not inside the dot-dir).
-12. **Write v2 metadata.** `account.json = {"version": 2, "provider": "<id>", "created": <iso8601>}` via `save_account_meta`.
+12. **Keychain setup (macOS, opt-in).** If `--keychain isolated` was passed, or if the account already has `keychain: isolated` in its metadata, call `_create_account_keychain(account_home, account)`. This creates the per-account `login.keychain-db`, writes `com.apple.security.plist`, and stores the unlock password in the real login keychain. The function is idempotent — if the keychain file already exists it is reused. On `KeychainError`, `do_config` downgrades the setting to `shared` and continues. See [Keychain isolation reference](#keychain-isolation-reference) below.
+13. **Write v3 metadata.** `account.json = {"version": 3, "providers": [...], "default_provider": "<id>", "created": <iso8601>}` via `save_account_meta`. The `keychain` key is included only when isolation is enabled.
 
 There is no separate "repair" step in the current flow — `_ensure_symlinked_dir()` is itself idempotent and self-healing for the four cases enumerated above.
 
-### v2 account.json schema
+### v3 account.json schema (v0.40.0+)
 
-Introduced in v0.22.0 (`e635bf9`). Pre-v0.22 accounts had an implicit multi-provider shape; v2 pins one account to exactly one provider:
+Introduced in v0.40.0. v3 supports multiple providers per account:
 
 ```json
 {
-  "version": 2,
-  "provider": "claude",
-  "created": "2026-04-11T14:23:07"
+  "version": 3,
+  "providers": ["claude", "codex"],
+  "default_provider": "claude",
+  "created": "2026-04-20T18:32:11",
+  "keychain": "isolated"
 }
 ```
 
-`load_account_meta()` treats any of the following as "legacy Claude account":
+| Field | Type | Notes |
+|---|---|---|
+| `version` | int | Always `3` for v3 files on disk |
+| `providers` | list[str] | Ordered list of installed provider ids (`claude`, `gemini`, `codex`, `copilot`) |
+| `default_provider` | str | Provider used by bare `altergo <name>`. Must be in `providers`. |
+| `created` | str | ISO 8601 timestamp, set at account creation, never overwritten |
+| `keychain` | str (optional) | `"isolated"` when macOS per-account keychain is enabled. Absent when `shared` (default). |
+
+The `keychain` key is present only when keychain isolation is enabled (macOS, opt-in). When absent, the account uses the shared (default) keychain behavior.
+
+**v2 read compatibility:** v2 files (`{"version": 2, "provider": "claude"}`) load forever. `load_account_meta()` reads a v2 file via `_coerce_meta_v3` and presents it in memory as a single-provider v3 record. The file on disk is only rewritten to v3 when the user mutates the account via `--add-provider`, `--remove-provider`, `--default-provider`, or `--keychain`. Read-only sessions leave v2 files untouched.
+
+**Disk write triggers:** the disk file flips from v2 to v3 only when the user runs one of:
+
+- `altergo <name> --add-provider <id>` — installs symlinks for a new provider; reconciles any account-local orphan data via `_reconcile_orphan_dot_dir` (MAIN wins on collision; losers archived under `<dot>.orphaned/<timestamp>/`); appends to `providers`.
+- `altergo <name> --remove-provider <id> [--yes]` — removes provider symlinks; refuses to remove the last remaining provider; rebinds `default_provider` if needed.
+- `altergo <name> --default-provider <id>` — updates `default_provider`; zero filesystem effect on dot-dirs.
+
+`load_account_meta()` treats any of the following as a legacy Claude account:
 - No `account.json` file but a `.claude/` directory exists
 - `account.json` exists but cannot be parsed
-- `account.json` has a non-v2 `version` or is missing `provider`
+- `account.json` has an unrecognized `version` or is missing required keys
 
-All four cases fall through to `{"version": 2, "provider": "claude"}` in memory — the file on disk is only rewritten when `save_account_meta` is called from `do_config`.
+All these cases fall through to a synthetic single-provider record in memory.
 
 ---
 
@@ -529,4 +566,53 @@ All four cases fall through to `{"version": 2, "provider": "claude"}` in memory 
 
 altergo targets Python 3.10+ (`requires-python = ">=3.10"` in pyproject.toml). The CI matrix runs against 3.10, 3.11, 3.12, and 3.13 on both ubuntu-latest and macos-latest.
 
-No type annotations are used in the source; the code predates the decision to add them and the implementation is short enough that they are not necessary for comprehension.
+Type annotations are used selectively in the source — newer functions carry return type hints (e.g. `-> str | None`), while older functions predate the decision to add them.
+
+---
+
+## Keychain isolation reference
+
+**macOS only. v0.41.0+.** The keychain subsystem lives at `altergo.py:~5843–5996`. It uses two Python stdlib imports added in v0.41.0: `plistlib` and `secrets`.
+
+### Constants
+
+| Constant | Value | Purpose |
+|---|---|---|
+| `_KC_SERVICE` | `"com.altergo.account-unlock"` | Service name for the unlock-password generic-password entry in the real login keychain |
+| `_KC_GUID` | `"{87191ca3-0fc9-11d4-849a-000502b52122}"` | Apple CSSM DL GUID (constant across all Macs) used in `DLDBSearchList` plist |
+| `_KC_SUBSERVICE_TYPE` | `6` (int) | CSSM_SERVICE_DL — identifies the keychain DL service type in the plist |
+
+### File paths
+
+| Path | Description |
+|---|---|
+| `<account_home>/Library/Keychains/login.keychain-db` | Per-account keychain file |
+| `<account_home>/Library/Preferences/com.apple.security.plist` | DLDBSearchList plist; uses `~/Library/Keychains/login.keychain` tilde-form for `DbName` (no `-db` suffix, matches Apple convention) |
+
+### Call sites
+
+| Location | Function | What happens |
+|---|---|---|
+| `altergo.py:~2725` (`do_config`) | `_create_account_keychain` | Called when `--keychain isolated` is set. Creates keychain, writes plist, stores unlock entry. On `KeychainError`, downgrades to `shared` and continues. |
+| `altergo.py:~2778` (`do_config`) | Downgrade path | When `--keychain shared` is passed and the account was previously isolated, deletes keychain and unlock entry. |
+| `altergo.py:~2955` (`do_delete_account`) | `_delete_account_keychain` | Deletes the per-account keychain and unlock entry before removing the account home. On `KeychainError`, warns and continues — rmtree proceeds regardless. |
+| `altergo.py:~5423` (`_build_alt_env`) | `_unlock_account_keychain` | Called before returning the env dict. Reads unlock password from login keychain (silent), unlocks per-account keychain. On `KeychainError`, exits 1. |
+
+### Error paths
+
+`KeychainError` is raised when `/usr/bin/security` exits non-zero or is not found. Each call site handles it differently:
+
+| Call site | On `KeychainError` |
+|---|---|
+| `do_config` (create) | Downgrades account to `shared`, prints warning, continues |
+| `do_config` (downgrade cleanup) | Prints warning, continues — account is already set to `shared` |
+| `do_delete_account` | Prints warning, continues — rmtree removes remaining files |
+| `_build_alt_env` | Exits 1 — cannot activate isolated account without unlocking its keychain |
+
+### Idempotency
+
+`_create_account_keychain` checks whether the keychain file already exists before creating it. If it does, creation is skipped and the existing keychain is reused. If the keychain file exists but the unlock entry in the login keychain is missing (orphan state), altergo warns and aborts — it cannot reconstruct a lost unlock password. Recovery: delete `<account_home>/Library/Keychains/login.keychain-db` and re-run `altergo --config <name> --keychain isolated`.
+
+### Tests
+
+`tests/test_keychain.py` — 60 tests covering create/delete/unlock/downgrade paths, orphan detection, plist structure, idempotency, and `KeychainError` error paths.

@@ -1,15 +1,24 @@
 # How altergo works
 
-**Applies to:** altergo v0.37.0+  
+**Applies to:** altergo v0.40.0+  
 **Audience:** Engineers who want to understand the design in depth — not just what altergo does, but why it does it that way.
 
-The [README](../README.md) covers installation and basic usage. This document covers the mechanics, the tradeoffs, and the reasoning behind every design decision.
+The [README](../README.md) covers installation and basic usage. This document covers the mechanics, the tradeoffs, and the reasoning behind every design decision. For the directory-layout reference, symlink tables, and internal function map, see [architecture.md](architecture.md).
 
 ---
 
 ## The problem
 
-Claude Code stores everything under `~/.claude/`:
+Modern AI CLIs each store credentials and session state under a provider-specific dot-directory in `$HOME`:
+
+| Provider | Dot-directory | Credentials file |
+|---|---|---|
+| Claude Code | `~/.claude/` | `.credentials.json` |
+| Gemini CLI | `~/.gemini/` | `oauth_creds.json` |
+| Codex CLI | `~/.codex/` | `auth.json` |
+| GitHub Copilot | `~/.copilot/` | `config.json` |
+
+None of them have built-in support for multiple accounts. Claude Code's layout illustrates the full scope of what is at stake:
 
 ```
 ~/.claude/
@@ -29,15 +38,16 @@ Claude Code stores everything under `~/.claude/`:
     keybindings.json        ← Custom keybindings
 ```
 
-There is no built-in support for multiple accounts. Common scenarios where this matters:
+Common scenarios where multiple accounts or providers matter:
 
 - **Session continuity**: You hit a rate limit mid-session and need to continue on a second account without losing your place.
 - **Thinker + executor**: You run one account on high-capability models for architecture decisions and a second on faster models for execution — same project, two operating modes.
 - **Multiple clients**: You work with client-A and client-B, each providing their own organization seat, and need their contexts fully isolated.
 - **Work vs. personal**: Your employer provisions a managed AI account; you also have a personal account for OSS and side projects on the same machine.
+- **Multi-provider workflows**: You use Claude Code for deep reasoning and Codex CLI for code execution in the same project. You want both to see the same session history without credential leakage.
 - **Testing / isolation**: You want to run a second account to test different CLAUDE.md instructions without touching your primary configuration.
 
-In all of these cases, `~/.claude/.credentials.json` holds the active session for exactly one account at a time. Switching accounts naively means losing everything else in `~/.claude/`.
+In all of these cases, the active credentials file holds state for exactly one account at a time. Switching accounts naively means losing the context stored in every other file in that directory.
 
 ---
 
@@ -236,6 +246,95 @@ If the directory does not exist, altergo exits with a clear error and a specific
 
 ---
 
+## Multi-provider accounts (v0.40.0+)
+
+Since v0.40.0, one altergo account can host multiple providers. A single `work` account can run Claude Code, Codex CLI, and Gemini CLI — each under the same isolated HOME, each with its own credential file, each sharing the same session history.
+
+### v3 schema
+
+`account.json` bumped to v3:
+
+```json
+{
+  "version": 3,
+  "providers": ["claude", "codex"],
+  "default_provider": "claude",
+  "created": "2026-04-20T18:32:11"
+}
+```
+
+v2 files (`{"version": 2, "provider": "claude"}`) load forever via `_coerce_meta_v3`, which returns a v3-shaped record in memory on every read. A v2 file on disk flips to v3 only when the user mutates the account via one of the provider-management commands.
+
+### Managing providers
+
+```bash
+altergo work --add-provider codex        # add Codex CLI to the work account
+altergo work --remove-provider codex     # remove it (prompts for confirmation)
+altergo work --default-provider gemini   # set which provider bare `altergo work` launches
+```
+
+### AddProvider reconciliation (`_reconcile_orphan_dot_dir`)
+
+When you add a provider to an existing account, the provider may have previously written files under the account's isolated HOME during earlier shell sessions — for example, if you ran `codex` directly inside an `altergo work shell`. Before installing the new symlink structure, `_reconcile_orphan_dot_dir(account_home, provider_id)` merges that orphan data:
+
+1. Scan the account-local provider dot-dir (e.g. `~/.altergo/accounts/work/.codex/`) for real (non-symlinked) entries.
+2. For each entry, check whether the same path exists in `MAIN_HOME/<dot_dir>/`:
+   - **Not present in MAIN:** move the entry to MAIN. Session data is preserved and shared.
+   - **Present in MAIN (collision):** MAIN wins. The account-local copy is archived to `<dot_dir>.orphaned/<timestamp>/` — nothing is silently destroyed.
+3. If the dot-dir is now empty, remove it so the symlink can be created cleanly.
+
+After reconciliation, `do_add_provider` installs the normal symlink structure for the new provider, then rewrites `account.json` to v3 with the provider appended to `providers`.
+
+### Launcher rendering
+
+The launcher renders each provider chip separately for multi-provider accounts. Selecting a chip launches that account with that provider explicitly. Bare `altergo <name>` uses `default_provider`.
+
+### Membership guard
+
+`launch_claude` enforces provider membership before launching. If you run `altergo work gemini` but `work` does not list `gemini` in its providers, altergo exits with:
+
+```
+altergo: account 'work' does not have provider 'gemini' installed.
+  Available: claude, codex
+  Add it with: altergo work --add-provider gemini
+```
+
+---
+
+## Per-account keychain isolation (macOS, opt-in)
+
+On macOS, provider CLIs can store tokens in the system keychain. By default, all altergo accounts on the same macOS user share a single keychain. Keychain isolation gives each account its own `login.keychain-db`.
+
+### Activation model
+
+When `keychain: isolated` is set in `account.json`, `_build_alt_env` calls `_unlock_account_keychain` before returning the environment dict:
+
+1. Read the unlock password from the real user login keychain using `/usr/bin/security find-generic-password`. This is silent — the login keychain is already unlocked during your session.
+2. Unlock the per-account `login.keychain-db` with that password.
+3. Return the env dict. The provider process starts with the per-account keychain unlocked and `HOME` pointing at the account directory.
+
+`com.apple.security.plist` in the account's `Library/Preferences/` directs macOS's Security framework to use the per-account keychain for all processes running with `HOME` set to that account. This affects the provider CLI and any subprocesses it spawns.
+
+### Why plain unlock entry, not Touch-ID ACL
+
+Touch ID gating would break SSH sessions and nightly automation. macOS's own login keychain unlocks at login and stays unlocked — no Touch ID on read, works fine over SSH. The per-account keychain mirrors that behavior exactly.
+
+A Touch-ID-gated ACL, a launchd broker, and Secure-Enclave wrapping of the unlock password were all considered and rejected. The design principle: behave no worse than the native login keychain.
+
+### DbName form
+
+The `DLDBSearchList` plist uses `~/Library/Keychains/login.keychain` (without `-db`) — the legacy form that macOS itself writes and the Security framework resolves. The on-disk file is named `login.keychain-db`; both forms resolve correctly.
+
+### Idempotency behavior
+
+`_create_account_keychain` checks whether the keychain file exists before creating it. Reuse if present, skip creation. If the file exists but the unlock entry is missing, it warns and aborts — it cannot recover a lost password. The recovery procedure is: `rm -rf <account_home>/Library/Keychains/login.keychain-db` followed by `altergo --config <name> --keychain isolated`.
+
+### Downgrade cleanup
+
+Flipping `--keychain shared` triggers full cleanup: `security delete-keychain`, `security delete-generic-password`, removal of the `Library/Keychains/` and `Library/Preferences/` directories from the account home.
+
+---
+
 ## Auto-migration from v0.4.x (historical)
 
 > **Removed in v0.35.3.** Between v0.5.0 and v0.35.2, altergo auto-detected the v0.4.x layout (`~/.altergo/.claude/` present, `~/.altergo/accounts/` absent) and migrated it in place on first run. The `detect_legacy` / `migrate_legacy` code paths are gone in v0.35.3+. If you are still on a pre-v0.5.0 layout today, see [docs/migration.md](migration.md#archived-migration-notes-v04x--v050) for the archived procedure or open an issue for manual guidance.
@@ -398,15 +497,30 @@ Two directories accumulate inside the account's `.claude/` from normal Claude Co
 
 ## The session picker TUI
 
-`altergo --resume` (with no session ID) opens an interactive terminal UI built with Python's `curses` module.
+`altergo --recall` opens the interactive session picker TUI. `altergo --resume` (bare, no ID) passes `--resume` through to the active account's provider native resume UI. `altergo --resume <id>` resumes a specific session by ID directly without opening the picker.
 
 ### Session discovery
 
-Sessions are JSONL files inside `~/.claude/projects/<encoded-path>/<session-id>.jsonl`. The encoded path is the working directory with `/` replaced by `-`. `format_project_name` strips the path prefix and returns just the last component — the directory name that humans care about.
+`get_sessions()` runs four per-provider discoverers in sequence and returns a merged list sorted by modification time (most recent first):
 
-Subagent sessions (inside a `subagents/` subdirectory) are excluded from the listing. These are internal to Claude Code's multi-agent system; you cannot resume them directly.
+| Discoverer | Provider | Path | Format |
+|---|---|---|---|
+| `_discover_claude_sessions` | Claude Code | `~/.claude/projects/<dash-encoded>/*.jsonl` | JSONL |
+| `_discover_codex_sessions` | Codex CLI | `~/.codex/sessions/YYYY/MM/DD/*.jsonl` | JSONL |
+| `_discover_gemini_sessions` | Gemini CLI | `~/.gemini/tmp/<project>/chats/*.json` | Single-JSON document |
+| `_discover_copilot_sessions` | GitHub Copilot | `~/.copilot/session-state/<UUID>/` | `workspace.yaml` + `events.jsonl` |
 
-Sessions are sorted by `st_mtime` (last modification time), most recent first. Because `projects/` is symlinked to the same target for every account, the session picker shows sessions from all accounts in one unified list.
+Each discoverer yields session dicts containing `id`, `project`, `cwd`, `modified`, `size_mb`, `path`, `topic`, `provider`, and `starred`. Per-provider head scanners (`_scan_session_head`, `_scan_codex_session_head`, `_scan_gemini_session`, `_parse_copilot_workspace_yaml`) extract topic and cwd from each format. `load_session_preview` dispatches by `session["provider"]` so the preview pane works for all four.
+
+Subagent sessions (inside a `subagents/` subdirectory in Claude's session tree) are excluded — they cannot be resumed directly. Providers that are not installed (dot-dir absent) are silently skipped.
+
+### cwd-on-recall
+
+When you select a session, the picker passes its `cwd` to `launch_claude`. If the directory still exists, the provider process starts there. If it no longer exists, altergo prints a dim notice and falls back to the caller's current directory. This works for both `--recall` and `--search` — pick a session from any directory and the provider reopens inside the project tree where the session originally ran.
+
+### Provider filter and starred filter
+
+Press `f` to cycle the provider filter: `all → claude → gemini → codex → copilot → all`. Press `b` to bookmark or unbookmark the highlighted session (toggles the star on the data layer). Press `*` to toggle a starred-only view. The starred filter is orthogonal to the provider filter and search — all three compose. Starred sessions are persisted in `~/.altergo/starred.json`.
 
 ### Preview extraction
 
@@ -423,7 +537,11 @@ The curses UI renders three zones:
 3. The session list (scrollable, one session per row)
 4. A footer showing the full session ID and position counter
 
-Navigation follows vim conventions: `j`/`k` for line movement, `g`/`G` for top/bottom, `PgUp`/`PgDn` for page scroll. Arrow keys also work. `Enter` returns the selected session; `q` or `Escape` returns `None` (cancelled).
+Navigation follows vim conventions: `j`/`k` for line movement, `G` for top, `PgUp`/`PgDn` for page scroll. Arrow keys also work. `Enter` returns the selected session (and launches in its saved cwd); `q` or `Escape` returns `None` (cancelled). `b` bookmarks the highlighted row. `*` toggles starred-only mode. `t` cycles the theme. `g` toggles project-grouping dividers. The nav footer reads:
+
+```
+↑↓/jk move  ·  / search  ·  G top  ·  p/Tab preview  ·  f filter  ·  s sort  ·  g group  ·  b bookmark  ·  * starred-only  ·  Enter resume  ·  q quit · theme: <Name> (t)
+```
 
 ---
 
@@ -438,6 +556,8 @@ Claude Code writes to several locations beyond `~/.claude/`. With HOME overridde
 | `$HOME/.gitconfig` | `git config --global` run inside a claude session | Writes to the account directory — separate from your primary git config (unless Git identity sharing is enabled in settings) |
 | `$HOME/.config/gh/` | `gh auth login` | Writes account credentials to the account directory (unless GitHub CLI sharing is enabled in settings) |
 | `$HOME/.ssh/` | Any SSH operations | Reads from the account directory (unless SSH sharing is enabled in settings) |
+| `$HOME/Library/Keychains/login.keychain-db` | macOS keychain, isolated accounts only | Per-account keychain file. Created by altergo; managed by the Security framework at runtime. |
+| `$HOME/Library/Preferences/com.apple.security.plist` | macOS keychain, isolated accounts only | Directs the Security framework to use the per-account keychain for this HOME. |
 
 ---
 
@@ -454,7 +574,7 @@ Claude Code writes to several locations beyond `~/.claude/`. With HOME overridde
    ├─ Parse sys.argv
    │  ├─ --config / --teardown / --version / --help → handled, exit
    │  ├─ --recall → session picker TUI → resolve account from session.provider → launch_claude(account, ["--resume", id])
-   │  ├─ --resume [id] → pass-through to the provider (handled downstream)
+   │  ├─ --resume [id] → pass-through to active account's provider (provider's own resume UI when bare; resume specific session when given an id)
    │  ├─ _looks_like_account(args[0]) → account = args[0]; args = args[1:]
    │  ├─ [account] shell → launch_shell(account)
    │  ├─ [account] -- <cmd> → launch_command(account, args[1:])
@@ -468,7 +588,11 @@ Claude Code writes to several locations beyond `~/.claude/`. With HOME overridde
    ├─ _build_alt_env(account)
    │  ├─ Copy os.environ
    │  ├─ Set HOME = ~/.altergo/accounts/<account>
-   │  └─ If account_home/.local/bin exists: prepend to PATH
+   │  ├─ If account_home/.local/bin exists: prepend to PATH
+   │  └─ [macOS, isolated accounts only] _unlock_account_keychain(account_home, account)
+   │      Read unlock password from real login keychain (silent)
+   │      Unlock per-account login.keychain-db
+   │      → KeychainError exits 1
    │
    └─ os.execvpe(claude_path, [claude_path] + args, env)
       │

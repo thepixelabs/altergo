@@ -4,6 +4,69 @@ This page covers syntax changes and one-time migrations that apply when you upgr
 
 ---
 
+## v0.41.0 — opt-in keychain isolation (macOS)
+
+**Applies to:** macOS users upgrading to v0.41.0+.
+
+The default is `shared` — no behavior change on upgrade. Existing accounts continue to work exactly as before.
+
+To opt in for an account:
+
+```bash
+altergo --config <name> --keychain isolated
+```
+
+To revert:
+
+```bash
+altergo --config <name> --keychain shared
+```
+
+Reverting triggers automatic cleanup — altergo deletes the per-account `login.keychain-db` and the `com.altergo.account-unlock` entry from your login keychain. No manual steps required.
+
+See [docs/keychain-isolation.md](keychain-isolation.md) for the full guide.
+
+---
+
+## v0.40.0 — multi-provider accounts, `--recall` across all providers, cwd-on-recall, `b`/`*` rebind
+
+**Applies to:** Anyone upgrading to v0.40.0+.
+
+### `account.json` v2 → v3 schema
+
+No user action is required. v2 `account.json` files (`{"version": 2, "provider": "claude"}`) load forever without being rewritten. The file on disk flips to v3 only when you mutate the account via one of the new provider-management commands:
+
+```bash
+altergo <name> --add-provider codex
+altergo <name> --remove-provider codex
+altergo <name> --default-provider gemini
+```
+
+A v2 account that you never mutate will remain on disk as a v2 file indefinitely — all v0.40.0+ code reads it correctly.
+
+The intended path to go from a single-provider account to multi-provider is `--add-provider`, which also handles any orphan-data reconciliation.
+
+### `--recall` now aggregates all four providers
+
+`altergo --recall` and `altergo --search` now scan Claude Code, Codex CLI, Gemini CLI, and GitHub Copilot sessions in one picker. No configuration required — providers that are not installed on your machine are silently skipped.
+
+Use `f` in the picker to cycle the provider filter and narrow to a specific provider.
+
+### cwd-on-recall
+
+Resumed sessions now launch with the provider CLI's working directory set to the session's saved cwd. Pick a session from any directory and the provider reopens inside the project tree it was running in. If the original directory no longer exists, altergo prints a dim notice and falls back to your current directory.
+
+### Picker keybinding changes: `b` and `*`
+
+| Key | v0.39.x | v0.40.0+ |
+|---|---|---|
+| `b` | (unbound) | Bookmark (toggle star) on the highlighted row |
+| `*` | Toggle star on highlighted row | Toggle starred-only filter |
+
+If you have muscle memory for pressing `*` to bookmark a session, use `b` instead. The `*` key now shows only starred sessions (a filter), which is the more common use case after building up a bookmark collection.
+
+---
+
 ## v0.34.0 — CLI syntax change: positional `--config <name>`
 
 **Applies to:** Anyone upgrading across v0.34.0.

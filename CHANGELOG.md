@@ -1,6 +1,45 @@
 # CHANGELOG
 
 
+## v0.40.1 (2026-04-21)
+
+### Bug Fixes
+
+- --add-provider must not pool credentials into MAIN_HOME
+  ([#24](https://github.com/thepixelabs/altergo/pull/24),
+  [`97c460b`](https://github.com/thepixelabs/altergo/commit/97c460b3fc80935a4a9b583e90c29a6755e97eec))
+
+_reconcile_orphan_dot_dir was iterating every child of account_home/<dot>/ and moving it into
+  MAIN_HOME/<dot>/. That includes auth.json / oauth_creds.json / .credentials.json — the per-account
+  credential files — and any local state (sqlite dbs, per-account caches). Pooling them into
+  MAIN_HOME defeats altergo's isolation model: two accounts sharing one provider dot-dir in MAIN
+  would end up sharing identity.
+
+The fix restricts migration to the shared catalog only: PROVIDERS[id]["symlink_dirs"] +
+  ["symlink_files"]. Everything else — credentials, local sqlite state, unknown children — stays in
+  place as a real file/dir under account_home/<dot>/. That matches the existing
+  _apply_provider_setup contract: only catalog entries get symlinked.
+
+Also removed the trailing rmdir of the account-local dot-dir — it still holds credentials after
+  reconciliation, so the dir must remain.
+
+Added test_add_provider_preserves_credentials_per_account that asserts auth.json and logs_2.sqlite
+  stay account-local while sessions/ migrates.
+
+### Documentation
+
+- Overhaul for v0.40.0 — multi-provider, recall across 4 providers, cwd-on-recall, bookmark rebind
+  ([`dfb83c8`](https://github.com/thepixelabs/altergo/commit/dfb83c8d571bc3c465226de5bf288ddf54b97110))
+
+- README: new picker keybindings table (b bookmark, * starred-only); multi-provider recall section;
+  add-provider quickstart line; cwd-on-recall mention in features table - architecture.md: corrected
+  line count, v3 schema field table, disk-write trigger bullets, per-provider session-format table -
+  how-it-works.md: four-provider problem statement; AddProvider reconciliation section citing
+  _reconcile_orphan_dot_dir; exact nav-footer string; provider filter + starred filter composition -
+  migration.md: v0.40.0 section expanded with cwd-on-recall entry and b/* rebind before/after -
+  settings.md: cross-link to picker keybindings in how-it-works
+
+
 ## v0.40.0 (2026-04-20)
 
 ### Features

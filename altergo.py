@@ -21,17 +21,20 @@ from pathlib import Path
 
 # Terminal helpers
 
+
 def _c(code, text):
     """Wrap text in ANSI color if stdout is a TTY."""
     if not sys.stdout.isatty():
         return text
     return f"\033[{code}m{text}\033[0m"
 
+
 def _link(url, text):
     """OSC 8 terminal hyperlink — clickable in supported terminals."""
     if not sys.stdout.isatty():
         return text
     return f"\033]8;;{url}\033\\{text}\033]8;;\033\\"
+
 
 # Themes
 #
@@ -147,15 +150,18 @@ _DEFAULT_THEME = "ocean"
 # mutated in-place when the user cycles themes in the launcher.
 _CURRENT_THEME = _DEFAULT_THEME
 
+
 def get_current_theme() -> str:
     """Return the id of the currently active theme."""
     return _CURRENT_THEME if _CURRENT_THEME in THEMES else _DEFAULT_THEME
+
 
 def set_current_theme(name: str) -> None:
     """Update the in-process active theme (no disk write)."""
     global _CURRENT_THEME
     if name in THEMES:
         _CURRENT_THEME = name
+
 
 def _gradient_color(stops: list, t: float) -> str:
     """Interpolate between hex color stops at position *t* (0.0–1.0)."""
@@ -175,6 +181,7 @@ def _gradient_color(stops: list, t: float) -> str:
     b = int(b1 + (b2 - b1) * f)
     return f"#{r:02x}{g:02x}{b:02x}"
 
+
 def _gradient_ansi(text: str, stops: list, *, bold: bool = False) -> str:
     """Render *text* with a per-character True Color ANSI gradient."""
     if not sys.stdout.isatty() or not stops:
@@ -188,12 +195,14 @@ def _gradient_ansi(text: str, stops: list, *, bold: bool = False) -> str:
         parts.append(f"\033[{attrs}38;2;{r};{g};{b}m{ch}")
     return "".join(parts) + "\033[0m"
 
+
 def C(role: str) -> str:
     """Return the ANSI code for a logical role under the active theme."""
     if role in _STATIC_ANSI:
         return _STATIC_ANSI[role]
     theme = THEMES.get(get_current_theme(), THEMES[_DEFAULT_THEME])
     return theme["ansi"].get(role, "")
+
 
 def _ansi_to_rich(code: str) -> str:
     """Translate one of altergo's ANSI color codes into a Rich style string."""
@@ -216,6 +225,7 @@ def _ansi_to_rich(code: str) -> str:
         else:
             i += 1
     return " ".join(out)
+
 
 def show_banner(
     account: str | None = None,
@@ -395,6 +405,7 @@ def show_banner(
     except Exception:
         suffix = f"  [{account}]" if account else ""
         print(f"  altergo {__version__}  —  Don't break flow. Switch accounts.{suffix}")
+
 
 def show_help():
     """Print --help output in a two-column layout."""
@@ -654,6 +665,7 @@ def show_help():
     print(dim("  altergo · open-source by pixelabs · not affiliated with Anthropic, Google, OpenAI, or GitHub"))
     print()
 
+
 # Config
 
 # Resolve the real home even if HOME is overridden (e.g., running as altergo)
@@ -703,6 +715,7 @@ LAST_SESSION_FILE = MAIN_HOME / ".altergo" / "last_session.json"
 
 # Account helpers
 
+
 def resolve_account(name: str) -> tuple:
     """Return (account_home, account_claude) for the given account name."""
     if name == _NATIVE_ACCOUNT:
@@ -711,11 +724,13 @@ def resolve_account(name: str) -> tuple:
     account_claude = account_home / ".claude"
     return account_home, account_claude
 
+
 def list_accounts() -> list:
     """Return sorted list of account names that exist on disk."""
     if not ACCOUNTS_DIR.exists():
         return []
     return sorted(p.name for p in ACCOUNTS_DIR.iterdir() if p.is_dir() and not p.name.startswith("."))
+
 
 def validate_account_name(name: str) -> None:
     """Raise SystemExit if name is invalid (bad chars, reserved word, leading dot)."""
@@ -729,6 +744,7 @@ def validate_account_name(name: str) -> None:
     if name in _RESERVED_NAMES:
         print(f"altergo: '{name}' is a reserved name. Choose a different account name.", file=sys.stderr)
         sys.exit(1)
+
 
 # Migration
 
@@ -1011,6 +1027,7 @@ CATALOG = [
 
 # Settings helpers
 
+
 def load_account_meta(account_home: Path) -> dict:
     """Load account metadata. Returns v3-shape dict in memory regardless of on-disk form."""
     meta_file = account_home / "account.json"
@@ -1023,6 +1040,7 @@ def load_account_meta(account_home: Path) -> dict:
     if (account_home / ".claude").exists():
         return _coerce_meta_v3({"provider": "claude"})
     return None
+
 
 def _coerce_meta_v3(data: dict) -> dict:
     """Return a v3-shape dict from v2 single-string or v3 list input."""
@@ -1049,6 +1067,7 @@ def _coerce_meta_v3(data: dict) -> dict:
     out["providers"] = providers
     out["default_provider"] = default
     return out
+
 
 def _read_account_email(account_name: str) -> str | None:
     """Return the email address for *account_name*, or None if unavailable."""
@@ -1095,6 +1114,7 @@ def _read_account_email(account_name: str) -> str | None:
         pass
     return None
 
+
 def save_account_meta(account_home: Path, meta: dict) -> None:
     """Atomically write account.json."""
     account_home.mkdir(parents=True, exist_ok=True)
@@ -1102,6 +1122,7 @@ def save_account_meta(account_home: Path, meta: dict) -> None:
     tmp = meta_file.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(meta, indent=2))
     os.replace(str(tmp), str(meta_file))
+
 
 def load_settings():
     """Load user settings overlay. Returns {id: bool} dict of non-default values."""
@@ -1114,6 +1135,7 @@ def load_settings():
         return {k: v for k, v in shared.items() if k in catalog_ids and isinstance(v, bool)}
     except Exception:
         return {}
+
 
 def save_settings(overrides):
     """Atomically write settings overlay to SETTINGS_FILE. Preserves other top-level keys."""
@@ -1130,7 +1152,9 @@ def save_settings(overrides):
     tmp.write_text(json.dumps(data, indent=2))
     os.replace(str(tmp), str(SETTINGS_FILE))
 
+
 # Starred conversations
+
 
 def load_starred_entries() -> list:
     """Return the full list of starred session entry dicts."""
@@ -1142,9 +1166,11 @@ def load_starred_entries() -> list:
     except Exception:
         return []
 
+
 def load_starred_ids() -> set:
     """Return the set of starred session IDs (cheap for membership tests)."""
     return {e["id"] for e in load_starred_entries()}
+
 
 def _save_starred(entries: list) -> None:
     """Atomically persist starred entries to STARRED_FILE."""
@@ -1153,6 +1179,7 @@ def _save_starred(entries: list) -> None:
     tmp = STARRED_FILE.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(data, indent=2))
     os.replace(str(tmp), str(STARRED_FILE))
+
 
 def star_session(session_id: str, provider: str, project: str, topic: str) -> None:
     """Add a session to the starred list (no-op if already starred)."""
@@ -1170,9 +1197,11 @@ def star_session(session_id: str, provider: str, project: str, topic: str) -> No
     )
     _save_starred(entries)
 
+
 def unstar_session(session_id: str) -> None:
     """Remove a session from the starred list."""
     _save_starred([e for e in load_starred_entries() if e["id"] != session_id])
+
 
 def toggle_starred_session(session_id: str, provider: str, project: str, topic: str) -> bool:
     """Toggle star on a session. Returns True if now starred, False if now unstarred."""
@@ -1192,7 +1221,9 @@ def toggle_starred_session(session_id: str, provider: str, project: str, topic: 
     _save_starred(entries)
     return True
 
+
 # --- Last-session tracking ---
+
 
 def save_last_session(session_id: str, provider: str, project: str, topic: str) -> None:
     """Persist the last exited session info for ``altergo --star`` to read."""
@@ -1208,6 +1239,7 @@ def save_last_session(session_id: str, provider: str, project: str, topic: str) 
     tmp.write_text(json.dumps(data, indent=2))
     os.replace(str(tmp), str(LAST_SESSION_FILE))
 
+
 def load_last_session() -> dict | None:
     """Return the last exited session dict, or None if unavailable."""
     if not LAST_SESSION_FILE.exists():
@@ -1216,6 +1248,7 @@ def load_last_session() -> dict | None:
         return json.loads(LAST_SESSION_FILE.read_text())
     except Exception:
         return None
+
 
 def _record_last_session_after_exit(provider: str, launch_time: float) -> None:
     """Scan for the newest JSONL session file and write it to LAST_SESSION_FILE."""
@@ -1256,6 +1289,7 @@ def _record_last_session_after_exit(provider: str, launch_time: float) -> None:
     topic, _ = _scan_session_head(newest_path)
     save_last_session(session_id, provider, newest_path.parent.name, topic or "")
 
+
 def load_persisted_theme() -> str:
     """Read the persisted theme name from SETTINGS_FILE."""
     if not SETTINGS_FILE.exists():
@@ -1268,6 +1302,7 @@ def load_persisted_theme() -> str:
     except Exception:
         pass
     return _DEFAULT_THEME
+
 
 def save_persisted_theme(name: str) -> None:
     """Persist the chosen theme name to SETTINGS_FILE without clobbering siblings."""
@@ -1284,6 +1319,7 @@ def save_persisted_theme(name: str) -> None:
     tmp = SETTINGS_FILE.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(data, indent=2))
     os.replace(str(tmp), str(SETTINGS_FILE))
+
 
 # Banner font
 
@@ -1316,6 +1352,7 @@ _DEFAULT_BANNER_FONT = "smslant"
 # at module load time.
 _valid_banner_fonts_cache: list[str] | None = None
 
+
 def _get_valid_banner_fonts() -> list[str]:
     """Return the subset of _BANNER_FONT_CATALOG that is available and ≤5 rows."""
     global _valid_banner_fonts_cache
@@ -1341,6 +1378,7 @@ def _get_valid_banner_fonts() -> list[str]:
         _valid_banner_fonts_cache = [_DEFAULT_BANNER_FONT]
     return _valid_banner_fonts_cache
 
+
 def load_persisted_banner_font() -> str:
     """Read the banner font name from SETTINGS_FILE. Falls back to the default."""
     if not SETTINGS_FILE.exists():
@@ -1354,11 +1392,13 @@ def load_persisted_banner_font() -> str:
         pass
     return _DEFAULT_BANNER_FONT
 
+
 def save_persisted_banner_font(name: str) -> None:
     """Persist the chosen banner font to SETTINGS_FILE."""
     if name not in _BANNER_FONT_CATALOG:
         return
     _patch_settings({"banner_font": name})
+
 
 # Animation packs
 
@@ -1391,6 +1431,7 @@ _DEFAULT_ANIM_PACK = "minimal"
 # Cache for Rich spinner registry (frames + intervals)
 _RICH_SPINNER_DATA_CACHE: dict | None = None
 
+
 def _get_rich_spinner_data() -> dict:
     """Return Rich's SPINNERS registry, cached after first call."""
     global _RICH_SPINNER_DATA_CACHE
@@ -1402,6 +1443,7 @@ def _get_rich_spinner_data() -> dict:
         except Exception:
             _RICH_SPINNER_DATA_CACHE = {}
     return _RICH_SPINNER_DATA_CACHE
+
 
 def load_animation_pack() -> str:
     """Return the active animation pack name."""
@@ -1420,7 +1462,9 @@ def load_animation_pack() -> str:
         pass
     return _DEFAULT_ANIM_PACK
 
+
 # Random theme helpers
+
 
 def _patch_settings(updates: dict) -> None:
     """Atomically merge *updates* into SETTINGS_FILE, preserving all other keys."""
@@ -1435,6 +1479,7 @@ def _patch_settings(updates: dict) -> None:
     tmp = SETTINGS_FILE.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(data, indent=2))
     os.replace(str(tmp), str(SETTINGS_FILE))
+
 
 def load_random_theme_settings() -> dict:
     """Return random_theme_enabled, random_theme_frequency, random_theme_counter."""
@@ -1458,6 +1503,7 @@ def load_random_theme_settings() -> dict:
     except Exception:
         return defaults
 
+
 def _random_theme_counter_range(freq: int) -> tuple:
     """Map frequency slot (1-5) to (min_sessions, max_sessions) range."""
     if freq <= 2:
@@ -1466,6 +1512,7 @@ def _random_theme_counter_range(freq: int) -> tuple:
         return (5, 10)
     else:
         return (10, 20)
+
 
 def maybe_rotate_random_theme() -> None:
     """Decrement the random-theme counter; rotate theme when it hits zero."""
@@ -1497,6 +1544,7 @@ def maybe_rotate_random_theme() -> None:
     set_current_theme(new_theme)
     _patch_settings({"theme": new_theme, "random_theme_counter": _random.randint(lo, hi)})
 
+
 # --- Launch-handoff animation duration (per-provider) ---
 #
 # Capped by panel decision (option A) at 0.7s max so the animation never
@@ -1510,11 +1558,13 @@ _HANDOFF_ANIM_SECONDS: dict[str, float] = {
     "codex": 0.0,
 }
 
+
 def _handoff_duration(provider: str | None) -> float:
     """Return the capped twinkle duration for the given provider id."""
     if provider is None:
         return 0.0
     return _HANDOFF_ANIM_SECONDS.get(provider, 0.0)
+
 
 def _status_wrap(message: str, func, *args, **kwargs):
     """Call ``func`` while showing a Rich spinner-status line."""
@@ -1534,6 +1584,7 @@ def _status_wrap(message: str, func, *args, **kwargs):
             return func(*args, **kwargs)
     except Exception:
         return func(*args, **kwargs)
+
 
 # Update check: settings, cache, fetch
 #
@@ -1566,6 +1617,7 @@ UPDATE_PYPI_URL = "https://pypi.org/pypi/altergo/json"
 # all of which could corrupt the banner render if printed unsanitized.
 _VERSION_RE = re.compile(r"^[0-9a-zA-Z.\-+]{1,32}$")
 
+
 def _sanitize_version(v) -> str | None:
     """Return ``v`` if it is a valid, printable version string, else None."""
     if not isinstance(v, str):
@@ -1573,6 +1625,7 @@ def _sanitize_version(v) -> str | None:
     if _VERSION_RE.match(v):
         return v
     return None
+
 
 def load_update_check_enabled() -> bool:
     """Return whether the user has opted into update checks."""
@@ -1586,6 +1639,7 @@ def load_update_check_enabled() -> bool:
     except Exception:
         pass
     return True
+
 
 def save_update_check_enabled(enabled: bool) -> None:
     """Persist the update-check opt-in flag without clobbering siblings."""
@@ -1601,6 +1655,7 @@ def save_update_check_enabled(enabled: bool) -> None:
     tmp.write_text(json.dumps(data, indent=2))
     os.replace(str(tmp), str(SETTINGS_FILE))
 
+
 def _load_bool_setting(key: str, default: bool = True) -> bool:
     """Load a boolean setting from SETTINGS_FILE."""
     if not SETTINGS_FILE.exists():
@@ -1612,6 +1667,7 @@ def _load_bool_setting(key: str, default: bool = True) -> bool:
     except Exception:
         return default
 
+
 def _get_intro_shown() -> bool:
     if not SETTINGS_FILE.exists():
         return False
@@ -1620,6 +1676,7 @@ def _get_intro_shown() -> bool:
         return bool(data.get("update_check_intro_shown"))
     except Exception:
         return False
+
 
 def _mark_intro_shown() -> None:
     SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -1633,6 +1690,7 @@ def _mark_intro_shown() -> None:
     tmp = SETTINGS_FILE.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(data, indent=2))
     os.replace(str(tmp), str(SETTINGS_FILE))
+
 
 def _read_update_cache() -> dict:
     """Read and validate the update cache. Returns {} on any error."""
@@ -1654,6 +1712,7 @@ def _read_update_cache() -> dict:
     else:
         data["latest_version"] = v
     return data
+
 
 def _write_update_cache(latest_version: str | None) -> None:
     """Atomically write the update cache. Validates before writing."""
@@ -1677,6 +1736,7 @@ def _write_update_cache(latest_version: str | None) -> None:
         # Silent failure — we never want the update checker to break launch.
         pass
 
+
 def _parse_version(v: str) -> tuple:
     """Parse a MAJOR.MINOR.PATCH string into a comparable tuple."""
     try:
@@ -1697,6 +1757,7 @@ def _parse_version(v: str) -> tuple:
     except Exception:
         return ()
 
+
 def _is_newer(latest: str, current: str) -> bool:
     """Return True iff ``latest`` is strictly newer than ``current``."""
     a = _parse_version(latest)
@@ -1704,6 +1765,7 @@ def _is_newer(latest: str, current: str) -> bool:
     if not a or not b:
         return False
     return a > b
+
 
 # Session IDs as produced by Claude Code, Gemini CLI, Codex, and Copilot are
 # all canonical UUIDs. We match case-insensitively and allow an optional
@@ -1716,9 +1778,11 @@ _SESSION_ID_RE = re.compile(
     re.IGNORECASE,
 )
 
+
 def _looks_like_session_id(token: str) -> bool:
     """Return True iff ``token`` matches the canonical UUID shape."""
     return bool(_SESSION_ID_RE.match(token))
+
 
 def _extract_yolo_resume(args: list[str]) -> tuple[bool, str | None, list[str]]:
     """Scan ``args`` for --yolo-resume, --yolo-resume=ID, or --yolo-resume ID."""
@@ -1750,6 +1814,7 @@ def _extract_yolo_resume(args: list[str]) -> tuple[bool, str | None, list[str]]:
         out.append(a)
         i += 1
     return present, session_id, out
+
 
 def _translate_yolo_flags(provider: str, args: list[str]) -> tuple[list[str], list[str], list[str]]:
     """Translate --yolo / --yolo-resume into provider-native flags."""
@@ -1800,6 +1865,7 @@ def _translate_yolo_flags(provider: str, args: list[str]) -> tuple[list[str], li
 
     return prefix, cleaned, suffix
 
+
 def _fetch_latest_version() -> None:
     """Fetch altergo's latest version from PyPI and update the cache."""
     try:
@@ -1833,6 +1899,7 @@ def _fetch_latest_version() -> None:
         except Exception:
             pass
 
+
 def maybe_refresh_update_cache() -> None:
     """Kick off a background refresh if the cache is stale and opt-in is on."""
     if not load_update_check_enabled():
@@ -1855,16 +1922,19 @@ def maybe_refresh_update_cache() -> None:
     t = threading.Thread(target=_fetch_latest_version, daemon=True)
     t.start()
 
+
 def get_cached_latest_version() -> str | None:
     """Return the last-known sanitized latest version, or None."""
     cache = _read_update_cache()
     return _sanitize_version(cache.get("latest_version"))
+
 
 def first_launch_notice_if_needed() -> None:
     """Print the one-time consent notice if the user hasn't seen it yet."""
     if _get_intro_shown():
         return
     _mark_intro_shown()
+
 
 def _get_home_notice_shown() -> bool:
     if not SETTINGS_FILE.exists():
@@ -1874,6 +1944,7 @@ def _get_home_notice_shown() -> bool:
         return bool(data.get("home_notice_shown"))
     except Exception:
         return False
+
 
 def _mark_home_notice_shown() -> None:
     SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -1887,6 +1958,7 @@ def _mark_home_notice_shown() -> None:
     tmp = SETTINGS_FILE.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(data, indent=2))
     os.replace(str(tmp), str(SETTINGS_FILE))
+
 
 def home_change_notice_if_needed() -> None:
     """One-time animated notice explaining the HOME isolation model."""
@@ -2139,6 +2211,7 @@ def home_change_notice_if_needed() -> None:
         sys.stdout.write("\033[?25h")  # always restore cursor
         sys.stdout.flush()
 
+
 def get_active_account() -> str | None:
     """Return the persisted active account name, or None if not set / no longer valid."""
     if not SETTINGS_FILE.exists():
@@ -2154,6 +2227,7 @@ def get_active_account() -> str | None:
         return None
     except Exception:
         return None
+
 
 def _account_for_provider(provider_id: str) -> str | None:
     """Return an account name suitable for launching sessions of ``provider_id``."""
@@ -2175,6 +2249,7 @@ def _account_for_provider(provider_id: str) -> str | None:
             return acct
     return None
 
+
 def set_active_account(name: str) -> None:
     """Persist active_account to SETTINGS_FILE without clobbering other keys."""
     SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -2189,9 +2264,11 @@ def set_active_account(name: str) -> None:
     tmp.write_text(json.dumps(data, indent=2))
     os.replace(str(tmp), str(SETTINGS_FILE))
 
+
 def _is_enabled(entry, overrides):
     """Return whether a catalog entry is enabled given the user's overrides."""
     return overrides.get(entry["id"], entry["default_on"])
+
 
 def _ensure_nested_parent(rel, account_home):
     """For paths like .config/gh, ensure account_home/.config is a real directory."""
@@ -2208,6 +2285,7 @@ def _ensure_nested_parent(rel, account_home):
             print(f"  {_c(33, '↻')} Migrated ~/{parent_name}/ from wholesale symlink to managed dir")
     elif not acct_parent.exists():
         acct_parent.mkdir(parents=True, exist_ok=True)
+
 
 def _apply_entry(entry, overrides, account_home):
     """Create or remove symlinks for one catalog entry based on current settings."""
@@ -2235,7 +2313,9 @@ def _apply_entry(entry, overrides, account_home):
                 dst.unlink()
                 print(f"  {_c(33, '✓')} Unshared ~/{rel}")
 
+
 # Config / Teardown
+
 
 def _ensure_symlinked_dir(name: str, src: Path, dst: Path, account_claude: Path) -> bool:
     """Ensure dst is a symlink pointing to src, auto-migrating real dirs if needed."""
@@ -2308,6 +2388,7 @@ def _ensure_symlinked_dir(name: str, src: Path, dst: Path, account_claude: Path)
         print(f"  warning: {name}/ has unresolved conflicts; not symlinked")
         return False
 
+
 def _ensure_home_file_symlink(name: str, src: Path, dst: Path) -> None:
     """Ensure dst (account_home/<name>) is a symlink pointing to src (MAIN_HOME/<name>)."""
     if dst.is_symlink():
@@ -2331,6 +2412,7 @@ def _ensure_home_file_symlink(name: str, src: Path, dst: Path) -> None:
     else:
         # (e) Conflict — both are real files; don't clobber either
         print(f"  {_c(33, '⚠')} {name} exists in both account home and main home — remove one to share")
+
 
 def _sync_claude_mcps(account_home: Path) -> None:
     """Sync mcpServers between MAIN_HOME/.claude.json and account_home/.claude.json."""
@@ -2393,6 +2475,7 @@ def _sync_claude_mcps(account_home: Path) -> None:
         count = len(merged)
         print(f"  {_c(32, '✓')} Synced {count} MCP server{'s' if count != 1 else ''}")
 
+
 def do_star(session_id: str | None = None) -> None:
     """Star a session by ID, or the last exited session if no ID given."""
     if session_id is not None:
@@ -2422,6 +2505,7 @@ def do_star(session_id: str | None = None) -> None:
     topic_hint = last.get("topic") or "(no topic)"
     print(f"  {_c(C('accent'), '★')} Starred {_c(C('command'), last['id'])} [{last.get('provider', 'claude')}]")
     print(_c(C("dim"), f"  {topic_hint}"))
+
 
 def _apply_provider_setup(
     account_home: Path, provider_id: str, *, account_name: str = "", silent: bool = False
@@ -2493,6 +2577,7 @@ def _apply_provider_setup(
     if provider_id == "claude":
         _sync_claude_mcps(account_home)
 
+
 def _remove_provider_setup(account_home: Path, provider_id: str, *, silent: bool = False) -> None:
     """Remove the symlinks installed by :func:`_apply_provider_setup` for one provider."""
     prov = PROVIDERS.get(provider_id)
@@ -2525,6 +2610,7 @@ def _remove_provider_setup(account_home: Path, provider_id: str, *, silent: bool
                     print(f"  {_c(33, '✓')} Removed symlink: {name}")
         except OSError:
             pass
+
 
 def do_config(account: str = "default", provider: str = "claude", *, keychain_arg: str | None = None):
     """Configure (or reconfigure) an altergo account."""
@@ -2636,6 +2722,7 @@ def do_config(account: str = "default", provider: str = "claude", *, keychain_ar
     print(_c(2, "  Isolates credentials per provider. Shares AWS, GCP, Docker, and kubectl by default."))
     print(_c(2, f"  Change sharing settings: {_c(0, 'altergo --settings')}"))
 
+
 def _reconcile_orphan_dot_dir(account_home: Path, provider_id: str) -> None:
     """Merge SHAREABLE orphan data from an account-local provider dot-dir into MAIN_HOME."""
     prov = PROVIDERS.get(provider_id)
@@ -2723,6 +2810,7 @@ def _reconcile_orphan_dot_dir(account_home: Path, provider_id: str) -> None:
             )
         )
 
+
 def do_add_provider(account: str, provider_id: str) -> int:
     """Install an additional provider on an existing altergo account."""
     account_home, _ = resolve_account(account)
@@ -2755,6 +2843,7 @@ def do_add_provider(account: str, provider_id: str) -> int:
     launch = f"altergo {account} {provider_id}" if provider_id != new_meta["default_provider"] else f"altergo {account}"
     print(_c(C("dim"), f"  Launch: {launch}"))
     return 0
+
 
 def do_remove_provider(account: str, provider_id: str, *, assume_yes: bool = False) -> int:
     """Remove a provider from an altergo account."""
@@ -2806,6 +2895,7 @@ def do_remove_provider(account: str, provider_id: str, *, assume_yes: bool = Fal
     print(_c(32, f"Removed provider '{provider_id}' from account '{account}'."))
     return 0
 
+
 def do_default_provider(account: str, provider_id: str) -> int:
     """Change the default provider for an account."""
     account_home, _ = resolve_account(account)
@@ -2833,6 +2923,7 @@ def do_default_provider(account: str, provider_id: str) -> int:
     save_account_meta(account_home, new_meta)
     print(_c(32, f"Default provider for '{account}' is now '{provider_id}'."))
     return 0
+
 
 def do_teardown(account: str = "default"):
     if account == _NATIVE_ACCOUNT:
@@ -2878,6 +2969,7 @@ def do_teardown(account: str = "default"):
 
     print()
     print(_c(32, "Teardown complete.") + " Account home and credentials left intact.")
+
 
 def do_delete_account(account: str) -> bool:
     """Fully delete an account: tear down symlinks, remove the home dir, clear active."""
@@ -2937,6 +3029,7 @@ def do_delete_account(account: str) -> bool:
     print(_c(32, f"Account '{account}' deleted."))
     return True
 
+
 def do_rename(old_name: str, new_name: str):
     old_home = ACCOUNTS_DIR / old_name
     new_home = ACCOUNTS_DIR / new_name
@@ -2950,7 +3043,9 @@ def do_rename(old_name: str, new_name: str):
     old_home.rename(new_home)
     print(f"  {_c(32, '✓')} Renamed account '{old_name}' → '{new_name}'")
 
+
 # Session Discovery
+
 
 def _build_provider_map() -> dict:
     """Return a dict mapping session JSONL path → provider id string."""
@@ -2993,9 +3088,11 @@ def _build_provider_map() -> dict:
 
     return path_to_provider
 
+
 # Per-provider session discoverers
 
 _CODEX_TOPIC_SENTINELS = ("<permissions ", "<collaboration_mode>", "<skills_instructions>")
+
 
 def _discover_claude_sessions(starred_ids: set) -> list:
     """Yield session dicts for Claude Code (~/.claude/projects/*/*.jsonl)."""
@@ -3040,6 +3137,7 @@ def _discover_claude_sessions(starred_ids: set) -> list:
                 }
             )
     return sessions
+
 
 def _discover_codex_sessions(starred_ids: set) -> list:
     """Yield session dicts for Codex CLI (~/.codex/sessions/YYYY/MM/DD/*.jsonl)."""
@@ -3104,6 +3202,7 @@ def _discover_codex_sessions(starred_ids: set) -> list:
                     )
     return sessions
 
+
 def _discover_gemini_sessions(starred_ids: set) -> list:
     """Yield session dicts for Gemini CLI (~/.gemini/tmp/<proj>/chats/*.json)."""
     sessions = []
@@ -3167,6 +3266,7 @@ def _discover_gemini_sessions(starred_ids: set) -> list:
                 }
             )
     return sessions
+
 
 def _discover_copilot_sessions(starred_ids: set) -> list:
     """Yield session dicts for GitHub Copilot (~/.copilot/session-state/<uuid>/)."""
@@ -3242,6 +3342,7 @@ def _discover_copilot_sessions(starred_ids: set) -> list:
         )
     return sessions
 
+
 def get_sessions():
     """Find all sessions across all projects, return sorted by modification time."""
     starred_ids = load_starred_ids()
@@ -3252,6 +3353,7 @@ def get_sessions():
     sessions.extend(_discover_copilot_sessions(starred_ids))
     sessions.sort(key=lambda s: s["modified"], reverse=True)
     return sessions
+
 
 def _extract_text(content):
     """Flatten a Claude Code message ``content`` field into plain text."""
@@ -3276,10 +3378,12 @@ def _extract_text(content):
         return "\n".join(out)
     return ""
 
+
 _CODE_FENCE_RE = re.compile(r"```[^\n]*\n.*?```", re.DOTALL)
 _INLINE_CODE_RE = re.compile(r"`([^`]*)`")
 _MD_LINK_RE = re.compile(r"\[([^\]]+)\]\([^)]*\)")
 _WS_RE = re.compile(r"\s+")
+
 
 def _clean_topic(text: str) -> str:
     """Strip code fences, collapse whitespace, return single-line summary."""
@@ -3290,6 +3394,7 @@ def _clean_topic(text: str) -> str:
     text = _INLINE_CODE_RE.sub(r"\1", text)
     text = _WS_RE.sub(" ", text).strip()
     return text
+
 
 def _is_real_user_message(obj) -> bool:
     """Return True for genuine human user turns (not tool_result-only echoes)."""
@@ -3308,6 +3413,7 @@ def _is_real_user_message(obj) -> bool:
                 return bool(block.get("text", "").strip())
         return False
     return False
+
 
 def _scan_session_head(jsonl_path, max_lines: int = 40) -> tuple:
     """Cheap scan: return (topic, cwd) from the first ``max_lines`` of a session."""
@@ -3333,6 +3439,7 @@ def _scan_session_head(jsonl_path, max_lines: int = 40) -> tuple:
     except OSError:
         pass
     return topic, cwd
+
 
 def _scan_codex_session_head(jsonl_path, max_lines: int = 80) -> tuple:
     """Return (session_id, topic, cwd) from the head of a Codex session JSONL."""
@@ -3372,6 +3479,7 @@ def _scan_codex_session_head(jsonl_path, max_lines: int = 80) -> tuple:
     except OSError:
         pass
     return session_id, topic, cwd
+
 
 def _scan_gemini_session(json_path, cwd_fallback: str = "") -> tuple:
     """Return (session_id, topic, cwd) by parsing a Gemini session JSON file."""
@@ -3413,6 +3521,7 @@ def _scan_gemini_session(json_path, cwd_fallback: str = "") -> tuple:
 
     return session_id, topic, cwd
 
+
 def _parse_copilot_workspace_yaml(yaml_path) -> dict:
     """Parse a minimal Copilot workspace.yaml into a plain dict."""
     result = {}
@@ -3434,6 +3543,7 @@ def _parse_copilot_workspace_yaml(yaml_path) -> dict:
             val = val[1:-1]
         result[key] = val
     return result
+
 
 def _scan_copilot_events_head(jsonl_path, max_lines: int = 40) -> tuple:
     """Return (session_id, cwd, topic, mod_dt) from events.jsonl head."""
@@ -3473,6 +3583,7 @@ def _scan_copilot_events_head(jsonl_path, max_lines: int = 40) -> tuple:
         pass
     return session_id, cwd, topic, mod_dt
 
+
 def load_session_preview(
     session_or_path, max_messages: int = 4, max_lines: int = 400, provider: str = "claude"
 ) -> dict:
@@ -3485,6 +3596,7 @@ def load_session_preview(
         return _load_copilot_preview(session_or_path, max_messages=max_messages)
     # Default: Claude JSONL
     return _load_claude_preview(session_or_path, max_messages=max_messages, max_lines=max_lines)
+
 
 def _load_claude_preview(jsonl_path, max_messages: int = 4, max_lines: int = 400) -> dict:
     """Load preview for a Claude Code JSONL session."""
@@ -3526,6 +3638,7 @@ def _load_claude_preview(jsonl_path, max_messages: int = 4, max_lines: int = 400
     except OSError as e:
         return {"messages": [], "cwd": "", "truncated": False, "error": str(e)}
     return {"messages": messages, "cwd": cwd, "truncated": truncated, "error": None}
+
 
 def _load_codex_preview(jsonl_path, max_messages: int = 4, max_lines: int = 400) -> dict:
     """Load preview for a Codex CLI JSONL session."""
@@ -3573,6 +3686,7 @@ def _load_codex_preview(jsonl_path, max_messages: int = 4, max_lines: int = 400)
         return {"messages": [], "cwd": "", "truncated": False, "error": str(e)}
     return {"messages": messages, "cwd": cwd, "truncated": truncated, "error": None}
 
+
 def _load_gemini_preview(json_path, max_messages: int = 4) -> dict:
     """Load preview for a Gemini CLI JSON session file."""
     messages = []
@@ -3613,6 +3727,7 @@ def _load_gemini_preview(json_path, max_messages: int = 4) -> dict:
             break
 
     return {"messages": messages, "cwd": cwd, "truncated": truncated, "error": None}
+
 
 def _load_copilot_preview(session_dir, max_messages: int = 4) -> dict:
     """Load preview for a GitHub Copilot session directory."""
@@ -3662,6 +3777,7 @@ def _load_copilot_preview(session_dir, max_messages: int = 4) -> dict:
 
     return {"messages": messages, "cwd": cwd, "truncated": truncated, "error": None}
 
+
 def decode_project_path(encoded: str) -> str:
     """Decode Claude Code's project dir name back into a readable path."""
     if not encoded:
@@ -3672,6 +3788,7 @@ def decode_project_path(encoded: str) -> str:
     else:
         s = s.replace("-", "/")
     return s
+
 
 def format_project_name(encoded):
     """Short, readable project name (last path component)."""
@@ -3684,6 +3801,7 @@ def format_project_name(encoded):
     decoded = decode_project_path(encoded)
     name = decoded.rstrip("/").rsplit("/", 1)[-1]
     return name or encoded
+
 
 def relative_time(dt: datetime, now: datetime = None) -> str:
     """Return a compact relative-time string ('2h ago', 'yesterday', '3d ago')."""
@@ -3712,7 +3830,9 @@ def relative_time(dt: datetime, now: datetime = None) -> str:
         return f"{days // 30}mo ago"
     return f"{days // 365}y ago"
 
+
 # Interactive Menu
+
 
 def interactive_picker(sessions):
     """Arrow-key driven session picker using curses."""
@@ -3722,6 +3842,7 @@ def interactive_picker(sessions):
 
     selected = curses.wrapper(_draw_picker, sessions)
     return selected
+
 
 # Per-page tint offsets: each page picks a different point on the theme's
 # banner gradient for its nav sweep base color, giving each screen a subtly
@@ -3738,6 +3859,7 @@ _PAGE_TINTS = {
 # Curses pair index reserved for the per-page nav tint (allocated once per
 # _picker_attrs call; safe to re-init because curses allows re-init of pairs).
 _NAV_TINT_PAIR = 10
+
 
 def _picker_attrs(page: str = "default"):
     """Initialize color pairs for the picker. Returns an attrs dict."""
@@ -3825,6 +3947,7 @@ def _picker_attrs(page: str = "default"):
         attrs["size_warn"] = curses.A_DIM
     return attrs
 
+
 def _compute_columns(max_x: int) -> dict:
     """Responsive column widths. Topic gets the leftover space."""
     proj_w = 18 if max_x >= 100 else (14 if max_x >= 80 else 10)
@@ -3837,6 +3960,7 @@ def _compute_columns(max_x: int) -> dict:
     topic_w = min(topic_w, max(40, max_x - used - 1))
     return {"gutter": gutter, "proj": proj_w, "time": time_w, "size": size_w, "topic": topic_w}
 
+
 def _truncate(text: str, width: int) -> str:
     if width <= 0:
         return ""
@@ -3846,6 +3970,7 @@ def _truncate(text: str, width: int) -> str:
         return "…"
     return text[: width - 1] + "…"
 
+
 def _safe_addnstr(stdscr, y, x, text, n, attr=0):
     """addnstr that swallows curses.error at the bottom-right cell."""
     try:
@@ -3853,12 +3978,14 @@ def _safe_addnstr(stdscr, y, x, text, n, attr=0):
     except curses.error:
         pass
 
+
 def _safe_addch(stdscr, y, x, ch, attr=0):
     """Single-char writer that swallows curses.error."""
     try:
         stdscr.addstr(y, x, ch, attr)
     except curses.error:
         pass
+
 
 def _draw_animated_nav(stdscr, row, text, max_width, phase, attrs):
     """Render the footer nav line with a BBS-style shine sweep + twinkling."""
@@ -3904,6 +4031,7 @@ def _draw_animated_nav(stdscr, row, text, max_width, phase, attrs):
 
         _safe_addch(stdscr, row, i, ch, attr)
 
+
 def _session_matches(s, query):
     """Return True if *query* (lowercase) matches any searchable field."""
     q = query.lower()
@@ -3912,8 +4040,10 @@ def _session_matches(s, query):
             return True
     return False
 
+
 _RESUME_PROVIDER_CYCLE = [None, "claude", "gemini", "codex", "copilot"]
 _RESUME_SORT_MODES = ["time", "project", "provider"]
+
 
 def _apply_resume_view(sessions, filter_provider, sort_mode, search_query, starred_only: bool = False):
     """Return the sorted+filtered session list for the resume picker."""
@@ -3938,6 +4068,7 @@ def _apply_resume_view(sessions, filter_provider, sort_mode, search_query, starr
         result = sorted(result, key=lambda s: (s.get("provider", ""), -s["modified"].timestamp()))
     # "time" is the default (already sorted by get_sessions)
     return result
+
 
 def _draw_picker(stdscr, sessions):
     curses.curs_set(0)
@@ -4223,6 +4354,7 @@ def _draw_picker(stdscr, sessions):
         elif key == curses.KEY_RESIZE:
             continue
 
+
 def _wrap_text(text: str, width: int):
     """Simple word-wrap that also breaks on existing newlines."""
     if width <= 0:
@@ -4250,6 +4382,7 @@ def _wrap_text(text: str, width: int):
                 line = word
         out.append(line)
     return out
+
 
 def _draw_preview(stdscr, attrs, session, preview):
     """Modal preview pane. Returns 'resume' if user hit Enter, else 'back'."""
@@ -4342,7 +4475,9 @@ def _draw_preview(stdscr, attrs, session, preview):
         elif key == curses.KEY_RESIZE:
             continue
 
+
 # --- Full-Text Session Search ---
+
 
 def _parse_search_query(raw: str):
     """Parse a search query, supporting quoted exact phrases and bare terms."""
@@ -4367,6 +4502,7 @@ def _parse_search_query(raw: str):
             terms.append(raw[i:j].lower())
             i = j
     return terms
+
 
 def _search_sessions(sessions, terms, project_filter=None, on_progress=None):
     """Search full conversation text in session JSONL files."""
@@ -4430,12 +4566,14 @@ def _search_sessions(sessions, terms, project_filter=None, on_progress=None):
         on_progress(len(targets), len(targets))
     return results
 
+
 def interactive_search(sessions):
     """Full-text search across all conversation sessions."""
     if not sessions:
         print("No sessions found.")
         return None
     return curses.wrapper(_draw_search, sessions)
+
 
 def _draw_search(stdscr, sessions):
     curses.curs_set(1)
@@ -4710,6 +4848,7 @@ def _draw_search(stdscr, sessions):
             elif key == curses.KEY_RESIZE:
                 continue
 
+
 # Settings TUI
 
 # Page definitions — index matches page number (0-based)
@@ -4731,6 +4870,7 @@ _SETTINGS_PAGES = [
 # Color swatch characters for theme preview (3 blocks per theme stop)
 _SWATCH_BLOCK = "\u2588"  # █
 
+
 def _hex_to_curses_256(hex_color: str) -> int:
     """Approximate a hex color to the nearest xterm-256 color index."""
     r = int(hex_color[1:3], 16)
@@ -4744,6 +4884,7 @@ def _hex_to_curses_256(hex_color: str) -> int:
 
     ri, gi, bi = nearest(r), nearest(g), nearest(b)
     return 16 + 36 * ri + 6 * gi + bi
+
 
 def _draw_settings(stdscr):
     """Multi-page settings TUI. Returns dict of all changes on save, None on cancel."""
@@ -5522,6 +5663,7 @@ def _draw_settings(stdscr):
                 if new_val and entry["id"] in ("gh", "glab"):
                     cred_overrides["gitconfig"] = True
 
+
 def interactive_settings():
     """Open the multi-page settings TUI, save on confirm, and apply changes."""
     show_banner()
@@ -5579,6 +5721,7 @@ def interactive_settings():
     print()
     print(_c(C("success"), "Settings saved and applied."))
 
+
 ### Keychain isolation (macOS)
 #
 # [keychain-impl] Empirical verifications performed 2026-04-20 on macOS 25.2.0:
@@ -5603,8 +5746,10 @@ _KC_SERVICE = "com.altergo.account-unlock"
 _KC_GUID = "{87191ca3-0fc9-11d4-849a-000502b52122}"  # Apple CSSM DL GUID — constant across all Macs
 _KC_SUBSERVICE_TYPE = 6  # CSSM_SERVICE_DL
 
+
 class KeychainError(Exception):
     """Raised when a /usr/bin/security operation fails in an unexpected way."""
+
 
 def _sec(argv: list, *, check: bool = True, timeout: int = 10) -> subprocess.CompletedProcess:
     """Thin wrapper around /usr/bin/security."""
@@ -5621,13 +5766,16 @@ def _sec(argv: list, *, check: bool = True, timeout: int = 10) -> subprocess.Com
         raise KeychainError(f"security {argv[0]} failed (exit {r.returncode}): {r.stderr.strip()}")
     return r
 
+
 def _keychain_path(account_home: Path) -> Path:
     """Return the per-account keychain file path. Pure."""
     return account_home / "Library" / "Keychains" / "login.keychain-db"
 
+
 def _keychain_prefs_path(account_home: Path) -> Path:
     """Return the per-account security preferences plist path. Pure."""
     return account_home / "Library" / "Preferences" / "com.apple.security.plist"
+
 
 def _write_keychain_prefs(account_home: Path) -> None:
     """Write com.apple.security.plist so processes with HOME=account_home use the per-account keychain."""
@@ -5644,6 +5792,7 @@ def _write_keychain_prefs(account_home: Path) -> None:
     }
     with open(prefs_path, "wb") as f:
         plistlib.dump(plist_data, f, fmt=plistlib.FMT_XML)
+
 
 def _create_account_keychain(account_home: Path, slug: str) -> None:
     """Create the per-account keychain and register an unlock entry in the login keychain."""
@@ -5692,6 +5841,7 @@ def _create_account_keychain(account_home: Path, slug: str) -> None:
 
     _write_keychain_prefs(account_home)
 
+
 def _unlock_account_keychain(account_home: Path, slug: str) -> None:
     """Unlock the per-account keychain using the stored password."""
     r = _sec(["find-generic-password", "-s", _KC_SERVICE, "-a", slug, "-w"], check=False)
@@ -5718,16 +5868,20 @@ def _unlock_account_keychain(account_home: Path, slug: str) -> None:
             ) from e
         raise
 
+
 def _delete_account_keychain(account_home: Path, slug: str) -> None:
     """Remove the per-account keychain and its unlock entry from the login keychain."""
     _sec(["delete-keychain", str(_keychain_path(account_home))], check=False)
     _sec(["delete-generic-password", "-s", _KC_SERVICE, "-a", slug], check=False)
 
+
 def _is_keychain_isolated(meta: dict | None) -> bool:
     """Return True if the account metadata requests per-account keychain isolation."""
     return bool(meta) and meta.get("keychain") == "isolated"
 
+
 # Launch
+
 
 def _build_alt_env(account: str = "default") -> dict:
     """Return a copy of the environment with HOME set to the account home."""
@@ -5751,6 +5905,7 @@ def _build_alt_env(account: str = "default") -> dict:
             env["PATH"] = acct_local_bin_str + ":" + env.get("PATH", "")
     return env
 
+
 def _find_claude() -> str | None:
     """Find the claude binary, checking PATH and common install locations."""
     path = shutil.which("claude")
@@ -5766,6 +5921,7 @@ def _find_claude() -> str | None:
         if p.exists() and os.access(p, os.X_OK):
             return str(p)
     return None
+
 
 def _sweep_existing_accounts() -> bool:
     """Repair any accounts that still have real dirs where symlinks are expected."""
@@ -5795,14 +5951,17 @@ def _sweep_existing_accounts() -> bool:
                     changed = True
     return changed
 
+
 def _tmux_available() -> bool:
     """Return True if tmux is installed and reachable on PATH."""
     return shutil.which("tmux") is not None
+
 
 def _tmux_session_name(account: str, provider: str) -> str:
     """Return a tmux session name for an altergo session."""
     safe = account.replace(".", "-").replace(":", "-")
     return f"{safe}/{provider}"
+
 
 def _tmux_unique_session_name(base: str) -> str:
     """Return a tmux session name that does not collide with any existing session."""
@@ -5825,6 +5984,7 @@ def _tmux_unique_session_name(base: str) -> str:
         if candidate not in existing:
             return candidate
         n += 1
+
 
 def _build_tmux_cmd(inner_cmd: list, env: dict, session_name: str, cwd: str | None = None) -> list:
     """Wrap *inner_cmd* in a ``tmux new-session`` call."""
@@ -5857,6 +6017,7 @@ def _build_tmux_cmd(inner_cmd: list, env: dict, session_name: str, cwd: str | No
             tmux_cmd += ["-e", f"{key}={env[key]}"]
     tmux_cmd += ["--", "sh", "-c", wrapper]
     return tmux_cmd
+
 
 def launch_claude(
     account: str = "default",
@@ -5991,6 +6152,7 @@ def launch_claude(
     _print_launch_message()
     return result.returncode
 
+
 def launch_shell(account: str = "default"):
     """Open an interactive shell with HOME set to account directory."""
     account_home, _ = resolve_account(account)
@@ -6048,6 +6210,7 @@ def launch_shell(account: str = "default"):
     _print_launch_message()
     return result.returncode
 
+
 def launch_command(account: str = "default", cmd_args=None):
     """Run an arbitrary command with HOME set to account directory."""
     if not cmd_args:
@@ -6086,6 +6249,7 @@ def launch_command(account: str = "default", cmd_args=None):
     _print_launch_message()
     return result.returncode
 
+
 # Account name disambiguation helper
 
 _KNOWN_COMMANDS = frozenset(
@@ -6111,6 +6275,7 @@ _KNOWN_COMMANDS = frozenset(
     ]
 )
 
+
 def _looks_like_account(token: str) -> bool:
     """Return True if token could be an account name (not a flag, not a known command)."""
     if token.startswith("-"):
@@ -6120,7 +6285,9 @@ def _looks_like_account(token: str) -> bool:
     # Must look like a valid account name (alphanumeric start, no spaces)
     return bool(re.match(r"^[a-zA-Z0-9][a-zA-Z0-9_-]*$", token))
 
+
 # Interactive prompt helpers
+
 
 def _prompt_new_account_name_tui(existing: list) -> str | None:
     """Full-screen curses name-entry for a brand-new account."""
@@ -6253,6 +6420,7 @@ def _prompt_new_account_name_tui(existing: list) -> str | None:
         return None
     return state["result"]
 
+
 def _prompt_provider_picker(current_provider: str | None = None) -> str:
     """Curses-based single-select provider picker."""
     # Build ordered list: installed ones first, then others
@@ -6349,6 +6517,7 @@ def _prompt_provider_picker(current_provider: str | None = None) -> str:
 
     return ordered[state["cursor"]]
 
+
 def _build_config_rows(accounts: list) -> list:
     """Produce the row list rendered by the --config picker."""
     active = get_active_account()
@@ -6370,6 +6539,7 @@ def _build_config_rows(accounts: list) -> list:
 
     rows.append(("create", None, None, False, None))
     return rows
+
 
 def _confirm_delete_account_tui(account: str, path) -> bool:
     """Full-screen warning/confirm for irreversible account deletion."""
@@ -6445,6 +6615,7 @@ def _confirm_delete_account_tui(account: str, path) -> bool:
     except Exception:
         return False
     return state["confirmed"]
+
 
 def _run_config_picker(accounts: list, start_cursor: int = 0) -> tuple | None:
     """Render the config picker once and return an action tuple:."""
@@ -6639,6 +6810,7 @@ def _run_config_picker(accounts: list, start_cursor: int = 0) -> tuple | None:
         return ("account", picked[1])
     return ("create",)
 
+
 def _prompt_config_menu(existing: list) -> str | None:
     """Curses TUI listing existing accounts + a 'Create new' entry."""
     if not sys.stdin.isatty() or not sys.stdout.isatty():
@@ -6677,10 +6849,12 @@ def _prompt_config_menu(existing: list) -> str | None:
             accounts = list_accounts()
             cursor = min(cursor, max(0, len(accounts) - 1))
 
+
 # Goodbye messages
 #
 # The bank lives in :mod:`altergo_greetings` (``GOODBYES``) alongside the
 # greeting bank — both are session-message copy and share the same voice rules.
+
 
 def _print_launch_message():
     """Print a witty handoff line to stderr before handing off to an AI session."""
@@ -6701,6 +6875,7 @@ def _print_launch_message():
     colored = "".join(parts) + "\033[0m"
     print(f"\n  {emoji}  {colored}\n", file=sys.stderr)
 
+
 # Interactive provider+account launcher
 
 _LAUNCHER_PROVIDERS = [
@@ -6709,6 +6884,7 @@ _LAUNCHER_PROVIDERS = [
     {"id": "codex", "label": "openai", "binary": "codex"},
     {"id": "copilot", "label": "github", "binary": "copilot"},
 ]
+
 
 def build_launcher_menu() -> list:
     """Build provider-grouped account menu for the interactive launcher."""
@@ -6772,6 +6948,7 @@ def build_launcher_menu() -> list:
             )
         menu.append({"provider_id": pid, "label": label, "accounts": chips})
     return menu
+
 
 def _draw_launcher(stdscr, menu, context_msg: str | None = None):
     """Two-axis curses TUI: ↑↓ providers, ←→ account chips. Returns (account, provider_id, shell_mode)."""
@@ -6926,6 +7103,7 @@ def _draw_launcher(stdscr, menu, context_msg: str | None = None):
             return None, None, False
         elif key == curses.KEY_RESIZE:
             continue
+
 
 def _first_run_onboarding():
     """Full-screen onboarding for brand-new users with zero accounts configured."""
@@ -7094,6 +7272,7 @@ def _first_run_onboarding():
     do_config(raw, chosen_provider)
     interactive_launcher()
 
+
 def interactive_launcher(pending_args: list | None = None, context_msg: str | None = None):
     """Show the provider+account picker and launch the selected account."""
     single_shot = pending_args is not None
@@ -7122,7 +7301,9 @@ def interactive_launcher(pending_args: list | None = None, context_msg: str | No
             launch_claude(account, provider=provider_id)
         # Session exited — loop back to the menu
 
+
 # Main
+
 
 def main():
     # Load the user's persisted theme before anything prints so the banner,
@@ -7527,6 +7708,7 @@ def main():
         sys.exit(1)
 
     sys.exit(launch_claude(account, args, provider=provider))
+
 
 if __name__ == "__main__":
     main()

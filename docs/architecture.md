@@ -11,7 +11,7 @@ For a prose explanation of why the architecture is designed this way, see [how-i
 
 ```
 altergo/
-    altergo.py              ← Main implementation (single file, ~7959 lines)
+    altergo.py              ← Main implementation (~7959 lines)
     altergo_greetings.py    ← Greeting messages, time-of-day copy, theme spinners
     pyproject.toml          ← Package metadata, entry point, dependencies
     tests/

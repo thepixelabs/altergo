@@ -12,8 +12,8 @@ Open a [GitHub Issue](https://github.com/thepixelabs/altergo/issues/new?template
 ## Suggesting Features
 
 Open a [Feature Request](https://github.com/thepixelabs/altergo/issues/new?template=feature_request.yml). Keep in mind:
-- Altergo is intentionally minimal — zero dependencies, single file
-- Features that add external dependencies will likely be declined
+- Altergo is intentionally minimal
+- Features that add heavy external dependencies will likely be declined
 
 ## Development Setup
 
@@ -23,7 +23,7 @@ cd altergo
 python altergo.py --help
 ```
 
-No virtual environment needed — the tool uses only the Python standard library.
+The tool lazy-loads a small number of terminal-polish libraries (`rich`, `pyfiglet`) and degrades gracefully if they're absent — a virtual environment is recommended but not strictly required to run against a system Python that happens to have them.
 
 ### Linting
 
@@ -50,7 +50,7 @@ pytest -v
 
 ## Code Style
 
-- Python 3.9+ compatible
-- No external dependencies
-- Single-file architecture — everything lives in `altergo.py`
+- Python 3.10+ compatible (PEP 604 `str | None` syntax is used)
+- Keep external dependencies minimal; prefer stdlib
+- Core logic lives in `altergo.py`; `altergo_greetings.py` holds the greeting copy
 - Use `ruff` defaults (line length 120)

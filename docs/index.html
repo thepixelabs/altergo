@@ -55,13 +55,14 @@
   <!-- Google Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=Syne:wght@700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=Syne:wght@700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
 
   <style>
     /* ============================================================
        DESIGN TOKENS
     ============================================================ */
     :root {
+      --void: #050710;
       --bg-0: #07091a;
       --bg-1: #0c0f26;
       --bg-2: #111530;
@@ -105,25 +106,33 @@
       --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', ui-monospace, monospace;
     }
 
-    /* Light theme overrides */
+    /* GITS: dark-only — light theme removed */
+
+    /* ============================================================
+       LIGHT THEME OVERRIDES
+    ============================================================ */
     [data-theme="light"] {
-      --bg-0: #f4f5fb;
-      --bg-1: #eceef8;
-      --bg-2: #e2e5f4;
-      --bg-3: #d6daf0;
-      --bg-4: #c8cde8;
+      /* Deep slate-blue palette — hackery, not white */
+      --void: #c8d8f0;
+      --bg-0: #d0dcf0;
+      --bg-1: #c2d0ea;
+      --bg-2: #b4c4e4;
+      --bg-3: #a6b6dc;
+      --bg-4: #98a8d4;
 
-      --text-0: #0f1135;
-      --text-1: #2d3266;
-      --text-2: #525a94;
-      --text-3: #8890c0;
+      --text-0: #06091e;
+      --text-1: #111830;
+      --text-2: #2a3558;
+      --text-3: #4a5a88;
 
-      --border-subtle: rgba(0, 0, 0, 0.06);
-      --glass-bg: rgba(255, 255, 255, 0.72);
-      --glass-border: rgba(0, 0, 0, 0.08);
-      --shadow-card: 0 2px 16px rgba(0, 0, 0, 0.08), 0 0 0 1px var(--glass-border);
-      --shadow-glow: 0 0 40px rgba(99, 102, 241, 0.12), 0 4px 24px rgba(0, 0, 0, 0.1);
-      --indigo-glow: rgba(99, 102, 241, 0.10);
+      --border-subtle: rgba(20, 40, 120, 0.12);
+      --border-glow: rgba(99, 102, 241, 0.35);
+      --glass-bg: rgba(180, 200, 235, 0.75);
+      --glass-border: rgba(99, 102, 241, 0.22);
+
+      --indigo-glow: rgba(99, 102, 241, 0.14);
+      --cyan-dim: rgba(0, 160, 210, 0.14);
+      --green-dim: rgba(5, 170, 80, 0.1);
     }
 
     /* ============================================================
@@ -153,12 +162,12 @@
       inset: 0;
       pointer-events: none;
       z-index: 0;
-      opacity: 0.025;
+      opacity: 0.04;
       background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
       background-size: 256px 256px;
     }
 
-    [data-theme="light"] body::before { opacity: 0.018; }
+    /* GITS: dark-only */
 
     /* Skip link */
     .skip-link {
@@ -187,7 +196,33 @@
       z-index: 0;
       opacity: 0.55;
     }
-    [data-theme="light"] #canvas-bg { opacity: 0.22; }
+    [data-theme="light"] #canvas-bg { opacity: 0.35; }
+
+    /* Light mode — invert dark images into blue-tinted blueprints */
+    [data-theme="light"] .hero-bg-img {
+      opacity: 0.55;
+      filter: invert(1) hue-rotate(185deg) saturate(0.55) brightness(1.15) contrast(0.85);
+    }
+    [data-theme="light"] .hero-bg-img::after {
+      background: radial-gradient(ellipse at 50% 60%, rgba(192,210,240,0) 0%, rgba(208,220,240,0.75) 100%),
+                  linear-gradient(180deg, rgba(208,220,240,0.15) 0%, rgba(208,220,240,0.5) 100%);
+    }
+    [data-theme="light"] .gits-how-bg img {
+      opacity: 0.32;
+      filter: invert(1) hue-rotate(185deg) saturate(0.4) brightness(1.2) contrast(0.8);
+    }
+    [data-theme="light"] .recall-highlight-img {
+      opacity: 0.45;
+      filter: invert(1) hue-rotate(185deg) saturate(0.45) brightness(1.1) contrast(0.88);
+    }
+    [data-theme="light"] .gits-illustration-cyan {
+      opacity: 0.92;
+      filter: saturate(0.6) brightness(0.95) contrast(1.0);
+    }
+    [data-theme="light"] .persistent-ghost-img {
+      opacity: 0.55;
+      filter: invert(1) hue-rotate(185deg) saturate(0.4) brightness(1.05) contrast(0.9);
+    }
 
     /* ============================================================
        LAYOUT UTILITIES
@@ -217,31 +252,34 @@
     .section-label {
       display: inline-flex;
       align-items: center;
-      gap: 8px;
+      gap: 10px;
       font-family: var(--font-mono);
-      font-size: 0.72rem;
+      font-size: 0.85rem;
       font-weight: 600;
-      letter-spacing: 0.14em;
+      letter-spacing: 0.16em;
       text-transform: uppercase;
       color: var(--cyan);
-      margin-bottom: 16px;
+      margin-bottom: 18px;
+      text-shadow: 0 0 12px rgba(0,229,255,0.5);
     }
     .section-label::before {
       content: '';
       display: block;
-      width: 20px;
-      height: 1px;
+      width: 28px;
+      height: 2px;
       background: var(--cyan);
-      opacity: 0.7;
+      opacity: 0.8;
+      box-shadow: 0 0 6px var(--cyan);
     }
 
     .section-title {
       font-family: var(--font-display);
-      font-size: clamp(1.55rem, 3.5vw, 2.2rem);
+      font-size: clamp(1.8rem, 4vw, 2.6rem);
       font-weight: 700;
       color: var(--text-0);
-      line-height: 1.2;
-      margin-bottom: 12px;
+      line-height: 1.15;
+      margin-bottom: 14px;
+      letter-spacing: -0.02em;
     }
 
     .section-subtitle {
@@ -458,71 +496,209 @@
     }
     @media (max-width: 640px) {
       .nav-menu-btn { display: flex; }
+      .theme-toggle { display: none; }
     }
 
-    /* Mobile nav overlay */
+    /* ---- Mobile nav drawer ---- */
     .mobile-nav {
       display: none;
       position: fixed;
       inset: 0;
-      z-index: 99;
-      background: var(--glass-bg);
-      backdrop-filter: blur(24px) saturate(160%);
-      -webkit-backdrop-filter: blur(24px) saturate(160%);
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-      padding: 80px 24px max(40px, env(safe-area-inset-bottom));
+      z-index: 200;
+      pointer-events: none;
     }
     .mobile-nav.open {
-      display: flex;
+      display: block;
+      pointer-events: auto;
     }
-    .mobile-nav a {
-      font-family: var(--font-display);
-      font-size: 1.5rem;
-      font-weight: 700;
-      color: var(--text-0);
-      text-decoration: none;
-      padding: 12px 24px;
-      border-radius: var(--radius-md);
-      width: 100%;
-      max-width: 300px;
-      text-align: center;
-      transition: background var(--transition-fast), color var(--transition-fast);
-    }
-    .mobile-nav a:hover {
-      background: var(--indigo-glow);
-      color: var(--indigo-bright);
-    }
-    .mobile-nav a:focus-visible {
-      outline: 2px solid var(--indigo);
-      outline-offset: 2px;
-    }
-    .mobile-nav .mobile-nav-close {
+
+    /* Backdrop */
+    .mobile-nav-backdrop {
       position: absolute;
-      top: max(16px, env(safe-area-inset-top));
-      right: max(16px, env(safe-area-inset-right));
+      inset: 0;
+      background: rgba(5, 7, 16, 0.7);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+      opacity: 0;
+      transition: opacity 0.28s ease;
+    }
+    .mobile-nav.open .mobile-nav-backdrop {
+      opacity: 1;
+    }
+
+    /* Slide-in panel */
+    .mobile-nav-panel {
+      position: absolute;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      width: min(300px, 85vw);
+      background: rgba(8, 12, 28, 0.97);
+      border-left: 1px solid rgba(0, 229, 255, 0.2);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      transform: translateX(100%);
+      transition: transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+      box-shadow: -4px 0 40px rgba(0, 229, 255, 0.08), -1px 0 0 rgba(0, 229, 255, 0.15);
+    }
+    .mobile-nav.open .mobile-nav-panel {
+      transform: translateX(0);
+    }
+
+    /* Scan lines texture */
+    .mobile-nav-scanlines {
+      position: absolute;
+      inset: 0;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 3px,
+        rgba(0, 229, 255, 0.012) 3px,
+        rgba(0, 229, 255, 0.012) 4px
+      );
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* Header */
+    .mobile-nav-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 20px 20px 16px;
+      border-bottom: 1px solid rgba(0, 229, 255, 0.1);
+      position: relative;
+      z-index: 1;
+      flex-shrink: 0;
+    }
+    .mobile-nav-title {
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      letter-spacing: 0.18em;
+      color: var(--cyan);
+      opacity: 0.7;
+      text-transform: uppercase;
+    }
+    .mobile-nav-close {
       display: flex;
       align-items: center;
       justify-content: center;
-      width: 44px;
-      height: 44px;
-      border-radius: var(--radius-sm);
-      border: 1px solid var(--glass-border);
+      width: 32px;
+      height: 32px;
+      border-radius: 4px;
+      border: 1px solid rgba(0, 229, 255, 0.15);
       background: transparent;
       color: var(--text-1);
       cursor: pointer;
-      font-size: 1.2rem;
-      transition: color var(--transition-fast), background var(--transition-fast);
+      transition: color 0.15s, border-color 0.15s, background 0.15s;
     }
-    .mobile-nav .mobile-nav-close:hover {
-      color: var(--text-0);
-      background: var(--indigo-glow);
+    .mobile-nav-close:hover {
+      color: var(--cyan);
+      border-color: rgba(0, 229, 255, 0.4);
+      background: rgba(0, 229, 255, 0.06);
     }
-    .mobile-nav .mobile-nav-close:focus-visible {
-      outline: 2px solid var(--indigo);
-      outline-offset: 2px;
+
+    /* Nav links */
+    .mobile-nav-links {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      padding: 12px 0;
+      position: relative;
+      z-index: 1;
+      overflow-y: auto;
+    }
+    .mobile-nav-link {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 14px 20px;
+      text-decoration: none;
+      color: var(--text-1);
+      border-left: 2px solid transparent;
+      transition: color 0.15s, background 0.15s, border-color 0.15s;
+      position: relative;
+    }
+    .mobile-nav-link:hover,
+    .mobile-nav-link:focus-visible {
+      color: var(--cyan);
+      background: rgba(0, 229, 255, 0.05);
+      border-left-color: var(--cyan);
+    }
+    .mobile-nav-link:focus-visible {
+      outline: none;
+    }
+    .mnl-index {
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      color: rgba(0, 229, 255, 0.45);
+      letter-spacing: 0.05em;
+      flex-shrink: 0;
+      width: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .mnl-text {
+      font-family: var(--font-mono);
+      font-size: 0.9rem;
+      font-weight: 500;
+      letter-spacing: 0.04em;
+    }
+    .mobile-nav-link--github .mnl-text {
+      font-size: 0.82rem;
+      opacity: 0.8;
+    }
+
+    /* Footer theme switcher */
+    .mobile-nav-footer {
+      padding: 16px 20px max(20px, env(safe-area-inset-bottom));
+      border-top: 1px solid rgba(0, 229, 255, 0.1);
+      position: relative;
+      z-index: 1;
+      flex-shrink: 0;
+    }
+    .mobile-nav-footer-label {
+      display: block;
+      font-family: var(--font-mono);
+      font-size: 0.6rem;
+      letter-spacing: 0.18em;
+      color: rgba(0, 229, 255, 0.45);
+      text-transform: uppercase;
+      margin-bottom: 10px;
+    }
+    .mobile-theme-switcher {
+      display: flex;
+      gap: 6px;
+    }
+    .mts-btn {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 5px;
+      padding: 9px 6px;
+      border-radius: 4px;
+      border: 1px solid rgba(0, 229, 255, 0.12);
+      background: rgba(0, 229, 255, 0.04);
+      color: var(--text-2);
+      font-family: var(--font-mono);
+      font-size: 0.6rem;
+      letter-spacing: 0.06em;
+      cursor: pointer;
+      transition: color 0.15s, border-color 0.15s, background 0.15s;
+    }
+    .mts-btn:hover {
+      color: var(--cyan);
+      border-color: rgba(0, 229, 255, 0.35);
+      background: rgba(0, 229, 255, 0.08);
+    }
+    .mts-btn.active {
+      color: var(--cyan);
+      border-color: rgba(0, 229, 255, 0.5);
+      background: rgba(0, 229, 255, 0.1);
+      box-shadow: 0 0 8px rgba(0, 229, 255, 0.15);
     }
 
     .nav-links .nav-github {
@@ -601,7 +777,7 @@
 
     .hero-inner {
       display: grid;
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: minmax(360px, 1fr) 1fr;
       gap: 48px;
       align-items: center;
     }
@@ -610,12 +786,14 @@
         grid-template-columns: 1fr;
         gap: 40px;
       }
+      .hero-content { order: 1; }
+      .hero-visual { order: 2; }
     }
     @media (max-width: 500px) {
       .hero-inner { gap: 28px; }
     }
 
-    .hero-content {}
+    .hero-content { order: 2; }
 
     .hero-eyebrow {
       display: inline-flex;
@@ -739,9 +917,8 @@
       border: 1px solid var(--border-subtle);
       border-radius: var(--radius-md);
       padding: 13px 18px;
-      max-width: 460px;
-      min-width: 0;
-      width: 100%;
+      max-width: fit-content;
+      width: auto;
     }
     .snippet-divider {
       width: 1px;
@@ -754,10 +931,8 @@
       font-size: 0.92rem;
       color: var(--cyan);
       letter-spacing: 0.02em;
-      overflow: hidden;
-      text-overflow: ellipsis;
       white-space: nowrap;
-      min-width: 0;
+      flex-shrink: 0;
     }
     .copy-btn {
       margin-left: auto;
@@ -818,6 +993,7 @@
       display: flex;
       justify-content: center;
       align-items: center;
+      order: 1;
     }
 
     /* ============================================================
@@ -828,13 +1004,14 @@
       max-width: 500px;
       border-radius: var(--radius-lg);
       overflow: hidden;
+      position: relative;
+      z-index: 4;
       box-shadow: var(--shadow-glow), 0 0 0 1px rgba(99,102,241,0.2), 0 32px 64px rgba(0,0,0,0.5);
       font-family: var(--font-mono);
       font-size: 0.8rem;
       line-height: 1.55;
       background: #0a0c1a;
       border: 1px solid rgba(255,255,255,0.07);
-      position: relative;
       /* Promote the terminal to its own compositing layer so the canvas
          rAF loop, shimmer animations, and cursor blink cannot trigger
          repaints of this subtree and vice-versa. */
@@ -875,6 +1052,8 @@
          affect layout or paint outside it, preventing the whole page from
          repainting when characters are typed or lines are appended. */
       contain: layout paint;
+      background: linear-gradient(rgba(0,229,255,0.015) 0%, rgba(0,229,255,0.015) 1px, transparent 1px, transparent 100%) 0 0 / 100% 4px,
+                  #090b18;
     }
 
     /* Terminal output lines */
@@ -1133,6 +1312,11 @@
     ============================================================ */
     #features {
       padding: 56px 0;
+      position: relative;
+    }
+    #features .features-grid {
+      position: relative;
+      z-index: 2;
     }
 
     .features-grid {
@@ -1155,12 +1339,10 @@
 
     .feature-item {
       display: block;
-      background: var(--glass-bg);
-      border: 1px solid var(--glass-border);
+      background: rgba(5, 7, 16, 0.18);
+      border: 1px solid rgba(0, 229, 255, 0.12);
       border-radius: var(--radius-md);
       padding: 22px 22px;
-      backdrop-filter: blur(10px);
-      -webkit-backdrop-filter: blur(10px);
       transition: border-color var(--transition-med), box-shadow var(--transition-med), transform var(--transition-med);
       position: relative;
       overflow: hidden;
@@ -1189,9 +1371,10 @@
       will-change: transform, opacity;
     }
     .feature-item:hover {
-      border-color: var(--border-glow);
+      border-color: rgba(0, 229, 255, 0.35);
       transform: translateY(-2px);
-      box-shadow: 0 8px 24px rgba(99, 102, 241, 0.12);
+      box-shadow: 0 8px 32px rgba(0, 229, 255, 0.10), inset 0 0 20px rgba(0, 229, 255, 0.03);
+      background: rgba(8, 12, 28, 0.50);
     }
 
     .feature-icon {
@@ -1214,14 +1397,14 @@
       font-family: var(--font-display);
       font-size: 0.97rem;
       font-weight: 700;
-      color: var(--text-0);
+      color: rgba(180, 220, 235, 0.92);
       margin-bottom: 6px;
       position: relative;
       z-index: 2;
     }
     .feature-item p {
       font-size: 0.875rem;
-      color: var(--text-2);
+      color: rgba(100, 160, 185, 0.80);
       line-height: 1.6;
       position: relative;
       z-index: 2;
@@ -1597,6 +1780,601 @@
       height: 400px;
       background: radial-gradient(circle, rgba(0,229,255,0.09) 0%, transparent 70%);
     }
+
+    /* ============================================================
+       GHOST IN THE SHELL — GITS OVERRIDES
+    ============================================================ */
+
+    body {
+      background-color: var(--void);
+    }
+
+    /* Neon pulse animation */
+    @keyframes neon-pulse {
+      0%, 100% { box-shadow: 0 0 8px rgba(0,229,255,0.15), 0 0 0 1px rgba(0,229,255,0.20); }
+      50%       { box-shadow: 0 0 24px rgba(0,229,255,0.40), 0 0 0 1px rgba(0,229,255,0.50); }
+    }
+
+    /* Data rain vertical scroll */
+    @keyframes data-rain-fall {
+      0%   { transform: translateY(-100%); opacity: 0; }
+      5%   { opacity: 1; }
+      95%  { opacity: 0.5; }
+      100% { transform: translateY(110vh); opacity: 0; }
+    }
+
+    /* ---- HERO SECTION ---- */
+    #hero {
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hero-bg-img {
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+      background-image: url('images/gits/hero_bg.png');
+      background-size: cover;
+      background-position: center 40%;
+      will-change: transform;
+    }
+    .hero-bg-img::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(ellipse at 50% 55%, rgba(5,7,16,0) 0%, rgba(5,7,16,0.90) 100%),
+                  linear-gradient(180deg, rgba(5,7,16,0.3) 0%, rgba(5,7,16,0.6) 100%);
+    }
+
+    /* Data rain overlay */
+    .hero-data-rain {
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+      pointer-events: none;
+      overflow: hidden;
+    }
+    .rain-col {
+      position: absolute;
+      top: 0;
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      color: var(--cyan);
+      opacity: 0.055;
+      white-space: pre;
+      line-height: 1.4;
+      animation: data-rain-fall linear infinite;
+    }
+    .rain-col:nth-child(1)  { left: 5%;  animation-duration: 9s;  animation-delay: 0s; }
+    .rain-col:nth-child(2)  { left: 13%; animation-duration: 12s; animation-delay: -3s; }
+    .rain-col:nth-child(3)  { left: 22%; animation-duration: 8s;  animation-delay: -1.5s; }
+    .rain-col:nth-child(4)  { left: 35%; animation-duration: 14s; animation-delay: -6s; }
+    .rain-col:nth-child(5)  { left: 52%; animation-duration: 10s; animation-delay: -2s; }
+    .rain-col:nth-child(6)  { left: 65%; animation-duration: 11s; animation-delay: -4s; }
+    .rain-col:nth-child(7)  { left: 78%; animation-duration: 9s;  animation-delay: -7s; }
+    .rain-col:nth-child(8)  { left: 89%; animation-duration: 13s; animation-delay: -1s; }
+
+    /* Hero content sits above ALL background layers including ghost circle */
+    #hero .container {
+      position: relative;
+      z-index: 3;
+    }
+
+    /* Ghost circle — large atmospheric hero background element */
+    @keyframes ghost-float {
+      0%, 100% { transform: translateY(0px) scale(1); }
+      50%       { transform: translateY(-18px) scale(1.015); }
+    }
+    @keyframes ghost-glow-pulse {
+      0%, 100% { filter: drop-shadow(0 0 30px rgba(0,229,255,0.35)) drop-shadow(0 0 80px rgba(99,102,241,0.25)) drop-shadow(0 0 160px rgba(0,229,255,0.12)); }
+      50%       { filter: drop-shadow(0 0 50px rgba(0,229,255,0.55)) drop-shadow(0 0 120px rgba(99,102,241,0.40)) drop-shadow(0 0 200px rgba(0,229,255,0.20)); }
+    }
+
+    .hero-ghost-circle {
+      position: absolute;
+      /* Span full right side of hero, centered vertically */
+      right: -5%;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 62%;
+      max-width: 820px;
+      z-index: 2;
+      pointer-events: none;
+      /* Radial mask to fade the image edges into nothingness */
+      -webkit-mask-image: radial-gradient(ellipse 80% 85% at 55% 50%, black 45%, transparent 85%);
+      mask-image: radial-gradient(ellipse 80% 85% at 55% 50%, black 45%, transparent 85%);
+    }
+    @media (max-width: 900px) {
+      .hero-ghost-circle {
+        width: 90%;
+        right: -15%;
+        opacity: 0.5;
+      }
+    }
+    @media (max-width: 640px) {
+      .hero-ghost-circle { display: none; }
+    }
+
+    .hero-ghost-circle-img {
+      display: block;
+      width: 100%;
+      opacity: 0.82;
+      mix-blend-mode: screen;
+      animation: ghost-float 8s ease-in-out infinite, ghost-glow-pulse 4s ease-in-out infinite;
+      will-change: transform, filter;
+    }
+
+    /* Glow halo behind the ghost circle — layered light effect */
+    .hero-ghost-circle::before {
+      content: '';
+      position: absolute;
+      inset: 10%;
+      border-radius: 50%;
+      background: radial-gradient(ellipse at 50% 50%,
+        rgba(0,229,255,0.08) 0%,
+        rgba(99,102,241,0.06) 40%,
+        transparent 75%
+      );
+      animation: ghost-glow-pulse 4s ease-in-out infinite reverse;
+      z-index: -1;
+    }
+
+    /* Install snippet neon pulse */
+    .install-snippet {
+      animation: neon-pulse 3s ease-in-out infinite;
+      border-color: rgba(0,229,255,0.25) !important;
+    }
+
+    /* ---- NAV — GITS HUD ---- */
+    .nav-links a {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      letter-spacing: 0.09em;
+      text-transform: uppercase;
+    }
+    nav.scrolled {
+      background: rgba(5,7,16,0.90) !important;
+      border-bottom: 1px solid rgba(0,229,255,0.14) !important;
+    }
+    .brand-chop {
+      box-shadow: 0 0 14px var(--cyan), 0 0 4px var(--cyan) !important;
+    }
+
+    /* ---- SECTION ILLUSTRATIONS ---- */
+    .gits-illustration {
+      display: block;
+      width: 100%;
+      border-radius: var(--radius-md);
+    }
+    .gits-illustration-cyan {
+      -webkit-mask-image: radial-gradient(ellipse 88% 88% at 50% 48%, black 25%, rgba(0,0,0,0.6) 55%, transparent 80%);
+      mask-image: radial-gradient(ellipse 88% 88% at 50% 48%, black 25%, rgba(0,0,0,0.6) 55%, transparent 80%);
+    }
+    .gits-illustration-indigo {
+      box-shadow: 0 0 60px rgba(99,102,241,0.18), 0 0 120px rgba(0,229,255,0.07);
+      filter: drop-shadow(0 0 30px rgba(0,229,255,0.20));
+    }
+
+    /* Two-column layout for section images */
+    .gits-two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 48px;
+      align-items: center;
+      margin-top: 40px;
+    }
+    @media (max-width: 768px) {
+      .gits-two-col { grid-template-columns: 1fr; gap: 28px; }
+      .gits-two-col .gits-illustration { max-width: 480px; margin: 0 auto; }
+    }
+
+    /* isolated_shells — full-bleed section background */
+    .gits-how-bg {
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+      overflow: hidden;
+    }
+    .gits-how-bg img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      object-position: center center;
+      opacity: 0.28;
+    }
+    #how .container {
+      position: relative;
+      z-index: 1;
+    }
+    /* how-step cards — glass over background */
+    .how-step {
+      background: rgba(7, 9, 26, 0.55) !important;
+      backdrop-filter: blur(8px) !important;
+      -webkit-backdrop-filter: blur(8px) !important;
+      border-color: rgba(0, 229, 255, 0.18) !important;
+    }
+    .how-step:hover {
+      background: rgba(7, 9, 26, 0.70) !important;
+      border-color: rgba(0, 229, 255, 0.35) !important;
+    }
+
+    /* Recall feature highlight card */
+    .recall-highlight {
+      position: relative;
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      margin-top: 32px;
+      min-height: 340px;
+    }
+    .recall-highlight-img {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      opacity: 0.45;
+    }
+    .recall-highlight::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(180deg, rgba(7,9,26,0.15) 0%, rgba(5,7,16,0.70) 100%);
+    }
+    .recall-highlight-content {
+      position: relative;
+      z-index: 1;
+      padding: 32px;
+    }
+
+    /* Why-card GITS accent borders */
+    .why-card:nth-child(1) { border-left: 3px solid var(--cyan); }
+    .why-card:nth-child(2) { border-left: 3px solid var(--indigo); }
+    .why-card:nth-child(3) { border-left: 3px solid var(--green); }
+    .why-card:hover {
+      background: rgba(14,17,38,0.85) !important;
+    }
+
+    /* Feature card GITS category labels */
+    .feature-category {
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--cyan);
+      opacity: 0.7;
+      margin-bottom: 4px;
+      display: block;
+    }
+
+    /* How section — vault atmosphere with full-bleed background */
+    #how {
+      background: var(--void) !important;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* ---- PERSISTENT SECTION — ghost circle integration ---- */
+    #persistent {
+      position: relative;
+      overflow: hidden;
+    }
+    .persistent-layout {
+      display: grid;
+      grid-template-columns: 1fr 480px;
+      gap: 64px;
+      align-items: center;
+    }
+    @media (max-width: 1100px) {
+      .persistent-layout { grid-template-columns: 1fr 360px; gap: 40px; }
+    }
+    @media (max-width: 800px) {
+      .persistent-layout { grid-template-columns: 1fr; gap: 32px; }
+    }
+    .persistent-ghost-wrap {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .persistent-ghost-wrap::before {
+      content: '';
+      position: absolute;
+      inset: 5%;
+      border-radius: 50%;
+      background: radial-gradient(ellipse at 50% 50%,
+        rgba(0,229,255,0.07) 0%,
+        rgba(99,102,241,0.05) 45%,
+        transparent 75%
+      );
+      animation: ghost-glow-pulse 5s ease-in-out infinite reverse;
+      pointer-events: none;
+    }
+    .persistent-ghost-img {
+      display: block;
+      width: 100%;
+      max-width: 480px;
+      mix-blend-mode: screen;
+      opacity: 0.90;
+      animation: ghost-float 9s ease-in-out infinite, ghost-glow-pulse 5s ease-in-out infinite;
+      will-change: transform, filter;
+      filter: drop-shadow(0 0 40px rgba(0,229,255,0.30)) drop-shadow(0 0 100px rgba(99,102,241,0.20));
+    }
+    @media (max-width: 800px) {
+      .persistent-ghost-img { max-width: 320px; margin: 0 auto; display: block; }
+    }
+
+    /* Scroll progress bar — GITS colors */
+    .scroll-progress {
+      background: linear-gradient(90deg, var(--cyan) 0%, var(--indigo) 50%, var(--green) 100%) !important;
+    }
+
+    /* Footer — monospace minimal */
+    footer {
+      border-top: 1px solid rgba(0,229,255,0.10) !important;
+    }
+    .footer-brand {
+      font-family: var(--font-mono) !important;
+      font-size: 0.9rem !important;
+      letter-spacing: 0.05em !important;
+    }
+
+    /* ============================================================
+       LIGHT THEME — COMPONENT OVERRIDES
+    ============================================================ */
+
+    /* Nav in light mode */
+    [data-theme="light"] nav.scrolled {
+      background: rgba(185, 205, 235, 0.92) !important;
+      border-bottom: 1px solid rgba(99, 102, 241, 0.22) !important;
+      box-shadow: 0 1px 20px rgba(30, 60, 160, 0.15);
+    }
+    [data-theme="light"] nav {
+      background: transparent;
+    }
+    [data-theme="light"] .nav-links a {
+      color: var(--text-1);
+    }
+    [data-theme="light"] .nav-links a:hover {
+      color: var(--indigo);
+      background: rgba(99, 102, 241, 0.1);
+    }
+    [data-theme="light"] .nav-brand .brand-e,
+    [data-theme="light"] .nav-brand .brand-go {
+      color: var(--text-0);
+    }
+    [data-theme="light"] .nav-brand .brand-alt,
+    [data-theme="light"] .nav-brand .brand-r {
+      color: var(--indigo);
+    }
+    [data-theme="light"] .nav-menu-btn {
+      background: rgba(170, 190, 225, 0.7);
+      border-color: rgba(99, 102, 241, 0.25);
+      color: var(--text-1);
+    }
+    [data-theme="light"] .theme-toggle {
+      background: rgba(170, 190, 225, 0.7);
+      border-color: rgba(99, 102, 241, 0.25);
+      color: var(--text-1);
+    }
+    [data-theme="light"] .nav-version {
+      background: var(--bg-2);
+      color: var(--text-2);
+      border-color: rgba(99, 102, 241, 0.25);
+    }
+
+    /* Feature cards in light mode */
+    [data-theme="light"] .feature-item {
+      background: rgba(160, 185, 225, 0.35);
+      border-color: rgba(99, 102, 241, 0.22);
+    }
+    [data-theme="light"] .feature-item:hover {
+      background: rgba(150, 175, 220, 0.55);
+      border-color: rgba(99, 102, 241, 0.42);
+      box-shadow: 0 6px 24px rgba(50, 80, 200, 0.14);
+    }
+    [data-theme="light"] .feature-item h3 {
+      color: var(--text-0);
+    }
+    [data-theme="light"] .feature-item p {
+      color: var(--text-2);
+    }
+
+    /* Why cards */
+    [data-theme="light"] .why-card {
+      background: rgba(165, 190, 228, 0.55) !important;
+    }
+    [data-theme="light"] .why-card:hover {
+      background: rgba(155, 180, 222, 0.75) !important;
+    }
+
+    /* How steps */
+    [data-theme="light"] .how-step {
+      background: rgba(160, 185, 225, 0.55);
+      border-color: rgba(99, 102, 241, 0.25);
+    }
+
+    /* Section colors */
+    [data-theme="light"] .section-label {
+      color: var(--indigo);
+      opacity: 0.8;
+    }
+    [data-theme="light"] .section-title {
+      color: var(--text-0);
+    }
+    [data-theme="light"] .section-subtitle {
+      color: var(--text-2);
+    }
+
+    /* Code blocks */
+    [data-theme="light"] .code-block {
+      background: rgba(215, 224, 248, 0.8);
+      border-color: rgba(99, 102, 241, 0.18);
+    }
+    [data-theme="light"] .code-block code {
+      color: var(--text-1);
+    }
+
+    /* Install snippet */
+    [data-theme="light"] .install-snippet {
+      background: rgba(155, 180, 222, 0.65);
+      border-color: rgba(99, 102, 241, 0.28) !important;
+    }
+    [data-theme="light"] .install-snippet code {
+      color: var(--indigo);
+    }
+
+    /* Recall highlight */
+    [data-theme="light"] .recall-highlight::after {
+      background: linear-gradient(180deg, rgba(192,210,240,0.05) 0%, rgba(200,218,240,0.82) 100%);
+    }
+
+    /* Ghost circle section */
+    [data-theme="light"] .persistent-ghost-wrap::before {
+      background: radial-gradient(ellipse at center, rgba(99,102,241,0.16) 0%, transparent 70%);
+    }
+
+    /* Mobile nav panel */
+    [data-theme="light"] .mobile-nav-panel {
+      background: rgba(175, 200, 235, 0.97);
+      border-left-color: rgba(99, 102, 241, 0.3);
+    }
+    [data-theme="light"] .mobile-nav-backdrop {
+      background: rgba(150, 175, 215, 0.65);
+    }
+    [data-theme="light"] .mobile-nav-title {
+      color: var(--indigo);
+    }
+    [data-theme="light"] .mobile-nav-close {
+      border-color: rgba(99, 102, 241, 0.2);
+      color: var(--text-2);
+    }
+    [data-theme="light"] .mobile-nav-link {
+      color: var(--text-1);
+      border-left-color: transparent;
+    }
+    [data-theme="light"] .mobile-nav-link:hover {
+      color: var(--indigo);
+      background: rgba(99, 102, 241, 0.06);
+      border-left-color: var(--indigo);
+    }
+    [data-theme="light"] .mnl-index {
+      color: rgba(99, 102, 241, 0.5);
+    }
+    [data-theme="light"] .mobile-nav-footer {
+      border-top-color: rgba(99, 102, 241, 0.12);
+    }
+    [data-theme="light"] .mobile-nav-footer-label {
+      color: rgba(99, 102, 241, 0.5);
+    }
+    [data-theme="light"] .mts-btn {
+      background: rgba(99, 102, 241, 0.05);
+      border-color: rgba(99, 102, 241, 0.15);
+      color: var(--text-2);
+    }
+    [data-theme="light"] .mts-btn:hover {
+      background: rgba(99, 102, 241, 0.1);
+      border-color: rgba(99, 102, 241, 0.3);
+      color: var(--indigo);
+    }
+    [data-theme="light"] .mts-btn.active {
+      background: rgba(99, 102, 241, 0.12);
+      border-color: rgba(99, 102, 241, 0.45);
+      color: var(--indigo);
+      box-shadow: 0 0 8px rgba(99, 102, 241, 0.15);
+    }
+
+    /* Hero data rain — less harsh in light mode */
+    [data-theme="light"] .hero-data-rain span {
+      opacity: 0.08;
+    }
+
+    /* Orb decorations in light mode */
+    [data-theme="light"] .orb-indigo {
+      background: radial-gradient(circle, rgba(99,102,241,0.15) 0%, transparent 70%);
+    }
+    [data-theme="light"] .orb-cyan {
+      background: radial-gradient(circle, rgba(0,180,220,0.12) 0%, transparent 70%);
+    }
+
+    /* #how section background in light mode */
+    [data-theme="light"] #how {
+      background: rgba(165, 190, 228, 0.55) !important;
+    }
+
+    /* Hero data rain — pale indigo tones */
+    [data-theme="light"] .rain-col {
+      color: rgba(80, 100, 200, 0.22);
+      opacity: 1;
+    }
+
+    /* Hero section light mode gradient (override dark vignette) */
+    [data-theme="light"] #hero {
+      background: linear-gradient(160deg, rgba(230,236,255,0.0) 0%, rgba(220,230,255,0.0) 100%);
+    }
+
+    /* Section separators and labels */
+    [data-theme="light"] .section-label::before {
+      background: var(--indigo);
+    }
+    [data-theme="light"] .section-label {
+      color: var(--indigo);
+    }
+
+    /* Terminal mockup — stays dark in light mode (intentional dark UI on blue bg) */
+    [data-theme="light"] .term-wrap {
+      background: #0e1228;
+      border-color: rgba(99, 102, 241, 0.35);
+      box-shadow: 0 0 40px rgba(60, 80, 200, 0.25), 0 0 0 1px rgba(99,102,241,0.25), 0 24px 48px rgba(0,0,0,0.35);
+    }
+    [data-theme="light"] .term-titlebar {
+      background: #141830;
+      border-bottom-color: rgba(99, 102, 241, 0.18);
+    }
+    [data-theme="light"] .term-body {
+      background: linear-gradient(rgba(0,229,255,0.018) 0%, rgba(0,229,255,0.018) 1px, transparent 1px, transparent 100%) 0 0 / 100% 4px,
+                  #0b0d1e;
+    }
+
+    /* Docs / install section — teal cmd text is unreadable on blue bg; shift to indigo */
+    [data-theme="light"] .cmd-table td:first-child {
+      color: var(--indigo);
+    }
+    [data-theme="light"] .docs-note code {
+      color: var(--indigo);
+      background: rgba(99, 102, 241, 0.1);
+    }
+    [data-theme="light"] .docs-disclaimer a,
+    [data-theme="light"] .docs-note a {
+      color: var(--indigo);
+    }
+    [data-theme="light"] .docs-symlink-tag {
+      color: var(--indigo);
+      border-color: rgba(99, 102, 241, 0.3);
+      background: rgba(99, 102, 241, 0.08);
+    }
+    [data-theme="light"] .code-block code .cmd {
+      color: var(--indigo);
+    }
+    [data-theme="light"] .code-block {
+      background: rgba(12, 16, 48, 0.08);
+      border-color: rgba(99, 102, 241, 0.2);
+    }
+
+    /* Persistent section bg */
+    [data-theme="light"] #persistent {
+      background: linear-gradient(180deg, transparent 0%, rgba(225, 232, 255, 0.35) 100%);
+    }
+
+    /* Why section illustrations */
+    [data-theme="light"] .gits-two-col {
+      background: transparent;
+    }
+
+    /* Subtle section dividers */
+    [data-theme="light"] .section {
+      border-top: 1px solid rgba(99, 102, 241, 0.06);
+    }
   </style>
 </head>
 <body>
@@ -1654,33 +2432,22 @@
               <line x1="3" y1="18" x2="21" y2="18"/>
             </svg>
           </button>
-          <button
-            class="theme-toggle"
-            id="theme-toggle"
-            aria-label="Toggle color theme"
-            title="Toggle color theme"
-          >
-            <!-- Dark icon (moon) -->
+          <button class="theme-toggle" id="theme-toggle" aria-label="Toggle color theme" title="Cycle theme: dark → light → system">
+            <!-- moon icon — dark mode -->
             <svg class="icon-dark" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+              <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/>
             </svg>
-            <!-- Light icon (sun) -->
+            <!-- sun icon — light mode -->
             <svg class="icon-light" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <circle cx="12" cy="12" r="5"/>
-              <line x1="12" y1="1" x2="12" y2="3"/>
-              <line x1="12" y1="21" x2="12" y2="23"/>
-              <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
-              <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
-              <line x1="1" y1="12" x2="3" y2="12"/>
-              <line x1="21" y1="12" x2="23" y2="12"/>
-              <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
-              <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+              <line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/>
+              <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+              <line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/>
+              <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
             </svg>
-            <!-- System icon (monitor) -->
+            <!-- monitor icon — system mode -->
             <svg class="icon-system" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
-              <line x1="8" y1="21" x2="16" y2="21"/>
-              <line x1="12" y1="17" x2="12" y2="21"/>
+              <rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>
             </svg>
           </button>
         </div>
@@ -1688,20 +2455,54 @@
     </div>
   </nav>
 
-  <!-- Mobile nav overlay -->
+  <!-- Mobile nav drawer -->
   <div class="mobile-nav" id="mobile-nav" role="dialog" aria-label="Navigation menu" aria-modal="true" hidden>
-    <button class="mobile-nav-close" id="mobile-nav-close" aria-label="Close navigation menu">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <line x1="18" y1="6" x2="6" y2="18"/>
-        <line x1="6" y1="6" x2="18" y2="18"/>
-      </svg>
-    </button>
-    <a href="#when" class="mobile-nav-link">When</a>
-    <a href="#why" class="mobile-nav-link">Why</a>
-    <a href="#features" class="mobile-nav-link">Features</a>
-    <a href="#docs" class="mobile-nav-link">Docs</a>
-    <a href="#install" class="mobile-nav-link">Install</a>
-    <a href="https://github.com/thepixelabs/altergo" target="_blank" rel="noopener noreferrer" class="mobile-nav-link">GitHub</a>
+    <div class="mobile-nav-backdrop" id="mobile-nav-backdrop" aria-hidden="true"></div>
+    <div class="mobile-nav-panel">
+      <!-- Header bar -->
+      <div class="mobile-nav-header">
+        <span class="mobile-nav-title">// MENU</span>
+        <button class="mobile-nav-close" id="mobile-nav-close" aria-label="Close navigation menu">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true">
+            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+      </div>
+      <!-- Scan line decoration -->
+      <div class="mobile-nav-scanlines" aria-hidden="true"></div>
+      <!-- Nav links -->
+      <nav class="mobile-nav-links" aria-label="Site sections">
+        <a href="#when" class="mobile-nav-link"><span class="mnl-index">01</span><span class="mnl-text">When</span></a>
+        <a href="#why" class="mobile-nav-link"><span class="mnl-index">02</span><span class="mnl-text">Why</span></a>
+        <a href="#features" class="mobile-nav-link"><span class="mnl-index">03</span><span class="mnl-text">Features</span></a>
+        <a href="#docs" class="mobile-nav-link"><span class="mnl-index">04</span><span class="mnl-text">Docs</span></a>
+        <a href="#install" class="mobile-nav-link"><span class="mnl-index">05</span><span class="mnl-text">Install</span></a>
+        <a href="https://github.com/thepixelabs/altergo" target="_blank" rel="noopener noreferrer" class="mobile-nav-link mobile-nav-link--github">
+          <span class="mnl-index">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+          </span>
+          <span class="mnl-text">GitHub ↗</span>
+        </a>
+      </nav>
+      <!-- Footer: theme switcher -->
+      <div class="mobile-nav-footer">
+        <span class="mobile-nav-footer-label">// THEME</span>
+        <div class="mobile-theme-switcher">
+          <button class="mts-btn" data-theme-val="dark" aria-label="Dark theme">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+            <span>Dark</span>
+          </button>
+          <button class="mts-btn" data-theme-val="light" aria-label="Light theme">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+            <span>Light</span>
+          </button>
+          <button class="mts-btn" data-theme-val="system" aria-label="System theme">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+            <span>System</span>
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- ============================================================
@@ -1709,6 +2510,21 @@
   ============================================================ -->
   <main>
     <section id="hero" aria-labelledby="hero-heading">
+      <!-- GITS hero background image -->
+      <div class="hero-bg-img" id="hero-bg-parallax" aria-hidden="true"></div>
+
+      <!-- GITS data rain overlay -->
+      <div class="hero-data-rain" aria-hidden="true">
+        <span class="rain-col">│ 01 ─ ┤ ├ ┼ ┬ 10 ┴ │ 11 ─ ┤ ├ ┼ ┬ 00 ┴ │ 01│ 01 ─ ┤ ├ ┼ ┬ 10 ┴ │ 11 ─ ┤ ├</span>
+        <span class="rain-col">┼ ─ 00 │ ┬ ┴ ┤ ├ 01 ┼ ─ 11 │ ┬ ┴ ┤ ├ 10 ┼ ─ 00 │ ┬ ┴ ┤ ├ 01 ┼ ─ 11 │ ┬</span>
+        <span class="rain-col">│ HOME ─ .altergo ─ accounts ─ pro ─ .claude ─ .credentials │ 01 ─ ┤ ├</span>
+        <span class="rain-col">┴ 01 ┬ ─ ┤ 10 ├ ┼ ┴ 00 ┬ ─ ┤ 11 ├ ┼ ┴ 01 ┬ ─ ┤ 10 ├ ┼ ┴ 00 ┬ ─ ┤ 11</span>
+        <span class="rain-col">│ pip ─ install ─ altergo ─ │ ┤ ├ ┼ ┬ ┴ │ ─ ┤ ├ ┼ ┬ ┴ │ pip ─ install</span>
+        <span class="rain-col">┼ ─ altergo ─ --config ─ pro ─ │ ┬ ┴ ┤ ├ 01 ┼ ─ 11 │ ┬ ┴ ┤ ├ 10 ┼</span>
+        <span class="rain-col">│ 11 ─ ┤ ├ ┼ ┬ 00 ┴ │ symlink ─ shared ─ ghost ─ │ 01 ─ ┤ ├ ┼ ┬ 10</span>
+        <span class="rain-col">┴ ┬ ─ ┤ 01 ├ ┼ ┴ 10 ┬ ─ ┤ 00 ├ ┼ ┴ 11 ┬ ─ ┤ 01 ├ ┼ ┴ 10 ┬ ─ ┤ 00 ├</span>
+      </div>
+
       <!-- Background orbs -->
       <div class="orb orb-indigo" style="top:-100px;left:-150px;" aria-hidden="true"></div>
       <div class="orb orb-cyan" style="top:200px;right:-80px;" aria-hidden="true"></div>
@@ -1848,13 +2664,20 @@
     <section id="why" aria-labelledby="why-heading">
       <div class="orb orb-cyan" style="top:50%;left:60%;transform:translate(-50%,-50%);" aria-hidden="true"></div>
       <div class="container">
-        <div class="reveal">
-          <span class="section-label" aria-hidden="true">Why altergo</span>
-          <h2 class="section-title" id="why-heading">Never lose your flow.</h2>
-          <p class="section-subtitle">Your AI tool already saves every conversation locally. altergo reads those files directly — no cloud sync, no re-upload, nothing leaves your machine. Switch accounts in seconds. Resume any session from any account.</p>
+        <div class="gits-two-col">
+          <div>
+            <div class="reveal">
+              <span class="section-label" aria-hidden="true">Why altergo</span>
+              <h2 class="section-title" id="why-heading">Never lose your flow.</h2>
+              <p class="section-subtitle">Your AI tool already saves every conversation locally. altergo reads those files directly — no cloud sync, no re-upload, nothing leaves your machine. Switch accounts in seconds. Resume any session from any account.</p>
+            </div>
+          </div>
+          <div class="reveal reveal-delay-2">
+            <img src="images/gits/identity_switch.png" alt="Cyberpunk credential hot-swap — switching between AI accounts in an instant" class="gits-illustration gits-illustration-cyan" />
+          </div>
         </div>
 
-        <div class="why-grid" role="list" aria-label="Key benefits">
+        <div class="why-grid" role="list" aria-label="Key benefits" style="margin-top: 48px;">
           <div class="why-card reveal reveal-delay-1" role="listitem">
             <div class="why-icon why-icon-indigo" aria-hidden="true">
               <!-- Multi-node: many accounts, one brain -->
@@ -1911,6 +2734,7 @@
     <!-- ============================================================
          HOW IT WORKS
     ============================================================ -->
+
     <section id="how" aria-labelledby="how-heading">
       <div class="container">
         <div class="reveal">
@@ -1918,6 +2742,11 @@
           <h2 class="section-title" id="how-heading">Three commands to go.</h2>
           <p class="section-subtitle">Your conversations are already on your machine. altergo just wires up the access — no daemon, no background process, no cloud sync.</p>
           <p class="section-subtitle" style="font-family: var(--font-mono); font-size: 0.78rem; color: var(--text-2); margin-top: 10px; letter-spacing: 0.03em;" aria-hidden="true">~45 sec &nbsp;·&nbsp; no daemon &nbsp;·&nbsp; pure Python</p>
+        </div>
+
+        <!-- isolated_shells as full-section background -->
+        <div class="gits-how-bg" aria-hidden="true">
+          <img src="images/gits/isolated_shells.png" alt="" role="presentation" />
         </div>
 
         <div class="how-steps" aria-label="Config steps" role="list">
@@ -1987,6 +2816,16 @@
           <p class="section-subtitle">Manages as many AI assistant accounts as you need — across Claude Code, Gemini CLI, Codex, and GitHub Copilot — and refuses to be dramatic about it.</p>
         </div>
 
+        <!-- Session recall highlight -->
+        <div class="recall-highlight reveal reveal-delay-1">
+          <img src="images/gits/session_recall.png" alt="" class="recall-highlight-img" aria-hidden="true" />
+          <div class="recall-highlight-content">
+            <span class="section-label" aria-hidden="true">// RECALL</span>
+            <h3 style="font-family: var(--font-display); font-size: 1.3rem; font-weight: 700; color: var(--text-0); margin-bottom: 8px;">Total recall across all identities.</h3>
+            <p style="font-size: 0.95rem; color: var(--text-1); max-width: 600px; line-height: 1.7;"><code style="font-family: var(--font-mono); color: var(--cyan); font-size: 0.88em;">altergo --recall</code> opens the interactive TUI picker — every session from every account and every provider. Arrow keys, vim bindings, full-text search, provider filter, bookmarks. Your entire AI history in one view.</p>
+          </div>
+        </div>
+
         <div class="features-grid" role="list" aria-label="Feature list">
           <div class="feature-item reveal reveal-delay-1" role="listitem" style="--shimmer-duration:32s; --shimmer-delay:0s">
             <div class="feature-icon" aria-hidden="true">
@@ -2001,6 +2840,7 @@
                 <path d="M17 9 L19 9.5 L17 10" stroke="var(--cyan)" stroke-width="1.4" fill="none"/>
               </svg>
             </div>
+            <span class="feature-category">// recall</span>
             <h3>Interactive TUI Picker</h3>
             <p>Full-screen curses interface with arrow keys, j/k vim bindings, and page up/down for large session lists.</p>
           </div>
@@ -2084,13 +2924,15 @@
     ============================================================ -->
     <section id="persistent" class="section" aria-labelledby="persistent-heading">
       <div class="container">
-        <div class="reveal">
-          <span class="section-label" aria-hidden="true">Always on</span>
-          <h2 class="section-title" id="persistent-heading">Your session outlives the connection.</h2>
-          <p class="section-subtitle">Every altergo session runs inside a named tmux window. Lose the SSH connection, close the laptop, switch devices — reattach in one command and the AI never knew you left.</p>
-        </div>
+        <div class="persistent-layout">
+          <div>
+            <div class="reveal">
+              <span class="section-label" aria-hidden="true">Always on</span>
+              <h2 class="section-title" id="persistent-heading">Your session outlives the connection.</h2>
+              <p class="section-subtitle">Every altergo session runs inside a named tmux window. Lose the SSH connection, close the laptop, switch devices — reattach in one command and the AI never knew you left.</p>
+            </div>
 
-        <div class="features-grid" role="list" aria-label="Session persistence features">
+        <div class="features-grid" role="list" aria-label="Session persistence features" style="margin-top: 36px;">
           <div class="feature-item reveal reveal-delay-1" role="listitem" style="--shimmer-duration:30s; --shimmer-delay:0s">
             <div class="feature-icon" aria-hidden="true">
               <!-- terminal window with signal/wifi indicator -->
@@ -2148,6 +2990,12 @@
             <p>Claude, Gemini, Codex, Copilot; the persistence layer is provider-agnostic.</p>
           </div>
         </div>
+          </div><!-- end left column -->
+
+          <div class="persistent-ghost-wrap reveal reveal-delay-2" aria-hidden="true">
+            <img src="images/gits/ghost_circle.png" alt="" class="persistent-ghost-img" role="presentation" />
+          </div>
+        </div><!-- end persistent-layout -->
       </div>
     </section>
 
@@ -2381,7 +3229,14 @@
         return stored;
       }
 
+      function syncMobileThemeBtns(theme) {
+        document.querySelectorAll('.mts-btn').forEach(function (btn) {
+          btn.classList.toggle('active', btn.dataset.themeVal === theme);
+        });
+      }
+
       let currentTheme = initTheme();
+      syncMobileThemeBtns(currentTheme);
 
       const toggleBtn = document.getElementById('theme-toggle');
       if (toggleBtn) {
@@ -2390,12 +3245,36 @@
           currentTheme = THEMES[(idx + 1) % THEMES.length];
           localStorage.setItem(STORAGE_KEY, currentTheme);
           applyTheme(currentTheme);
+          syncMobileThemeBtns(currentTheme);
 
           const labels = { dark: 'Dark theme active', light: 'Light theme active', system: 'System theme active' };
           toggleBtn.setAttribute('aria-label', labels[currentTheme] + ' — click to change');
           setTimeout(() => toggleBtn.setAttribute('aria-label', 'Toggle color theme'), 2000);
         });
       }
+
+      // Wire up mobile theme buttons
+      document.querySelectorAll('.mts-btn').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          currentTheme = btn.dataset.themeVal;
+          localStorage.setItem(STORAGE_KEY, currentTheme);
+          applyTheme(currentTheme);
+          syncMobileThemeBtns(currentTheme);
+          // Close the mobile nav after selecting a theme
+          var mobileNav = document.getElementById('mobile-nav');
+          if (mobileNav && mobileNav.classList.contains('open')) {
+            mobileNav.classList.remove('open');
+            mobileNav.setAttribute('hidden', '');
+            document.body.style.overflow = '';
+            var menuBtn = document.getElementById('nav-menu-btn');
+            if (menuBtn) {
+              menuBtn.setAttribute('aria-expanded', 'false');
+              menuBtn.setAttribute('aria-label', 'Open navigation menu');
+              menuBtn.focus();
+            }
+          }
+        });
+      });
 
       // React to OS theme changes when in system mode
       window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
@@ -2404,12 +3283,16 @@
     })();
 
     // ============================================================
-    // NAV SCROLL EFFECT
+    // NAV SCROLL EFFECT + HERO PARALLAX
     // ============================================================
     (function () {
       const nav = document.getElementById('nav');
+      const heroBg = document.getElementById('hero-bg-parallax');
       function update() {
         nav.classList.toggle('scrolled', window.scrollY > 32);
+        if (heroBg) {
+          heroBg.style.transform = 'translateY(' + (window.scrollY * 0.4) + 'px)';
+        }
       }
       window.addEventListener('scroll', update, { passive: true });
       update();
@@ -2485,129 +3368,201 @@
     })();
 
     // ============================================================
-    // CANVAS — DUALITY PARTICLE SYSTEM
-    // Two symmetrical orbital systems reflecting the alter ego concept
+    // CANVAS — NEURAL CREDENTIAL MESH
+    // Sparse node graph with data-pulse streams and drift motion.
+    // Nodes = accounts/identities. Edges = symlinks. Pulses = active sessions.
     // ============================================================
     (function () {
       const canvas = document.getElementById('canvas-bg');
       if (!canvas) return;
       const ctx = canvas.getContext('2d');
 
-      let W, H, raf;
-      let particles = [];
-      const PARTICLE_COUNT = 80;
-      const isDark = () => {
-        const t = document.documentElement.getAttribute('data-theme');
-        if (t === 'light') return false;
-        if (t === 'system') return window.matchMedia('(prefers-color-scheme: dark)').matches;
-        return true;
-      };
+      let W, H, raf, t = 0;
 
+      // ---- CONFIG ----
+      const NODE_COUNT   = 38;
+      const EDGE_DIST    = 0.22;   // max edge distance as fraction of min(W,H)
+      const MAX_EDGES    = 3;      // max edges per node
+      const PULSE_RATE   = 0.0018; // new pulse probability per frame per edge
+      const DRIFT_SPEED  = 0.12;   // px/frame max drift
+
+      const C_CYAN   = [0, 229, 255];
+      const C_INDIGO = [99, 102, 241];
+      const C_TEAL   = [0, 180, 200];
+
+      let nodes = [], edges = [], pulses = [];
+
+      // ---- INIT ----
       function resize() {
-        W = canvas.width = window.innerWidth;
+        W = canvas.width  = window.innerWidth;
         H = canvas.height = window.innerHeight;
       }
 
-      // Orbit configuration — two mirrored rings
-      const ORBITS = [
-        { cx: 0.35, cy: 0.45, rx: 0.18, ry: 0.10, tilt: -0.3, dir: 1 },
-        { cx: 0.65, cy: 0.45, rx: 0.18, ry: 0.10, tilt:  0.3, dir: -1 },
-      ];
+      function randColor() {
+        const choices = [C_CYAN, C_INDIGO, C_TEAL];
+        return choices[Math.floor(Math.random() * choices.length)];
+      }
 
-      function createParticles() {
-        particles = [];
-        const perOrbit = Math.floor(PARTICLE_COUNT / 2);
-        ORBITS.forEach((orb, oi) => {
-          for (let i = 0; i < perOrbit; i++) {
-            const angle = (i / perOrbit) * Math.PI * 2;
-            const speed = 0.0003 + Math.random() * 0.0003;
-            const radius = 1.2 + Math.random() * 2.4;
-            const alpha = 0.15 + Math.random() * 0.55;
-            particles.push({ orb: oi, angle, speed, radius, alpha, pulse: Math.random() * Math.PI * 2 });
+      function buildNodes() {
+        nodes = [];
+        for (let i = 0; i < NODE_COUNT; i++) {
+          nodes.push({
+            x: Math.random() * W,
+            y: Math.random() * H,
+            vx: (Math.random() - 0.5) * DRIFT_SPEED,
+            vy: (Math.random() - 0.5) * DRIFT_SPEED,
+            r:  1.0 + Math.random() * 2.2,
+            alpha: 0.15 + Math.random() * 0.45,
+            pulse: Math.random() * Math.PI * 2,
+            color: randColor(),
+          });
+        }
+      }
+
+      function buildEdges() {
+        edges = [];
+        const maxD = Math.min(W, H) * EDGE_DIST;
+        for (let i = 0; i < nodes.length; i++) {
+          let count = 0;
+          for (let j = i + 1; j < nodes.length && count < MAX_EDGES; j++) {
+            const dx = nodes[i].x - nodes[j].x;
+            const dy = nodes[i].y - nodes[j].y;
+            if (Math.sqrt(dx * dx + dy * dy) < maxD) {
+              edges.push({ a: i, b: j, color: nodes[i].color });
+              count++;
+            }
           }
-        });
+        }
       }
 
-      function getColor(orbitIdx, alpha) {
-        if (orbitIdx === 0) return `rgba(99, 102, 241, ${alpha})`;  // indigo
-        return `rgba(0, 229, 255, ${alpha})`;                        // cyan
+      function init() {
+        resize();
+        buildNodes();
+        buildEdges();
+        pulses = [];
+        if (raf) cancelAnimationFrame(raf);
+        draw();
       }
 
-      let t = 0;
+      // ---- DRAW ----
       function draw() {
         ctx.clearRect(0, 0, W, H);
-        t += 1;
+        t++;
 
-        particles.forEach((p) => {
-          const orb = ORBITS[p.orb];
-          p.angle += p.speed * orb.dir;
-
-          // Ellipse parametric + tilt rotation
-          const ex = orb.rx * W * Math.cos(p.angle);
-          const ey = orb.ry * H * Math.sin(p.angle);
-          const cosT = Math.cos(orb.tilt);
-          const sinT = Math.sin(orb.tilt);
-          const x = orb.cx * W + ex * cosT - ey * sinT;
-          const y = orb.cy * H + ex * sinT + ey * cosT;
-
-          const pulsed = p.alpha * (0.6 + 0.4 * Math.sin(t * 0.02 + p.pulse));
-          const finalAlpha = isDark() ? pulsed : pulsed * 0.45;
-
-          ctx.beginPath();
-          ctx.arc(x, y, p.radius, 0, Math.PI * 2);
-          ctx.fillStyle = getColor(p.orb, finalAlpha);
-          ctx.fill();
+        // Drift nodes + bounce
+        nodes.forEach(n => {
+          n.x += n.vx;
+          n.y += n.vy;
+          if (n.x < 0 || n.x > W) n.vx *= -1;
+          if (n.y < 0 || n.y > H) n.vy *= -1;
+          n.x = Math.max(0, Math.min(W, n.x));
+          n.y = Math.max(0, Math.min(H, n.y));
         });
 
-        // Draw faint orbit paths
-        ORBITS.forEach((orb, oi) => {
-          ctx.save();
-          ctx.translate(orb.cx * W, orb.cy * H);
-          ctx.rotate(orb.tilt);
+        // Spawn new pulses
+        edges.forEach((e, ei) => {
+          if (Math.random() < PULSE_RATE) {
+            pulses.push({
+              edge: ei,
+              progress: 0,
+              speed: 0.004 + Math.random() * 0.006,
+              color: e.color,
+              alpha: 0.55 + Math.random() * 0.35,
+              size: 2.5 + Math.random() * 2,
+              dir: Math.random() < 0.5 ? 1 : -1,
+            });
+          }
+        });
+
+        // Draw edges
+        edges.forEach(e => {
+          const na = nodes[e.a], nb = nodes[e.b];
+          const dx = nb.x - na.x, dy = nb.y - na.y;
+          const len = Math.sqrt(dx * dx + dy * dy);
+          const maxD = Math.min(W, H) * EDGE_DIST;
+          const proximity = 1 - len / maxD;
+          const [cr, cg, cb] = e.color;
+          const alpha = proximity * 0.09;
           ctx.beginPath();
-          ctx.ellipse(0, 0, orb.rx * W, orb.ry * H, 0, 0, Math.PI * 2);
-          const pathAlpha = isDark() ? 0.06 : 0.03;
-          ctx.strokeStyle = oi === 0 ? `rgba(99,102,241,${pathAlpha})` : `rgba(0,229,255,${pathAlpha})`;
-          ctx.lineWidth = 1;
+          ctx.moveTo(na.x, na.y);
+          ctx.lineTo(nb.x, nb.y);
+          ctx.strokeStyle = `rgba(${cr},${cg},${cb},${alpha})`;
+          ctx.lineWidth = 0.6;
           ctx.stroke();
-          ctx.restore();
+        });
+
+        // Draw pulses (data packets traveling along edges)
+        pulses = pulses.filter(p => {
+          p.progress += p.speed * p.dir;
+          if (p.progress < 0 || p.progress > 1) return false;
+          const e  = edges[p.edge];
+          if (!e) return false;
+          const na = nodes[e.a], nb = nodes[e.b];
+          const px = na.x + (nb.x - na.x) * p.progress;
+          const py = na.y + (nb.y - na.y) * p.progress;
+          const [cr, cg, cb] = p.color;
+
+          // Glow halo
+          const grad = ctx.createRadialGradient(px, py, 0, px, py, p.size * 3.5);
+          grad.addColorStop(0, `rgba(${cr},${cg},${cb},${p.alpha})`);
+          grad.addColorStop(0.4, `rgba(${cr},${cg},${cb},${p.alpha * 0.4})`);
+          grad.addColorStop(1, `rgba(${cr},${cg},${cb},0)`);
+          ctx.beginPath();
+          ctx.arc(px, py, p.size * 3.5, 0, Math.PI * 2);
+          ctx.fillStyle = grad;
+          ctx.fill();
+
+          // Bright core
+          ctx.beginPath();
+          ctx.arc(px, py, p.size * 0.7, 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(${cr},${cg},${cb},${p.alpha})`;
+          ctx.fill();
+          return true;
+        });
+
+        // Draw nodes
+        nodes.forEach(n => {
+          const breathe = 0.65 + 0.35 * Math.sin(t * 0.018 + n.pulse);
+          const a = n.alpha * breathe;
+          const [cr, cg, cb] = n.color;
+
+          // Outer soft halo
+          const grad = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, n.r * 5);
+          grad.addColorStop(0, `rgba(${cr},${cg},${cb},${a * 0.5})`);
+          grad.addColorStop(1, `rgba(${cr},${cg},${cb},0)`);
+          ctx.beginPath();
+          ctx.arc(n.x, n.y, n.r * 5, 0, Math.PI * 2);
+          ctx.fillStyle = grad;
+          ctx.fill();
+
+          // Core dot
+          ctx.beginPath();
+          ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(${cr},${cg},${cb},${a})`;
+          ctx.fill();
         });
 
         raf = requestAnimationFrame(draw);
       }
 
-      function init() {
-        resize();
-        createParticles();
-        if (raf) cancelAnimationFrame(raf);
-        draw();
-      }
-
+      // ---- LIFECYCLE ----
       window.addEventListener('resize', () => {
         resize();
+        buildNodes();
+        buildEdges();
+        pulses = [];
       }, { passive: true });
 
-      // Reduce motion
-      const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
-      if (!mediaQuery.matches) {
-        init();
-      }
-      mediaQuery.addEventListener('change', (e) => {
-        if (e.matches) {
-          cancelAnimationFrame(raf);
-          ctx.clearRect(0, 0, W, H);
-        } else {
-          init();
-        }
+      const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+      if (!mq.matches) init();
+      mq.addEventListener('change', e => {
+        if (e.matches) { cancelAnimationFrame(raf); ctx.clearRect(0, 0, W, H); }
+        else init();
       });
 
-      // Pause when tab hidden
       document.addEventListener('visibilitychange', () => {
-        if (document.hidden) {
-          cancelAnimationFrame(raf);
-        } else if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-          draw();
-        }
+        if (document.hidden) cancelAnimationFrame(raf);
+        else if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) draw();
       });
     })();
 
@@ -2627,6 +3582,7 @@
         menuBtn.setAttribute('aria-label', 'Close navigation menu');
         document.body.style.overflow = 'hidden';
         closeBtn && closeBtn.focus();
+        document.getElementById('mobile-nav-backdrop')?.addEventListener('click', closeMenu, { once: true });
       }
 
       function closeMenu() {
@@ -2653,10 +3609,7 @@
         }
       });
 
-      // Close on backdrop click (outside the links/close button)
-      mobileNav.addEventListener('click', function (e) {
-        if (e.target === mobileNav) closeMenu();
-      });
+      // Backdrop click is handled per-open via the #mobile-nav-backdrop listener in openMenu()
     })();
 
     // ============================================================
@@ -2710,61 +3663,162 @@
       // 'tui'    — render the TUI picker block
       // 'select' — animate row selection change
       // 'clear'  — wipe terminal
-      const SCRIPT = [
-        // --- Scene 1: altergo backup ---
-        { type: 'pause', ms: 600 },
-        { type: 'type', text: 'altergo backup', speed: 72 },
-        { type: 'pause', ms: 400 },
-        { type: 'enter' },
-        { type: 'output', html: '<span class="tc-dim">Loading account: backup...</span>', delay: 120 },
-        { type: 'output', html: '<span class="tc-green">&#10003; Credentials active (@backup)</span>', delay: 280 },
-        { type: 'output', html: '<span class="tc-cyan">Launching assistant...</span>', delay: 180 },
-        { type: 'output', html: '', delay: 320 },
+      // Six scenes — picked randomly, never repeating the same one back-to-back
+      const SCENES = [
 
-        // --- Scene 2: altergo --resume opens the TUI ---
-        { type: 'type', text: 'altergo --resume', speed: 80 },
-        { type: 'pause', ms: 380 },
-        { type: 'enter' },
-        { type: 'pause', ms: 180 },
-        { type: 'tui' },
+        // ── 0: account switch + recall TUI ──────────────────────
+        [
+          { type: 'pause', ms: 600 },
+          { type: 'type', text: 'altergo pro', speed: 75 },
+          { type: 'pause', ms: 350 },
+          { type: 'enter' },
+          { type: 'output', html: '<span class="tc-dim">Loading account: pro...</span>', delay: 110 },
+          { type: 'output', html: '<span class="tc-green">&#10003; Credentials active (@pro)</span>', delay: 260 },
+          { type: 'output', html: '<span class="tc-cyan">Launching claude (pro)...</span>', delay: 160 },
+          { type: 'output', html: '', delay: 300 },
+          { type: 'type', text: 'altergo --recall', speed: 78 },
+          { type: 'pause', ms: 380 },
+          { type: 'enter' },
+          { type: 'pause', ms: 180 },
+          { type: 'tui' },
+          { type: 'pause', ms: 700 },
+          { type: 'select', row: 1 },
+          { type: 'pause', ms: 420 },
+          { type: 'select', row: 2 },
+          { type: 'pause', ms: 500 },
+          { type: 'confirm' },
+          { type: 'output', html: '<span class="tc-green">&#10003; Resuming: infra-toolkit</span>', delay: 80 },
+          { type: 'output', html: '<span class="tc-cyan">Launching gemini (work)...</span>', delay: 160 },
+          { type: 'output', html: '', delay: 900 },
+          { type: 'clear', ms: 600 },
+        ],
 
-        // --- Scene 3: arrow key — move selection down twice ---
-        { type: 'pause', ms: 700 },
-        { type: 'select', row: 1 },
-        { type: 'pause', ms: 420 },
-        { type: 'select', row: 2 },
-        { type: 'pause', ms: 500 },
+        // ── 1: portal + named tmux session ──────────────────────
+        [
+          { type: 'pause', ms: 500 },
+          { type: 'type', text: 'altergo portal work', speed: 68 },
+          { type: 'pause', ms: 380 },
+          { type: 'enter' },
+          { type: 'output', html: '<span class="tc-dim">Spawning tmux session...</span>', delay: 150 },
+          { type: 'output', html: '<span class="tc-cyan">  altergo-work-claude-a3f9b</span>', delay: 200 },
+          { type: 'output', html: '<span class="tc-green">&#10003; tmux attached</span>', delay: 180 },
+          { type: 'output', html: '<span class="tc-dim">  ──────────────────────────────</span>', delay: 100 },
+          { type: 'output', html: '<span class="tc-indigo">  [work] &#9679; claude  ~/projects/infra</span>', delay: 120 },
+          { type: 'output', html: '<span class="tc-dim">  ──────────────────────────────</span>', delay: 100 },
+          { type: 'output', html: '<span class="tc-cyan">Launching claude (work)...</span>', delay: 220 },
+          { type: 'output', html: '', delay: 1100 },
+          { type: 'clear', ms: 500 },
+        ],
 
-        // --- Scene 4: Enter → launch ---
-        { type: 'confirm' },
-        { type: 'output', html: '<span class="tc-green">&#10003; Resuming session: api-service</span>', delay: 80 },
-        { type: 'output', html: '<span class="tc-cyan">Launching assistant...</span>', delay: 160 },
-        { type: 'output', html: '', delay: 900 },
+        // ── 2: --yolo-resume with session ID ────────────────────
+        [
+          { type: 'pause', ms: 500 },
+          { type: 'type', text: 'altergo personal --yolo-resume 7d4c2a1b', speed: 56 },
+          { type: 'pause', ms: 400 },
+          { type: 'enter' },
+          { type: 'output', html: '<span class="tc-dim">Loading account: personal...</span>', delay: 120 },
+          { type: 'output', html: '<span class="tc-green">&#10003; Credentials active (@personal)</span>', delay: 240 },
+          { type: 'output', html: '<span class="tc-yellow">&#9889; --yolo: permission prompts suppressed</span>', delay: 160 },
+          { type: 'output', html: '<span class="tc-dim">Resuming session 7d4c2a1b...</span>', delay: 130 },
+          { type: 'output', html: '<span class="tc-green">&#10003; Session restored: my-app</span>', delay: 200 },
+          { type: 'output', html: '<span class="tc-cyan">Launching claude (personal)...</span>', delay: 180 },
+          { type: 'output', html: '', delay: 1000 },
+          { type: 'clear', ms: 500 },
+        ],
 
-        // --- Loop back ---
-        { type: 'clear', ms: 600 },
+        // ── 3: multi-provider switching ──────────────────────────
+        [
+          { type: 'pause', ms: 500 },
+          { type: 'type', text: 'altergo work gemini', speed: 72 },
+          { type: 'pause', ms: 360 },
+          { type: 'enter' },
+          { type: 'output', html: '<span class="tc-dim">Loading account: work [gemini]...</span>', delay: 130 },
+          { type: 'output', html: '<span class="tc-green">&#10003; Credentials active (@work/gemini)</span>', delay: 260 },
+          { type: 'output', html: '<span class="tc-cyan">Launching gemini (work)...</span>', delay: 160 },
+          { type: 'output', html: '', delay: 400 },
+          { type: 'type', text: 'altergo work codex', speed: 72 },
+          { type: 'pause', ms: 360 },
+          { type: 'enter' },
+          { type: 'output', html: '<span class="tc-dim">Loading account: work [codex]...</span>', delay: 130 },
+          { type: 'output', html: '<span class="tc-green">&#10003; Credentials active (@work/codex)</span>', delay: 260 },
+          { type: 'output', html: '<span class="tc-cyan">Launching codex (work)...</span>', delay: 160 },
+          { type: 'output', html: '', delay: 900 },
+          { type: 'clear', ms: 500 },
+        ],
+
+        // ── 4: full-text search ──────────────────────────────────
+        [
+          { type: 'pause', ms: 500 },
+          { type: 'type', text: 'altergo --search "docker build"', speed: 60 },
+          { type: 'pause', ms: 420 },
+          { type: 'enter' },
+          { type: 'output', html: '<span class="tc-dim">Searching 47 sessions &middot; 3 accounts...</span>', delay: 200 },
+          { type: 'output', html: '<span class="tc-dim">  ───────────────────────────────────</span>', delay: 120 },
+          { type: 'output', html: '<span class="tc-indigo">  my-app</span><span class="tc-dim"> [claude/pro] &middot; 2d ago</span>', delay: 180 },
+          { type: 'output', html: '<span class="tc-white">  &gt; ...solved multi-stage build cache issue...</span>', delay: 100 },
+          { type: 'output', html: '<span class="tc-indigo">  infra-toolkit</span><span class="tc-dim"> [gemini/work] &middot; 5d ago</span>', delay: 180 },
+          { type: 'output', html: '<span class="tc-white">  &gt; ...--no-cache was the culprit here...</span>', delay: 100 },
+          { type: 'output', html: '<span class="tc-dim">  ───────────────────────────────────</span>', delay: 100 },
+          { type: 'output', html: '<span class="tc-dim">  2 matches &nbsp; Enter open &nbsp; q quit</span>', delay: 120 },
+          { type: 'output', html: '', delay: 1200 },
+          { type: 'clear', ms: 500 },
+        ],
+
+        // ── 5: config new account then launch ───────────────────
+        [
+          { type: 'pause', ms: 500 },
+          { type: 'type', text: 'altergo --config sideproject', speed: 63 },
+          { type: 'pause', ms: 400 },
+          { type: 'enter' },
+          { type: 'output', html: '<span class="tc-dim">Creating account: sideproject...</span>', delay: 150 },
+          { type: 'output', html: '<span class="tc-dim">Provider [claude]: claude</span>', delay: 300 },
+          { type: 'output', html: '<span class="tc-green">&#10003; ~/.altergo/accounts/sideproject/</span>', delay: 220 },
+          { type: 'output', html: '<span class="tc-green">&#10003; Symlinks wired: projects/ tasks/ +11</span>', delay: 180 },
+          { type: 'output', html: '<span class="tc-cyan">Account ready. Run: altergo sideproject</span>', delay: 200 },
+          { type: 'output', html: '', delay: 400 },
+          { type: 'type', text: 'altergo sideproject', speed: 72 },
+          { type: 'pause', ms: 360 },
+          { type: 'enter' },
+          { type: 'output', html: '<span class="tc-green">&#10003; Credentials active (@sideproject)</span>', delay: 240 },
+          { type: 'output', html: '<span class="tc-cyan">Launching claude (sideproject)...</span>', delay: 180 },
+          { type: 'output', html: '', delay: 900 },
+          { type: 'clear', ms: 500 },
+        ],
+
       ];
 
+      let currentScene = SCENES[0];
+      let lastSceneIdx = 0;
+      function pickNextScene() {
+        let idx;
+        do { idx = Math.floor(Math.random() * SCENES.length); }
+        while (idx === lastSceneIdx && SCENES.length > 1);
+        lastSceneIdx = idx;
+        currentScene = SCENES[idx];
+        stepIdx = 0;
+      }
+
       const TUI_ROWS = [
-        { name: 'my-app',       time: '2m ago',  size: '48K' },
-        { name: 'api-service',  time: '1h ago',  size: '12K' },
-        { name: 'frontend',     time: '3h ago',  size: '31K' },
-        { name: 'data-scripts', time: '1d ago',  size: '8K'  },
+        { name: 'my-app',        acct: 'personal', prov: 'claude', time: '4m ago'  },
+        { name: 'api-service',   acct: 'pro',      prov: 'claude', time: '1h ago'  },
+        { name: 'infra-toolkit', acct: 'work',     prov: 'gemini', time: '3h ago'  },
+        { name: 'data-scripts',  acct: 'sideproj', prov: 'codex',  time: '1d ago'  },
       ];
 
       function rowHTML(idx, selected) {
         const r = TUI_ROWS[idx];
         const cls = selected ? 'tc-sel' : 'tc-row';
         const arrow = selected ? '&#9656; ' : '  ';
-        return `<span class="${cls}">${arrow}${r.name.padEnd(14)}${r.time.padEnd(12)}${r.size}</span>`;
+        const label = `[${r.acct}/${r.prov}]`.padEnd(18);
+        return `<span class="${cls}">${arrow}${r.name.padEnd(16)}${label}${r.time}</span>`;
       }
 
       function tuiHTML(selectedIdx) {
-        const header = '<span class="tc-indigo">  Select a session to resume            </span><span class="tc-yellow">all accounts</span>';
-        const colHdr = '<span class="tc-dim">  Project          Modified    Size</span>';
-        const sep    = '<span class="tc-dim">  ─────────────────────────────────</span>';
+        const header = '<span class="tc-indigo">  Select a session to resume        </span><span class="tc-yellow">all accounts</span>';
+        const colHdr = '<span class="tc-dim">  Project           Account/Provider  Modified</span>';
+        const sep    = '<span class="tc-dim">  ────────────────────────────────────────</span>';
         const rows   = TUI_ROWS.map((_, i) => rowHTML(i, i === selectedIdx)).join('\n');
-        const footer = '<span class="tc-dim">  ↑↓ navigate   Enter resume   q quit</span>';
+        const footer = '<span class="tc-dim">  &#8593;&#8595; nav  / search  f filter  Enter open  q quit</span>';
         return [header, colHdr, sep, rows, sep, footer].join('\n');
       }
 
@@ -2823,10 +3877,10 @@
       }
 
       function run() {
-        if (stepIdx >= SCRIPT.length) {
-          stepIdx = 0;
+        if (stepIdx >= currentScene.length) {
+          pickNextScene();
         }
-        const step = SCRIPT[stepIdx++];
+        const step = currentScene[stepIdx++];
 
         switch (step.type) {
           case 'pause':
@@ -2964,10 +4018,10 @@
         if (document.hidden) {
           clearTimeout(timer);
         } else {
-          // Reset and restart the whole sequence cleanly
+          // Reset and restart with a fresh random scene
           clearTimeout(timer);
-          stepIdx = 0;
           clearTerminal();
+          pickNextScene();
           timer = setTimeout(run, 600);
         }
       });

@@ -3010,22 +3010,32 @@ def do_config(account: str = "default", provider: str = "claude", *, keychain_ar
 
 
 def _reconcile_orphan_dot_dir(account_home: Path, provider_id: str) -> None:
-    """Merge an account-local provider dot-dir into the shared MAIN_HOME store.
+    """Merge SHAREABLE orphan data from an account-local provider dot-dir into MAIN_HOME.
 
     When an account used a provider WITHOUT altergo having installed symlinks
-    for it (e.g. a pre-multi-provider era claude-account that ran `codex`
+    for it (e.g. a pre-multi-provider era claude-account that ran ``codex``
     inside its shell), the provider wrote data under
-    ``account_home/<dot_dir>/`` directly.  After --add-provider installs the
-    symlinks, those orphaned files would be lost to the main view unless
-    merged. This helper performs that merge:
+    ``account_home/<dot_dir>/`` directly. After --add-provider installs the
+    symlinks, any data in the shared catalog (``symlink_dirs`` +
+    ``symlink_files``) is invisible to the main view unless merged. This
+    helper performs that merge — **but only for catalog entries.**
 
-      - For each path inside the account-local dot-dir, move to the
-        corresponding MAIN_HOME path if the target doesn't exist.
-      - On collision, MAIN wins: the loser is preserved under
-        ``account_home/<dot_dir>.orphaned/<timestamp>/`` so nothing is silently
-        destroyed.
-      - The now-empty account-local dot-dir is removed so the symlink can be
-        created cleanly afterwards.
+    **Credentials and per-account state stay in place.**  ``credentials_file``
+    (e.g. ``.codex/auth.json``) and any other local file/dir not listed in the
+    provider's symlink catalog (local sqlite state, per-account caches) are
+    NOT touched — moving them into MAIN_HOME would pool identities across
+    accounts and defeat altergo's isolation model.
+
+    Behavior:
+      - For each ``child`` in ``account_home/<dot_dir>/`` whose name is in
+        ``symlink_dirs ∪ symlink_files``:
+        - If the corresponding ``MAIN_HOME/<dot_dir>/<child>`` does NOT exist,
+          move the account-local copy there.
+        - If it DOES exist, MAIN wins — the account-local loser is archived
+          under ``account_home/<dot_dir>.orphaned/<timestamp>/<name>/`` so
+          nothing is silently destroyed.
+      - Everything else (credentials, local state, unknown children) is left
+        in place as a real file/dir under ``account_home/<dot_dir>/``.
 
     Silent no-op when the local dot-dir is absent or already a symlink.
     """
@@ -3037,6 +3047,10 @@ def _reconcile_orphan_dot_dir(account_home: Path, provider_id: str) -> None:
         return
     if not acct_dot.is_dir():
         return
+
+    # Only entries that will be symlinked belong in the shared MAIN store.
+    # Everything else is per-account state — particularly the credentials file.
+    shareable = set(prov.get("symlink_dirs", [])) | set(prov.get("symlink_files", []))
 
     main_dot = MAIN_HOME / prov["dot_dir"]
     main_dot.mkdir(parents=True, exist_ok=True)
@@ -3087,21 +3101,27 @@ def _reconcile_orphan_dot_dir(account_home: Path, provider_id: str) -> None:
                 return
 
     for child in list(acct_dot.iterdir()):
+        if child.name not in shareable:
+            # Leave in place: credentials, local state, unknown children.
+            continue
         rel = Path(child.name)
         target = main_dot / rel
         _move_recursive(child, target, rel)
 
-    # Remove the now-empty local dot-dir; if something couldn't be moved, leave it.
-    try:
-        if acct_dot.exists() and not any(acct_dot.iterdir()):
-            acct_dot.rmdir()
-    except OSError:
-        pass
+    # Do NOT remove the local dot-dir — it still holds credentials and
+    # per-account state. The subsequent _apply_provider_setup will install
+    # symlinks for catalog entries INSIDE this dir.
 
     if moved or archived:
         print(
             f"  {_c(32, '✓')} Reconciled orphan {prov['dot_dir']}/  "
             f"({moved} merged into MAIN, {archived} archived to {prov['dot_dir']}.orphaned/)"
+        )
+        print(
+            _c(
+                C("dim"),
+                f"     Credentials and local state in {prov['dot_dir']}/ were NOT moved — they stay per-account.",
+            )
         )
 
 

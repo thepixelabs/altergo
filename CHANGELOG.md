@@ -1,6 +1,22 @@
 # CHANGELOG
 
 
+## v0.41.0 (2026-04-21)
+
+### Features
+
+- **docs**: Ghost in the Shell landing page redesign
+  ([`fbf8276`](https://github.com/thepixelabs/altergo/commit/fbf82763cf4fbb26be204893c9e45afbb1789eac))
+
+Complete visual overhaul of docs/index.html with GITS anime aesthetic: - Dark navy/cyan/indigo
+  palette with neural mesh canvas background - AI-generated GITS-style scene images for hero,
+  sections, and ghost character - Animated terminal mockup cycling 6 diverse altergo workflow scenes
+  - Light/dark/system theme toggle with full light-mode blue slate palette - GITS-styled mobile
+  hamburger drawer with numbered links and theme switcher - Hero parallax, data-rain overlay,
+  floating ghost circle with glow animations - Transparent feature cards, full-bleed section
+  backgrounds, radial mask fades
+
+
 ## v0.40.2 (2026-04-21)
 
 ### Documentation

@@ -55,7 +55,7 @@ altergo runs each account in its own isolated HOME, so credentials never mix. Se
 
 Shared entries are real symlinks to the same underlying file or directory — when you edit your CLAUDE.md under one account, every other account sees the change instantly. Same inode, no sync step.
 
-No daemon. No sync service. No config files to wrangle. One Python file.
+No daemon. No sync service. No config files to wrangle.
 
 ### Before and after
 
@@ -102,7 +102,7 @@ pip install altergo
 pipx install altergo
 ```
 
-**curl** (single-file, no pip required)
+**curl** (drop the script into your PATH directly — note: this skips `altergo_greetings.py`, so a few cosmetic banners will fall back to text-only)
 
 ```bash
 curl -fsSL \

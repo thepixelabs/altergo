@@ -1,6 +1,25 @@
 # CHANGELOG
 
 
+## v0.40.2 (2026-04-21)
+
+### Documentation
+
+- Remove zero-deps/single-file messaging, add keychain-isolation guide
+  ([`f35412b`](https://github.com/thepixelabs/altergo/commit/f35412b8e5dea7d23c6beb2a3007ed48968b5172))
+
+### Refactoring
+
+- Altergo.py code-quality overhaul ([#25](https://github.com/thepixelabs/altergo/pull/25),
+  [`a30981b`](https://github.com/thepixelabs/altergo/commit/a30981b62c652c027bb85084261bed0701faa5de))
+
+- Strip all section-banner comments (# --- X ---, # ── X ──────) throughout; labels with non-obvious
+  content converted to plain comments - Trim verbose multi-paragraph docstrings to single-sentence
+  summaries - Delete dead _build_anim_pack_frames / _get_anim_pack_frames and their
+  _ANIM_PACK_FRAMES_CACHE global (settings preview feature never wired up) - Rename is_enabled →
+  _is_enabled (private helper, no public callers) - Net reduction: ~530 lines; 256/256 tests pass
+
+
 ## v0.40.1 (2026-04-21)
 
 ### Bug Fixes

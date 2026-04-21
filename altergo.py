@@ -19,8 +19,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-# --- Terminal helpers ---
-
+# Terminal helpers
 
 def _c(code, text):
     """Wrap text in ANSI color if stdout is a TTY."""
@@ -28,15 +27,13 @@ def _c(code, text):
         return text
     return f"\033[{code}m{text}\033[0m"
 
-
 def _link(url, text):
     """OSC 8 terminal hyperlink — clickable in supported terminals."""
     if not sys.stdout.isatty():
         return text
     return f"\033]8;;{url}\033\\{text}\033]8;;\033\\"
 
-
-# --- Themes ---
+# Themes
 #
 # A theme is a named palette that maps *logical roles* (command, arg, header,
 # success, warn, brand, banner gradient, curses pairs) to concrete colors.
@@ -150,18 +147,15 @@ _DEFAULT_THEME = "ocean"
 # mutated in-place when the user cycles themes in the launcher.
 _CURRENT_THEME = _DEFAULT_THEME
 
-
 def get_current_theme() -> str:
     """Return the id of the currently active theme."""
     return _CURRENT_THEME if _CURRENT_THEME in THEMES else _DEFAULT_THEME
-
 
 def set_current_theme(name: str) -> None:
     """Update the in-process active theme (no disk write)."""
     global _CURRENT_THEME
     if name in THEMES:
         _CURRENT_THEME = name
-
 
 def _gradient_color(stops: list, t: float) -> str:
     """Interpolate between hex color stops at position *t* (0.0–1.0)."""
@@ -181,13 +175,8 @@ def _gradient_color(stops: list, t: float) -> str:
     b = int(b1 + (b2 - b1) * f)
     return f"#{r:02x}{g:02x}{b:02x}"
 
-
 def _gradient_ansi(text: str, stops: list, *, bold: bool = False) -> str:
-    """Render *text* with a per-character True Color ANSI gradient.
-
-    Uses 24-bit escape sequences (``\\033[38;2;R;G;Bm``).  Falls back to
-    plain text on non-TTY so piped output stays readable.
-    """
+    """Render *text* with a per-character True Color ANSI gradient."""
     if not sys.stdout.isatty() or not stops:
         return text
     n = len(text)
@@ -199,31 +188,15 @@ def _gradient_ansi(text: str, stops: list, *, bold: bool = False) -> str:
         parts.append(f"\033[{attrs}38;2;{r};{g};{b}m{ch}")
     return "".join(parts) + "\033[0m"
 
-
 def C(role: str) -> str:
-    """Return the ANSI code for a logical role under the active theme.
-
-    Falls back to the ocean theme for unknown themes and to an empty
-    string for unknown roles so callers never crash on a typo.
-    """
+    """Return the ANSI code for a logical role under the active theme."""
     if role in _STATIC_ANSI:
         return _STATIC_ANSI[role]
     theme = THEMES.get(get_current_theme(), THEMES[_DEFAULT_THEME])
     return theme["ansi"].get(role, "")
 
-
 def _ansi_to_rich(code: str) -> str:
-    """Translate one of altergo's ANSI color codes into a Rich style string.
-
-    Our themes store colors as raw ANSI parameter lists (``"38;5;220"``,
-    ``"1;38;5;39"``, ``"2"``) because that's what the plain-``_c`` path
-    emits. Rich doesn't speak those directly, so this converts them into
-    its native style string (``"color(220)"``, ``"bold color(39)"``,
-    ``"dim"``) for use inside ``Text`` / ``Spinner`` styles.
-
-    Only the subset we actually emit is handled; unrecognized codes fall
-    back to empty string (Rich treats that as default).
-    """
+    """Translate one of altergo's ANSI color codes into a Rich style string."""
     if not code:
         return ""
     parts = code.split(";")
@@ -244,7 +217,6 @@ def _ansi_to_rich(code: str) -> str:
             i += 1
     return " ".join(out)
 
-
 def show_banner(
     account: str | None = None,
     *,
@@ -253,33 +225,7 @@ def show_banner(
     animate_duration: float = 0.0,
     spinner_override: str | None = None,
 ):
-    """Print the altergo banner. TTY-only.
-
-    Parameters
-    ----------
-    account
-        If given, the account name is rendered beneath the logo with stars
-        around it so the user can see at a glance which identity the
-        upcoming session will run under.
-    latest_version
-        The cached "latest version from PyPI" string. When strictly newer
-        than the running version, the version column shows an arrow to it
-        (``v0.12.0 → v0.13.0``) and a dim upgrade-action line is appended
-        under the banner. Sanitized again here — defense in depth against
-        a poisoned cache file.
-    show_greeting
-        When True, a dry time-of-day line (from :mod:`altergo_greetings`)
-        is rendered below the figlet. Only set True on interactive launch
-        paths (``launch_claude``/``launch_shell``/``launch_command``/
-        ``interactive_launcher``). Silent on ``--help``/``--version`` etc. so
-        piped and scripted output stays grep-able.
-    animate_duration
-        If > 0 and we're on a TTY, wrap the final render in ``rich.live.Live``
-        for roughly this many seconds before returning. Used only on the
-        launch handoff path so the star positions in the account line
-        twinkle for ~700ms while the provider binary warms up. Capped by
-        the caller to ``min(provider_cold_start, 0.7)``.
-    """
+    """Print the altergo banner. TTY-only."""
     if not sys.stdout.isatty():
         suffix = f"  [{account}]" if account else ""
         print(f"  altergo {__version__}  —  Don't break flow. Switch accounts.{suffix}")
@@ -450,7 +396,6 @@ def show_banner(
         suffix = f"  [{account}]" if account else ""
         print(f"  altergo {__version__}  —  Don't break flow. Switch accounts.{suffix}")
 
-
 def show_help():
     """Print --help output in a two-column layout."""
     grad = THEMES.get(get_current_theme(), THEMES[_DEFAULT_THEME])["banner"]
@@ -467,7 +412,7 @@ def show_help():
     def dim(t):
         return _c(C("dim"), t)
 
-    # ── layout constants ───────────────────────────────────────────────────────
+    # layout constants
     # Each column is COL_W visible chars wide (content only, no divider space).
     # Description offset within a column: _COL2 chars from column start.
     # Minimum terminal width for two-column mode: MIN_W.
@@ -475,7 +420,7 @@ def show_help():
     _COL2 = 32  # description offset inside a column (raw cmd + padding)
     MIN_W = 118  # fall back to single-column below this
 
-    # ── detect terminal width ──────────────────────────────────────────────────
+    # detect terminal width
     try:
         _tw = os.get_terminal_size().columns
     except OSError:
@@ -488,7 +433,7 @@ def show_help():
     def _vis(s: str) -> int:
         return len(_ansi_re.sub("", s))
 
-    # ── row builder (single column, COL_W wide) ────────────────────────────────
+    # row builder (single column, COL_W wide)
     def row(raw: str, colored: str, description: str) -> str:
         pad = " " * max(1, _COL2 - 2 - _vis(colored))
         content = f"  {colored}{pad}{description}"
@@ -510,11 +455,11 @@ def show_help():
     def sep_line() -> str:
         return _c(C("dim"), "  " + "─" * (COL_W - 2))
 
-    # ── blank row padded to COL_W ──────────────────────────────────────────────
+    # blank row padded to COL_W
     def blank() -> str:
         return " " * COL_W
 
-    # ── section data ──────────────────────────────────────────────────────────
+    # section data
     # Each section is a list of (raw_cmd, colored_cmd, description) tuples,
     # or the sentinel string "" for a blank spacer row.
     SEC_LAUNCH = [
@@ -610,7 +555,7 @@ def show_help():
         ),
     ]
 
-    # ── render a section into a list of padded strings ─────────────────────────
+    # render a section into a list of padded strings
     def render_sec(title: str, items) -> list:
         out = [sec(title)]
         for entry in items:
@@ -620,7 +565,7 @@ def show_help():
                 out.append(row(entry[0], entry[1], entry[2]))
         return out
 
-    # ── build the two columns ──────────────────────────────────────────────────
+    # build the two columns
     left_sections: list[list] = [
         render_sec("Launch", SEC_LAUNCH),
         render_sec("Accounts", SEC_ACCOUNTS),
@@ -645,7 +590,7 @@ def show_help():
     left_rows = _interleave_blank(left_sections)
     right_rows = _interleave_blank(right_sections)
 
-    # ── print header ──────────────────────────────────────────────────────────
+    # print header
     pixelabs = _link("https://pixelabs.net", _c(C("brand"), "pixelabs.net"))
     show_banner()
     print(f"  {dim('Because one personality was not causing enough bugs.')}")
@@ -709,8 +654,7 @@ def show_help():
     print(dim("  altergo · open-source by pixelabs · not affiliated with Anthropic, Google, OpenAI, or GitHub"))
     print()
 
-
-# --- Config ---
+# Config
 
 # Resolve the real home even if HOME is overridden (e.g., running as altergo)
 _pw_home = Path(pwd.getpwuid(os.getuid()).pw_dir)
@@ -757,29 +701,21 @@ STARRED_FILE = MAIN_HOME / ".altergo" / "starred.json"
 # Last exited session — written after each provider subprocess exits
 LAST_SESSION_FILE = MAIN_HOME / ".altergo" / "last_session.json"
 
-
-# --- Account helpers ---
-
+# Account helpers
 
 def resolve_account(name: str) -> tuple:
-    """Return (account_home, account_claude) for the given account name.
-
-    For the special "native" account, returns the real MAIN_HOME and
-    MAIN_CLAUDE so the provider runs with $HOME unmodified.
-    """
+    """Return (account_home, account_claude) for the given account name."""
     if name == _NATIVE_ACCOUNT:
         return MAIN_HOME, MAIN_CLAUDE
     account_home = ACCOUNTS_DIR / name
     account_claude = account_home / ".claude"
     return account_home, account_claude
 
-
 def list_accounts() -> list:
     """Return sorted list of account names that exist on disk."""
     if not ACCOUNTS_DIR.exists():
         return []
     return sorted(p.name for p in ACCOUNTS_DIR.iterdir() if p.is_dir() and not p.name.startswith("."))
-
 
 def validate_account_name(name: str) -> None:
     """Raise SystemExit if name is invalid (bad chars, reserved word, leading dot)."""
@@ -794,11 +730,9 @@ def validate_account_name(name: str) -> None:
         print(f"altergo: '{name}' is a reserved name. Choose a different account name.", file=sys.stderr)
         sys.exit(1)
 
+# Migration
 
-# --- Migration ---
-
-
-# --- Symlink catalogs ---
+# Symlink catalogs
 
 # Directories to symlink (shared between main and alt)
 SYMLINK_DIRS = [
@@ -1075,21 +1009,10 @@ CATALOG = [
 
 # (SETTINGS_FILE is defined in the Config section above, shared across all accounts)
 
-# --- Settings helpers ---
-
+# Settings helpers
 
 def load_account_meta(account_home: Path) -> dict:
-    """Load account metadata. Returns v3-shape dict in memory regardless of on-disk form.
-
-    Schema versions:
-      v3: {"version": 3, "providers": ["<id>", ...], "default_provider": "<id>"}
-      v2 (legacy): {"version": 2, "provider": "<id>", ...} — coerced in memory
-      legacy: no account.json but .claude/ exists → {"version": 3, "providers": ["claude"], ...}
-      no account: returns None
-
-    Disk is not rewritten on read. v2 files load forever; disk flips to v3 only
-    when a mutating operation runs (e.g. --add-provider).
-    """
+    """Load account metadata. Returns v3-shape dict in memory regardless of on-disk form."""
     meta_file = account_home / "account.json"
     if meta_file.exists():
         try:
@@ -1101,16 +1024,8 @@ def load_account_meta(account_home: Path) -> dict:
         return _coerce_meta_v3({"provider": "claude"})
     return None
 
-
 def _coerce_meta_v3(data: dict) -> dict:
-    """Return a v3-shape dict from v2 single-string or v3 list input.
-
-    Unknown provider IDs are filtered against PROVIDERS; empty result falls back
-    to ['claude']. Stale or missing default_provider coerces to providers[0].
-    Auxiliary keys on the input (e.g. ``created``, ``keychain``) are preserved
-    so downstream code that reads them still sees them after coercion. Pure
-    in-memory transform — no disk I/O.
-    """
+    """Return a v3-shape dict from v2 single-string or v3 list input."""
     out: dict = {k: v for k, v in data.items() if k not in ("version", "provider", "providers", "default_provider")}
     if data.get("version") == 3 and isinstance(data.get("providers"), list) and data["providers"]:
         seen: set[str] = set()
@@ -1135,14 +1050,8 @@ def _coerce_meta_v3(data: dict) -> dict:
     out["default_provider"] = default
     return out
 
-
 def _read_account_email(account_name: str) -> str | None:
-    """Return the email address for *account_name*, or None if unavailable.
-
-    Checks provider credential files in order: Claude (.claude.json), then
-    Codex (JWT in auth.json). Gemini and Copilot don't store email on disk.
-    Silently returns None on any read/parse error.
-    """
+    """Return the email address for *account_name*, or None if unavailable."""
     try:
         account_home = ACCOUNTS_DIR / account_name
         # Claude: oauthAccount.emailAddress in .claude.json
@@ -1186,7 +1095,6 @@ def _read_account_email(account_name: str) -> str | None:
         pass
     return None
 
-
 def save_account_meta(account_home: Path, meta: dict) -> None:
     """Atomically write account.json."""
     account_home.mkdir(parents=True, exist_ok=True)
@@ -1194,7 +1102,6 @@ def save_account_meta(account_home: Path, meta: dict) -> None:
     tmp = meta_file.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(meta, indent=2))
     os.replace(str(tmp), str(meta_file))
-
 
 def load_settings():
     """Load user settings overlay. Returns {id: bool} dict of non-default values."""
@@ -1207,7 +1114,6 @@ def load_settings():
         return {k: v for k, v in shared.items() if k in catalog_ids and isinstance(v, bool)}
     except Exception:
         return {}
-
 
 def save_settings(overrides):
     """Atomically write settings overlay to SETTINGS_FILE. Preserves other top-level keys."""
@@ -1224,9 +1130,7 @@ def save_settings(overrides):
     tmp.write_text(json.dumps(data, indent=2))
     os.replace(str(tmp), str(SETTINGS_FILE))
 
-
-# --- Starred conversations ---
-
+# Starred conversations
 
 def load_starred_entries() -> list:
     """Return the full list of starred session entry dicts."""
@@ -1238,11 +1142,9 @@ def load_starred_entries() -> list:
     except Exception:
         return []
 
-
 def load_starred_ids() -> set:
     """Return the set of starred session IDs (cheap for membership tests)."""
     return {e["id"] for e in load_starred_entries()}
-
 
 def _save_starred(entries: list) -> None:
     """Atomically persist starred entries to STARRED_FILE."""
@@ -1251,7 +1153,6 @@ def _save_starred(entries: list) -> None:
     tmp = STARRED_FILE.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(data, indent=2))
     os.replace(str(tmp), str(STARRED_FILE))
-
 
 def star_session(session_id: str, provider: str, project: str, topic: str) -> None:
     """Add a session to the starred list (no-op if already starred)."""
@@ -1269,11 +1170,9 @@ def star_session(session_id: str, provider: str, project: str, topic: str) -> No
     )
     _save_starred(entries)
 
-
 def unstar_session(session_id: str) -> None:
     """Remove a session from the starred list."""
     _save_starred([e for e in load_starred_entries() if e["id"] != session_id])
-
 
 def toggle_starred_session(session_id: str, provider: str, project: str, topic: str) -> bool:
     """Toggle star on a session. Returns True if now starred, False if now unstarred."""
@@ -1293,9 +1192,7 @@ def toggle_starred_session(session_id: str, provider: str, project: str, topic: 
     _save_starred(entries)
     return True
 
-
 # --- Last-session tracking ---
-
 
 def save_last_session(session_id: str, provider: str, project: str, topic: str) -> None:
     """Persist the last exited session info for ``altergo --star`` to read."""
@@ -1311,7 +1208,6 @@ def save_last_session(session_id: str, provider: str, project: str, topic: str) 
     tmp.write_text(json.dumps(data, indent=2))
     os.replace(str(tmp), str(LAST_SESSION_FILE))
 
-
 def load_last_session() -> dict | None:
     """Return the last exited session dict, or None if unavailable."""
     if not LAST_SESSION_FILE.exists():
@@ -1321,22 +1217,8 @@ def load_last_session() -> dict | None:
     except Exception:
         return None
 
-
 def _record_last_session_after_exit(provider: str, launch_time: float) -> None:
-    """Scan for the newest JSONL session file and write it to LAST_SESSION_FILE.
-
-    Called immediately after the provider subprocess exits so that
-    ``altergo --star`` can star the session without needing its ID.
-
-    Only considers files with mtime >= launch_time - 2.0 so that sessions
-    running in other terminal windows (whose JSONL files may be newer overall)
-    are not mistakenly captured. The 2-second buffer covers filesystem
-    timestamp granularity (HFS+ has 1s resolution) and clock imprecision.
-
-    Note: when tmux_session is enabled, subprocess.run returns as soon as tmux
-    forks — before Claude Code has written anything — so this scan may miss the
-    session in that path. That is a known limitation of the tmux launch model.
-    """
+    """Scan for the newest JSONL session file and write it to LAST_SESSION_FILE."""
     projects_dir = MAIN_CLAUDE / "projects"
     if not projects_dir.exists():
         return
@@ -1374,13 +1256,8 @@ def _record_last_session_after_exit(provider: str, launch_time: float) -> None:
     topic, _ = _scan_session_head(newest_path)
     save_last_session(session_id, provider, newest_path.parent.name, topic or "")
 
-
 def load_persisted_theme() -> str:
-    """Read the persisted theme name from SETTINGS_FILE.
-
-    Returns the default theme id if the file is missing, malformed, or names
-    a theme that no longer exists in THEMES (e.g. after a downgrade).
-    """
+    """Read the persisted theme name from SETTINGS_FILE."""
     if not SETTINGS_FILE.exists():
         return _DEFAULT_THEME
     try:
@@ -1391,7 +1268,6 @@ def load_persisted_theme() -> str:
     except Exception:
         pass
     return _DEFAULT_THEME
-
 
 def save_persisted_theme(name: str) -> None:
     """Persist the chosen theme name to SETTINGS_FILE without clobbering siblings."""
@@ -1409,8 +1285,7 @@ def save_persisted_theme(name: str) -> None:
     tmp.write_text(json.dumps(data, indent=2))
     os.replace(str(tmp), str(SETTINGS_FILE))
 
-
-# ── Banner font ───────────────────────────────────────────────────────────────
+# Banner font
 
 # Curated list of pyfiglet fonts that look good in a terminal banner.
 # Filtered at runtime to those actually available in the installed pyfiglet
@@ -1441,12 +1316,8 @@ _DEFAULT_BANNER_FONT = "smslant"
 # at module load time.
 _valid_banner_fonts_cache: list[str] | None = None
 
-
 def _get_valid_banner_fonts() -> list[str]:
-    """Return the subset of _BANNER_FONT_CATALOG that is available and ≤5 rows.
-
-    Result is cached after the first call.
-    """
+    """Return the subset of _BANNER_FONT_CATALOG that is available and ≤5 rows."""
     global _valid_banner_fonts_cache
     if _valid_banner_fonts_cache is not None:
         return _valid_banner_fonts_cache
@@ -1470,7 +1341,6 @@ def _get_valid_banner_fonts() -> list[str]:
         _valid_banner_fonts_cache = [_DEFAULT_BANNER_FONT]
     return _valid_banner_fonts_cache
 
-
 def load_persisted_banner_font() -> str:
     """Read the banner font name from SETTINGS_FILE. Falls back to the default."""
     if not SETTINGS_FILE.exists():
@@ -1484,15 +1354,13 @@ def load_persisted_banner_font() -> str:
         pass
     return _DEFAULT_BANNER_FONT
 
-
 def save_persisted_banner_font(name: str) -> None:
     """Persist the chosen banner font to SETTINGS_FILE."""
     if name not in _BANNER_FONT_CATALOG:
         return
     _patch_settings({"banner_font": name})
 
-
-# ── Animation packs ───────────────────────────────────────────────────────────
+# Animation packs
 
 # Each pack drives the twinkle duration and spinner style for the provider
 # handoff animation. "off" disables animation entirely.
@@ -1519,58 +1387,9 @@ _ANIM_PACKS: dict[str, dict] = {
 _VALID_ANIM_PACKS: tuple[str, ...] = tuple(_ANIM_PACKS.keys())
 _DEFAULT_ANIM_PACK = "minimal"
 
-# Representative spinner-frame strips for the settings preview panel.
-# Populated lazily from Rich's spinner registry (real frames, not hardcoded).
-# Packs without a Rich spinner get a hand-crafted fallback.
-_ANIM_PACK_FRAMES_CACHE: dict[str, str] | None = None
-
-
-def _build_anim_pack_frames() -> dict[str, str]:
-    """Return filmstrip preview strings for all animation packs.
-
-    Each strip is 6 evenly-sampled frames from the pack's actual Rich spinner,
-    joined with two-space gaps.  Packs with no spinner use a hand-crafted strip.
-    """
-    fallbacks: dict[str, str] = {
-        "off": "\u2500  \u2500  \u2500  \u2500  \u2500  \u2500",
-        "minimal": "\u2736  \u2737  \u2736  \u2737  \u2736  \u2737",
-    }
-
-    rich_spinners: dict = {}
-    try:
-        from rich._spinners import SPINNERS as _RS  # type: ignore[import-untyped]
-
-        rich_spinners = _RS
-    except Exception:
-        pass
-
-    result: dict[str, str] = {}
-    for name, cfg in _ANIM_PACKS.items():
-        spinner_name = cfg.get("spinner")
-        if not spinner_name and name in fallbacks:
-            result[name] = fallbacks[name]
-            continue
-        if spinner_name and spinner_name in rich_spinners:
-            frames: list[str] = rich_spinners[spinner_name]["frames"]
-            # Sample 6 evenly-spaced frames
-            n = len(frames)
-            indices = [int(i * n / 6) for i in range(6)]
-            result[name] = "  ".join(frames[i] for i in indices)
-        else:
-            result[name] = fallbacks.get(name, "\u00b7  \u00b7  \u00b7  \u00b7  \u00b7  \u00b7")
-    return result
-
-
-def _get_anim_pack_frames() -> dict[str, str]:
-    global _ANIM_PACK_FRAMES_CACHE
-    if _ANIM_PACK_FRAMES_CACHE is None:
-        _ANIM_PACK_FRAMES_CACHE = _build_anim_pack_frames()
-    return _ANIM_PACK_FRAMES_CACHE
-
 
 # Cache for Rich spinner registry (frames + intervals)
 _RICH_SPINNER_DATA_CACHE: dict | None = None
-
 
 def _get_rich_spinner_data() -> dict:
     """Return Rich's SPINNERS registry, cached after first call."""
@@ -1584,13 +1403,8 @@ def _get_rich_spinner_data() -> dict:
             _RICH_SPINNER_DATA_CACHE = {}
     return _RICH_SPINNER_DATA_CACHE
 
-
 def load_animation_pack() -> str:
-    """Return the active animation pack name.
-
-    Migrates gracefully from the old ``launch_animation`` boolean:
-    ``False`` → ``"off"``, ``True`` / missing → ``_DEFAULT_ANIM_PACK``.
-    """
+    """Return the active animation pack name."""
     if not SETTINGS_FILE.exists():
         return _DEFAULT_ANIM_PACK
     try:
@@ -1606,9 +1420,7 @@ def load_animation_pack() -> str:
         pass
     return _DEFAULT_ANIM_PACK
 
-
-# ── Random theme helpers ──────────────────────────────────────────────────────
-
+# Random theme helpers
 
 def _patch_settings(updates: dict) -> None:
     """Atomically merge *updates* into SETTINGS_FILE, preserving all other keys."""
@@ -1623,7 +1435,6 @@ def _patch_settings(updates: dict) -> None:
     tmp = SETTINGS_FILE.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(data, indent=2))
     os.replace(str(tmp), str(SETTINGS_FILE))
-
 
 def load_random_theme_settings() -> dict:
     """Return random_theme_enabled, random_theme_frequency, random_theme_counter."""
@@ -1647,7 +1458,6 @@ def load_random_theme_settings() -> dict:
     except Exception:
         return defaults
 
-
 def _random_theme_counter_range(freq: int) -> tuple:
     """Map frequency slot (1-5) to (min_sessions, max_sessions) range."""
     if freq <= 2:
@@ -1657,13 +1467,8 @@ def _random_theme_counter_range(freq: int) -> tuple:
     else:
         return (10, 20)
 
-
 def maybe_rotate_random_theme() -> None:
-    """Decrement the random-theme counter; rotate theme when it hits zero.
-
-    Called once per session start, after load_persisted_theme() seeds
-    _CURRENT_THEME. No-op if random_theme_enabled is False.
-    """
+    """Decrement the random-theme counter; rotate theme when it hits zero."""
     import random as _random
 
     rts = load_random_theme_settings()
@@ -1692,7 +1497,6 @@ def maybe_rotate_random_theme() -> None:
     set_current_theme(new_theme)
     _patch_settings({"theme": new_theme, "random_theme_counter": _random.randint(lo, hi)})
 
-
 # --- Launch-handoff animation duration (per-provider) ---
 #
 # Capped by panel decision (option A) at 0.7s max so the animation never
@@ -1706,22 +1510,14 @@ _HANDOFF_ANIM_SECONDS: dict[str, float] = {
     "codex": 0.0,
 }
 
-
 def _handoff_duration(provider: str | None) -> float:
     """Return the capped twinkle duration for the given provider id."""
     if provider is None:
         return 0.0
     return _HANDOFF_ANIM_SECONDS.get(provider, 0.0)
 
-
 def _status_wrap(message: str, func, *args, **kwargs):
-    """Call ``func`` while showing a Rich spinner-status line.
-
-    Falls back to a plain synchronous call on non-TTY or if Rich is not
-    importable (shouldn't happen — altergo depends on it — but we don't
-    want a status wrapper to ever hide a real error). The spinner picked
-    matches the active theme via ``altergo_greetings.spinner_for_theme``.
-    """
+    """Call ``func`` while showing a Rich spinner-status line."""
     if not sys.stdout.isatty():
         return func(*args, **kwargs)
     try:
@@ -1739,8 +1535,7 @@ def _status_wrap(message: str, func, *args, **kwargs):
     except Exception:
         return func(*args, **kwargs)
 
-
-# --- Update check: settings, cache, fetch ---
+# Update check: settings, cache, fetch
 #
 # The version checker is a stale-while-revalidate design hardened by the
 # security review: a daemon-threaded fetch writes a cache file with a
@@ -1771,28 +1566,16 @@ UPDATE_PYPI_URL = "https://pypi.org/pypi/altergo/json"
 # all of which could corrupt the banner render if printed unsanitized.
 _VERSION_RE = re.compile(r"^[0-9a-zA-Z.\-+]{1,32}$")
 
-
 def _sanitize_version(v) -> str | None:
-    """Return ``v`` if it is a valid, printable version string, else None.
-
-    Must be called on every boundary where a version string enters from
-    untrusted territory: PyPI response, cache file read, banner render.
-    """
+    """Return ``v`` if it is a valid, printable version string, else None."""
     if not isinstance(v, str):
         return None
     if _VERSION_RE.match(v):
         return v
     return None
 
-
 def load_update_check_enabled() -> bool:
-    """Return whether the user has opted into update checks.
-
-    Default is **True** — panel consensus was that altergo is pre-adoption
-    and needs users on current versions. The one-time consent line printed
-    on first launch (see :func:`first_launch_notice_if_needed`) is the
-    compensating control for the opt-out default.
-    """
+    """Return whether the user has opted into update checks."""
     if not SETTINGS_FILE.exists():
         return True
     try:
@@ -1803,7 +1586,6 @@ def load_update_check_enabled() -> bool:
     except Exception:
         pass
     return True
-
 
 def save_update_check_enabled(enabled: bool) -> None:
     """Persist the update-check opt-in flag without clobbering siblings."""
@@ -1819,14 +1601,8 @@ def save_update_check_enabled(enabled: bool) -> None:
     tmp.write_text(json.dumps(data, indent=2))
     os.replace(str(tmp), str(SETTINGS_FILE))
 
-
 def _load_bool_setting(key: str, default: bool = True) -> bool:
-    """Load a boolean setting from SETTINGS_FILE.
-
-    Generic helper for the preference toggles introduced by the multi-page
-    settings TUI (show_greeting, show_goodbye, launch_animation).  Also
-    usable for any future boolean setting.
-    """
+    """Load a boolean setting from SETTINGS_FILE."""
     if not SETTINGS_FILE.exists():
         return default
     try:
@@ -1836,7 +1612,6 @@ def _load_bool_setting(key: str, default: bool = True) -> bool:
     except Exception:
         return default
 
-
 def _get_intro_shown() -> bool:
     if not SETTINGS_FILE.exists():
         return False
@@ -1845,7 +1620,6 @@ def _get_intro_shown() -> bool:
         return bool(data.get("update_check_intro_shown"))
     except Exception:
         return False
-
 
 def _mark_intro_shown() -> None:
     SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -1860,15 +1634,8 @@ def _mark_intro_shown() -> None:
     tmp.write_text(json.dumps(data, indent=2))
     os.replace(str(tmp), str(SETTINGS_FILE))
 
-
 def _read_update_cache() -> dict:
-    """Read and validate the update cache. Returns {} on any error.
-
-    Re-sanitizes the cached version string — a local attacker who can write
-    ``~/.altergo/`` can still poison the cache, but can no longer inject a
-    crafted string into a future banner render. A poisoned entry is simply
-    dropped and treated as a cache miss.
-    """
+    """Read and validate the update cache. Returns {} on any error."""
     if not UPDATE_CACHE_FILE.exists():
         return {}
     try:
@@ -1887,7 +1654,6 @@ def _read_update_cache() -> dict:
     else:
         data["latest_version"] = v
     return data
-
 
 def _write_update_cache(latest_version: str | None) -> None:
     """Atomically write the update cache. Validates before writing."""
@@ -1911,14 +1677,8 @@ def _write_update_cache(latest_version: str | None) -> None:
         # Silent failure — we never want the update checker to break launch.
         pass
 
-
 def _parse_version(v: str) -> tuple:
-    """Parse a MAJOR.MINOR.PATCH string into a comparable tuple.
-
-    Strips any pre-release or local version suffix (``0.13.0rc1`` →
-    ``(0, 13, 0)``) and returns an empty tuple on parse error. Intentionally
-    stdlib-only — avoids adding ``packaging`` as a runtime dep.
-    """
+    """Parse a MAJOR.MINOR.PATCH string into a comparable tuple."""
     try:
         core = v.split("+", 1)[0].split("-", 1)[0]
         parts: list[int] = []
@@ -1937,7 +1697,6 @@ def _parse_version(v: str) -> tuple:
     except Exception:
         return ()
 
-
 def _is_newer(latest: str, current: str) -> bool:
     """Return True iff ``latest`` is strictly newer than ``current``."""
     a = _parse_version(latest)
@@ -1945,7 +1704,6 @@ def _is_newer(latest: str, current: str) -> bool:
     if not a or not b:
         return False
     return a > b
-
 
 # Session IDs as produced by Claude Code, Gemini CLI, Codex, and Copilot are
 # all canonical UUIDs. We match case-insensitively and allow an optional
@@ -1958,21 +1716,12 @@ _SESSION_ID_RE = re.compile(
     re.IGNORECASE,
 )
 
-
 def _looks_like_session_id(token: str) -> bool:
     """Return True iff ``token`` matches the canonical UUID shape."""
     return bool(_SESSION_ID_RE.match(token))
 
-
 def _extract_yolo_resume(args: list[str]) -> tuple[bool, str | None, list[str]]:
-    """Scan ``args`` for --yolo-resume, --yolo-resume=ID, or --yolo-resume ID.
-
-    Returns (present, session_id_or_None, args_with_flag_and_id_removed).
-
-    The paired-arg form (--yolo-resume ID) only consumes the following
-    token when it looks like a session ID — otherwise the token is left
-    untouched so a user passing a prompt isn't silently eaten.
-    """
+    """Scan ``args`` for --yolo-resume, --yolo-resume=ID, or --yolo-resume ID."""
     present = False
     session_id: str | None = None
     out: list[str] = []
@@ -2002,23 +1751,8 @@ def _extract_yolo_resume(args: list[str]) -> tuple[bool, str | None, list[str]]:
         i += 1
     return present, session_id, out
 
-
 def _translate_yolo_flags(provider: str, args: list[str]) -> tuple[list[str], list[str], list[str]]:
-    """Translate --yolo / --yolo-resume into provider-native flags.
-
-    Returns (prefix, cleaned_args, suffix) where the assembled command is:
-        [binary] + prefix + cleaned_args + suffix
-
-    Both synthetic flags are stripped from cleaned_args regardless of whether
-    the provider supports them.  If neither flag is present the call is a
-    pure no-op: ([], args, []).
-
-    --yolo-resume accepts an optional session ID in either form:
-        --yolo-resume=<ID>
-        --yolo-resume <ID>   (only if the next token is UUID-shaped)
-    When present, the ID is substituted into the provider's ``resume_by_id``
-    template instead of using the last-session flags.
-    """
+    """Translate --yolo / --yolo-resume into provider-native flags."""
     yolo_resume, session_id, args_after_resume = _extract_yolo_resume(list(args))
     yolo = yolo_resume or "--yolo" in args_after_resume
 
@@ -2066,15 +1800,8 @@ def _translate_yolo_flags(provider: str, args: list[str]) -> tuple[list[str], li
 
     return prefix, cleaned, suffix
 
-
 def _fetch_latest_version() -> None:
-    """Fetch altergo's latest version from PyPI and update the cache.
-
-    Runs in a daemon thread — MUST never raise out of this function and
-    MUST never print. All exceptions are swallowed. Hardening per security
-    review: 3s timeout, 32KB response cap, 3-redirect cap, TLS enforced,
-    version string allowlisted before caching.
-    """
+    """Fetch altergo's latest version from PyPI and update the cache."""
     try:
         import urllib.error
         import urllib.request
@@ -2106,15 +1833,8 @@ def _fetch_latest_version() -> None:
         except Exception:
             pass
 
-
 def maybe_refresh_update_cache() -> None:
-    """Kick off a background refresh if the cache is stale and opt-in is on.
-
-    Called from the launch path. First launch (no cache file at all) writes
-    a timestamp-only record and skips the network entirely — first runs
-    feel instant, and the consent line has already been printed by the
-    time any real fetch fires.
-    """
+    """Kick off a background refresh if the cache is stale and opt-in is on."""
     if not load_update_check_enabled():
         return
     cache = _read_update_cache()
@@ -2135,24 +1855,16 @@ def maybe_refresh_update_cache() -> None:
     t = threading.Thread(target=_fetch_latest_version, daemon=True)
     t.start()
 
-
 def get_cached_latest_version() -> str | None:
     """Return the last-known sanitized latest version, or None."""
     cache = _read_update_cache()
     return _sanitize_version(cache.get("latest_version"))
 
-
 def first_launch_notice_if_needed() -> None:
-    """Print the one-time consent notice if the user hasn't seen it yet.
-
-    This is the compensating control the security review demanded for the
-    opt-out default. Printed once, then never again, regardless of whether
-    a nag ever fires. Satisfies informed-consent-before-first-request.
-    """
+    """Print the one-time consent notice if the user hasn't seen it yet."""
     if _get_intro_shown():
         return
     _mark_intro_shown()
-
 
 def _get_home_notice_shown() -> bool:
     if not SETTINGS_FILE.exists():
@@ -2162,7 +1874,6 @@ def _get_home_notice_shown() -> bool:
         return bool(data.get("home_notice_shown"))
     except Exception:
         return False
-
 
 def _mark_home_notice_shown() -> None:
     SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -2177,18 +1888,8 @@ def _mark_home_notice_shown() -> None:
     tmp.write_text(json.dumps(data, indent=2))
     os.replace(str(tmp), str(SETTINGS_FILE))
 
-
 def home_change_notice_if_needed() -> None:
-    """One-time animated notice explaining the HOME isolation model.
-
-    Sequence:
-      1. Clear screen; big pyfiglet "Welcome" fades in slowly with an orange gradient.
-      2. Notice copy fades in line by line beneath it.
-      3. Screen holds for ~8 s (or until keypress) so the user can read.
-      4. Cascading top-to-bottom fade-out: emoji → figlet → notice → hint.
-      5. Screen clears; normal banner renders as usual.
-    Falls back to a plain print if any import or tty operation fails.
-    """
+    """One-time animated notice explaining the HOME isolation model."""
     if _get_home_notice_shown():
         return
     if not sys.stdout.isatty():
@@ -2209,7 +1910,7 @@ def home_change_notice_if_needed() -> None:
         # Fixed warm-orange gradient — intentionally theme-independent.
         GRAD = ["#ff6600", "#ffcc00"]
 
-        # ── colour helpers ──────────────────────────────────────────────────
+        # colour helpers
         def _rgb(h):
             return int(h[1:3], 16), int(h[3:5], 16), int(h[5:7], 16)
 
@@ -2241,7 +1942,7 @@ def home_change_notice_if_needed() -> None:
             sys.stdout.write(s)
             sys.stdout.flush()
 
-        # ── build figlet "Welcome" ───────────────────────────────────────────
+        # build figlet "Welcome"
         raw = None
         for font in ("slant", "standard", "smslant"):
             try:
@@ -2270,7 +1971,7 @@ def home_change_notice_if_needed() -> None:
                 out.append(s)
             return out
 
-        # ── notice content ───────────────────────────────────────────────────
+        # notice content
         NOTICE = [
             ("Each account runs in its own HOME folder —", False),
             ("like a separate desk for each AI identity.", False),
@@ -2282,12 +1983,12 @@ def home_change_notice_if_needed() -> None:
         ]
         HINT = "shown once  ·  press any key to continue"
 
-        # ── vertical layout ──────────────────────────────────────────────────
+        # vertical layout
         # rows: 1 emoji + 2 blank + figlet + 1 blank + NOTICE + 2 blank+hint
         content_h = 3 + len(fig_lines) + 1 + len(NOTICE) + 2
         top = max(1, (rows - content_h) // 2)
 
-        # ── clear + hide cursor ──────────────────────────────────────────────
+        # clear + hide cursor
         _w("\033[2J\033[H\033[?25l")
 
         # ── track terminal row (1-indexed) of every section for fade-out ────
@@ -2337,7 +2038,7 @@ def home_change_notice_if_needed() -> None:
         _w(f"\r{_cpad(len(HINT))}\033[38;2;{hr};{hg};{hb}m{HINT}\033[0m\n")
         cur += 1
 
-        # ── Phase 1: figlet fades in (slow — 36 frames × 30 ms ≈ 1.1 s) ─────
+        # Phase 1: figlet fades in (slow — 36 frames × 30 ms ≈ 1.1 s)
         FIG_IN = 36
         for step in range(1, FIG_IN + 1):
             alpha = step / FIG_IN
@@ -2346,7 +2047,7 @@ def home_change_notice_if_needed() -> None:
                 _w(f"\r{ln}\033[K\n")
             time.sleep(0.030)
 
-        # ── Phase 2: notice lines fade in one by one ─────────────────────────
+        # Phase 2: notice lines fade in one by one
         LINE_IN = 14
         for item in notice_items:
             if item is None:
@@ -2358,7 +2059,7 @@ def home_change_notice_if_needed() -> None:
                 _w(f"\r{_cpad(len(item['text']))}{rendered}\033[K")
                 time.sleep(0.018)
 
-        # ── Phase 3: hold — wait up to 8 s for keypress ──────────────────────
+        # Phase 3: hold — wait up to 8 s for keypress
         import select
         import termios
         import tty
@@ -2418,7 +2119,7 @@ def home_change_notice_if_needed() -> None:
 
             time.sleep(FRAME_DT)
 
-        # ── clear → banner ────────────────────────────────────────────────────
+        # clear → banner
         _w("\033[2J\033[H")
 
     try:
@@ -2438,13 +2139,8 @@ def home_change_notice_if_needed() -> None:
         sys.stdout.write("\033[?25h")  # always restore cursor
         sys.stdout.flush()
 
-
 def get_active_account() -> str | None:
-    """Return the persisted active account name, or None if not set / no longer valid.
-
-    The reserved "native" account is always considered valid (it doesn't live
-    under ACCOUNTS_DIR — it's a passthrough to the real $HOME).
-    """
+    """Return the persisted active account name, or None if not set / no longer valid."""
     if not SETTINGS_FILE.exists():
         return None
     try:
@@ -2459,14 +2155,8 @@ def get_active_account() -> str | None:
     except Exception:
         return None
 
-
 def _account_for_provider(provider_id: str) -> str | None:
-    """Return an account name suitable for launching sessions of ``provider_id``.
-
-    Prefers the active account if its ``providers`` list includes the requested
-    id; otherwise returns the first account that does. Returns None when no
-    account is configured for that provider.
-    """
+    """Return an account name suitable for launching sessions of ``provider_id``."""
     accounts = list_accounts()
     if not accounts:
         return None
@@ -2485,7 +2175,6 @@ def _account_for_provider(provider_id: str) -> str | None:
             return acct
     return None
 
-
 def set_active_account(name: str) -> None:
     """Persist active_account to SETTINGS_FILE without clobbering other keys."""
     SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -2500,19 +2189,12 @@ def set_active_account(name: str) -> None:
     tmp.write_text(json.dumps(data, indent=2))
     os.replace(str(tmp), str(SETTINGS_FILE))
 
-
-def is_enabled(entry, overrides):
+def _is_enabled(entry, overrides):
     """Return whether a catalog entry is enabled given the user's overrides."""
     return overrides.get(entry["id"], entry["default_on"])
 
-
 def _ensure_nested_parent(rel, account_home):
-    """For paths like .config/gh, ensure account_home/.config is a real directory.
-
-    If it's currently a wholesale symlink to MAIN_HOME/.config (from an older
-    setup), migrates it transparently: unlinks the symlink and creates a real
-    directory, then individual tool symlinks will be created inside it.
-    """
+    """For paths like .config/gh, ensure account_home/.config is a real directory."""
     p = Path(rel)
     if len(p.parts) < 2:
         return
@@ -2527,10 +2209,9 @@ def _ensure_nested_parent(rel, account_home):
     elif not acct_parent.exists():
         acct_parent.mkdir(parents=True, exist_ok=True)
 
-
 def _apply_entry(entry, overrides, account_home):
     """Create or remove symlinks for one catalog entry based on current settings."""
-    enabled = is_enabled(entry, overrides)
+    enabled = _is_enabled(entry, overrides)
     for rel in entry["paths"]:
         src = MAIN_HOME / Path(rel)
         dst = account_home / Path(rel)
@@ -2554,22 +2235,10 @@ def _apply_entry(entry, overrides, account_home):
                 dst.unlink()
                 print(f"  {_c(33, '✓')} Unshared ~/{rel}")
 
-
-# --- Config / Teardown ---
-
+# Config / Teardown
 
 def _ensure_symlinked_dir(name: str, src: Path, dst: Path, account_claude: Path) -> bool:
-    """Ensure dst is a symlink pointing to src, auto-migrating real dirs if needed.
-
-    Returns True if any change was made (symlink created or content moved).
-
-    Cases:
-      (a) dst is already a symlink to src         -> no-op, return False
-      (b) dst does not exist                      -> create src + symlink, return True
-      (c) dst is a real empty dir                 -> rmdir + symlink, return True
-      (d) dst is real non-empty, src empty/absent -> move content to src, symlink, return True
-      (e) both have content                       -> merge; conflict items go to quarantine dir
-    """
+    """Ensure dst is a symlink pointing to src, auto-migrating real dirs if needed."""
     # (a) Already correct symlink
     if dst.is_symlink():
         if dst.resolve() == src.resolve():
@@ -2639,17 +2308,8 @@ def _ensure_symlinked_dir(name: str, src: Path, dst: Path, account_claude: Path)
         print(f"  warning: {name}/ has unresolved conflicts; not symlinked")
         return False
 
-
 def _ensure_home_file_symlink(name: str, src: Path, dst: Path) -> None:
-    """Ensure dst (account_home/<name>) is a symlink pointing to src (MAIN_HOME/<name>).
-
-    Migration cases:
-      (a) dst already symlinks to src   -> no-op
-      (b) dst absent, src exists        -> create symlink
-      (c) both absent                   -> do nothing (created on first use)
-      (d) dst real file, src absent     -> promote: move dst → src, then symlink
-      (e) dst real file, src exists     -> warn; leave both untouched
-    """
+    """Ensure dst (account_home/<name>) is a symlink pointing to src (MAIN_HOME/<name>)."""
     if dst.is_symlink():
         if dst.resolve() == src.resolve():
             print(f"  {_c(32, '✓')} {name} already symlinked")
@@ -2672,17 +2332,8 @@ def _ensure_home_file_symlink(name: str, src: Path, dst: Path) -> None:
         # (e) Conflict — both are real files; don't clobber either
         print(f"  {_c(33, '⚠')} {name} exists in both account home and main home — remove one to share")
 
-
 def _sync_claude_mcps(account_home: Path) -> None:
-    """Sync mcpServers between MAIN_HOME/.claude.json and account_home/.claude.json.
-
-    Bidirectional merge so MCP servers registered in any account context are
-    available everywhere, without sharing the entire .claude.json (which
-    contains per-account oauthAccount metadata).
-
-    Migration: if account_home/.claude.json is a symlink (from the v0.21.1
-    symlink_home_files approach), it is unsymlinked first.
-    """
+    """Sync mcpServers between MAIN_HOME/.claude.json and account_home/.claude.json."""
     main_cfg = MAIN_HOME / ".claude.json"
     acct_cfg = account_home / ".claude.json"
 
@@ -2742,7 +2393,6 @@ def _sync_claude_mcps(account_home: Path) -> None:
         count = len(merged)
         print(f"  {_c(32, '✓')} Synced {count} MCP server{'s' if count != 1 else ''}")
 
-
 def do_star(session_id: str | None = None) -> None:
     """Star a session by ID, or the last exited session if no ID given."""
     if session_id is not None:
@@ -2773,21 +2423,10 @@ def do_star(session_id: str | None = None) -> None:
     print(f"  {_c(C('accent'), '★')} Starred {_c(C('command'), last['id'])} [{last.get('provider', 'claude')}]")
     print(_c(C("dim"), f"  {topic_hint}"))
 
-
 def _apply_provider_setup(
     account_home: Path, provider_id: str, *, account_name: str = "", silent: bool = False
 ) -> None:
-    """Idempotently install symlinks + credential check for one provider under account_home.
-
-    Creates:
-      - account_home/<dot_dir>/<sub> → MAIN_HOME/<dot_dir>/<sub>  (for each symlink_dirs)
-      - account_home/<dot_dir>/<file> → MAIN_HOME/<dot_dir>/<file>  (for each symlink_files)
-      - account_home/<home_file> → MAIN_HOME/<home_file>  (for each symlink_home_files)
-
-    Prints per-step status unless ``silent=True``.  For claude, additionally
-    invokes :func:`_sync_claude_mcps` so per-account oauthAccount metadata is
-    preserved across the shared .claude.json.
-    """
+    """Idempotently install symlinks + credential check for one provider under account_home."""
     prov = PROVIDERS.get(provider_id)
     if prov is None:
         raise ValueError(f"unknown provider id: {provider_id!r}")
@@ -2854,15 +2493,8 @@ def _apply_provider_setup(
     if provider_id == "claude":
         _sync_claude_mcps(account_home)
 
-
 def _remove_provider_setup(account_home: Path, provider_id: str, *, silent: bool = False) -> None:
-    """Remove the symlinks installed by :func:`_apply_provider_setup` for one provider.
-
-    Session data in MAIN_HOME is untouched — only the per-account symlinks are
-    removed, so the account loses its view of that provider without destroying
-    anything. Home-level symlinks are only removed if they still point at the
-    canonical MAIN_HOME source (to avoid touching user-customised links).
-    """
+    """Remove the symlinks installed by :func:`_apply_provider_setup` for one provider."""
     prov = PROVIDERS.get(provider_id)
     if prov is None:
         return
@@ -2894,12 +2526,8 @@ def _remove_provider_setup(account_home: Path, provider_id: str, *, silent: bool
         except OSError:
             pass
 
-
 def do_config(account: str = "default", provider: str = "claude", *, keychain_arg: str | None = None):
-    """Configure (or reconfigure) an altergo account.
-
-    keychain_arg: "isolated", "shared", or None (prompt when tty; default shared when non-tty).
-    """
+    """Configure (or reconfigure) an altergo account."""
     if account == _NATIVE_ACCOUNT:
         print(
             f"altergo: '{_NATIVE_ACCOUNT}' is a reserved passthrough account that uses the real $HOME. "
@@ -3008,37 +2636,8 @@ def do_config(account: str = "default", provider: str = "claude", *, keychain_ar
     print(_c(2, "  Isolates credentials per provider. Shares AWS, GCP, Docker, and kubectl by default."))
     print(_c(2, f"  Change sharing settings: {_c(0, 'altergo --settings')}"))
 
-
 def _reconcile_orphan_dot_dir(account_home: Path, provider_id: str) -> None:
-    """Merge SHAREABLE orphan data from an account-local provider dot-dir into MAIN_HOME.
-
-    When an account used a provider WITHOUT altergo having installed symlinks
-    for it (e.g. a pre-multi-provider era claude-account that ran ``codex``
-    inside its shell), the provider wrote data under
-    ``account_home/<dot_dir>/`` directly. After --add-provider installs the
-    symlinks, any data in the shared catalog (``symlink_dirs`` +
-    ``symlink_files``) is invisible to the main view unless merged. This
-    helper performs that merge — **but only for catalog entries.**
-
-    **Credentials and per-account state stay in place.**  ``credentials_file``
-    (e.g. ``.codex/auth.json``) and any other local file/dir not listed in the
-    provider's symlink catalog (local sqlite state, per-account caches) are
-    NOT touched — moving them into MAIN_HOME would pool identities across
-    accounts and defeat altergo's isolation model.
-
-    Behavior:
-      - For each ``child`` in ``account_home/<dot_dir>/`` whose name is in
-        ``symlink_dirs ∪ symlink_files``:
-        - If the corresponding ``MAIN_HOME/<dot_dir>/<child>`` does NOT exist,
-          move the account-local copy there.
-        - If it DOES exist, MAIN wins — the account-local loser is archived
-          under ``account_home/<dot_dir>.orphaned/<timestamp>/<name>/`` so
-          nothing is silently destroyed.
-      - Everything else (credentials, local state, unknown children) is left
-        in place as a real file/dir under ``account_home/<dot_dir>/``.
-
-    Silent no-op when the local dot-dir is absent or already a symlink.
-    """
+    """Merge SHAREABLE orphan data from an account-local provider dot-dir into MAIN_HOME."""
     prov = PROVIDERS.get(provider_id)
     if prov is None:
         return
@@ -3124,15 +2723,8 @@ def _reconcile_orphan_dot_dir(account_home: Path, provider_id: str) -> None:
             )
         )
 
-
 def do_add_provider(account: str, provider_id: str) -> int:
-    """Install an additional provider on an existing altergo account.
-
-    Idempotent: no-op (with a dim notice) if the provider is already installed.
-    Reconciles any account-local orphan data for that provider into MAIN_HOME
-    before creating the symlinks, so existing sessions remain visible to
-    ``altergo --recall``.
-    """
+    """Install an additional provider on an existing altergo account."""
     account_home, _ = resolve_account(account)
     meta = load_account_meta(account_home)
     if meta is None:
@@ -3164,14 +2756,8 @@ def do_add_provider(account: str, provider_id: str) -> int:
     print(_c(C("dim"), f"  Launch: {launch}"))
     return 0
 
-
 def do_remove_provider(account: str, provider_id: str, *, assume_yes: bool = False) -> int:
-    """Remove a provider from an altergo account.
-
-    Refuses to remove the last remaining provider (use --delete instead).
-    If the provider being removed is the account's default, rebinds the
-    default to providers[0] of the remaining list.
-    """
+    """Remove a provider from an altergo account."""
     account_home, _ = resolve_account(account)
     meta = load_account_meta(account_home)
     if meta is None:
@@ -3220,13 +2806,8 @@ def do_remove_provider(account: str, provider_id: str, *, assume_yes: bool = Fal
     print(_c(32, f"Removed provider '{provider_id}' from account '{account}'."))
     return 0
 
-
 def do_default_provider(account: str, provider_id: str) -> int:
-    """Change the default provider for an account.
-
-    The requested provider must already be in the account's providers list —
-    this is metadata-only, with zero filesystem effect.
-    """
+    """Change the default provider for an account."""
     account_home, _ = resolve_account(account)
     meta = load_account_meta(account_home)
     if meta is None:
@@ -3252,7 +2833,6 @@ def do_default_provider(account: str, provider_id: str) -> int:
     save_account_meta(account_home, new_meta)
     print(_c(32, f"Default provider for '{account}' is now '{provider_id}'."))
     return 0
-
 
 def do_teardown(account: str = "default"):
     if account == _NATIVE_ACCOUNT:
@@ -3299,12 +2879,8 @@ def do_teardown(account: str = "default"):
     print()
     print(_c(32, "Teardown complete.") + " Account home and credentials left intact.")
 
-
 def do_delete_account(account: str) -> bool:
-    """Fully delete an account: tear down symlinks, remove the home dir, clear active.
-
-    Returns True on success, False when the account can't be removed.
-    """
+    """Fully delete an account: tear down symlinks, remove the home dir, clear active."""
     if account == _NATIVE_ACCOUNT:
         print(
             f"altergo: '{_NATIVE_ACCOUNT}' is a reserved passthrough account — it cannot be deleted.",
@@ -3361,7 +2937,6 @@ def do_delete_account(account: str) -> bool:
     print(_c(32, f"Account '{account}' deleted."))
     return True
 
-
 def do_rename(old_name: str, new_name: str):
     old_home = ACCOUNTS_DIR / old_name
     new_home = ACCOUNTS_DIR / new_name
@@ -3375,22 +2950,10 @@ def do_rename(old_name: str, new_name: str):
     old_home.rename(new_home)
     print(f"  {_c(32, '✓')} Renamed account '{old_name}' → '{new_name}'")
 
-
-# --- Session Discovery ---
-
+# Session Discovery
 
 def _build_provider_map() -> dict:
-    """Return a dict mapping session JSONL path → provider id string.
-
-    Scans every account under ACCOUNTS_DIR, reads its account.json for the
-    provider id, then walks that account's provider dot-dir/projects/ to
-    discover which session files it owns.  Sessions that cannot be attributed
-    to any account fall back to ``"claude"`` (the original behavior before
-    multi-provider support).
-
-    The walk is purely stat-based (no file reads beyond account.json) so it
-    stays cheap even for large session stores.
-    """
+    """Return a dict mapping session JSONL path → provider id string."""
     path_to_provider: dict = {}
     if not ACCOUNTS_DIR.exists():
         return path_to_provider
@@ -3430,13 +2993,9 @@ def _build_provider_map() -> dict:
 
     return path_to_provider
 
-
-# ---------------------------------------------------------------------------
 # Per-provider session discoverers
-# ---------------------------------------------------------------------------
 
 _CODEX_TOPIC_SENTINELS = ("<permissions ", "<collaboration_mode>", "<skills_instructions>")
-
 
 def _discover_claude_sessions(starred_ids: set) -> list:
     """Yield session dicts for Claude Code (~/.claude/projects/*/*.jsonl)."""
@@ -3481,7 +3040,6 @@ def _discover_claude_sessions(starred_ids: set) -> list:
                 }
             )
     return sessions
-
 
 def _discover_codex_sessions(starred_ids: set) -> list:
     """Yield session dicts for Codex CLI (~/.codex/sessions/YYYY/MM/DD/*.jsonl)."""
@@ -3546,7 +3104,6 @@ def _discover_codex_sessions(starred_ids: set) -> list:
                     )
     return sessions
 
-
 def _discover_gemini_sessions(starred_ids: set) -> list:
     """Yield session dicts for Gemini CLI (~/.gemini/tmp/<proj>/chats/*.json)."""
     sessions = []
@@ -3610,7 +3167,6 @@ def _discover_gemini_sessions(starred_ids: set) -> list:
                 }
             )
     return sessions
-
 
 def _discover_copilot_sessions(starred_ids: set) -> list:
     """Yield session dicts for GitHub Copilot (~/.copilot/session-state/<uuid>/)."""
@@ -3686,17 +3242,8 @@ def _discover_copilot_sessions(starred_ids: set) -> list:
         )
     return sessions
 
-
 def get_sessions():
-    """Find all sessions across all projects, return sorted by modification time.
-
-    Cheap pass: stat + first-user-message extraction only. Full preview content
-    is loaded on demand by ``load_session_preview`` when the user opens the
-    preview pane.
-
-    Each returned session dict includes a ``provider`` field (e.g. ``"claude"``,
-    ``"gemini"``, ``"codex"``, ``"copilot"``).
-    """
+    """Find all sessions across all projects, return sorted by modification time."""
     starred_ids = load_starred_ids()
     sessions = []
     sessions.extend(_discover_claude_sessions(starred_ids))
@@ -3706,13 +3253,8 @@ def get_sessions():
     sessions.sort(key=lambda s: s["modified"], reverse=True)
     return sessions
 
-
 def _extract_text(content):
-    """Flatten a Claude Code message ``content`` field into plain text.
-
-    ``content`` may be a string, or a list of blocks (text, tool_use,
-    tool_result, image, ...). Only ``text`` blocks contribute. Returns "".
-    """
+    """Flatten a Claude Code message ``content`` field into plain text."""
     if isinstance(content, str):
         return content
     if isinstance(content, list):
@@ -3734,12 +3276,10 @@ def _extract_text(content):
         return "\n".join(out)
     return ""
 
-
 _CODE_FENCE_RE = re.compile(r"```[^\n]*\n.*?```", re.DOTALL)
 _INLINE_CODE_RE = re.compile(r"`([^`]*)`")
 _MD_LINK_RE = re.compile(r"\[([^\]]+)\]\([^)]*\)")
 _WS_RE = re.compile(r"\s+")
-
 
 def _clean_topic(text: str) -> str:
     """Strip code fences, collapse whitespace, return single-line summary."""
@@ -3750,7 +3290,6 @@ def _clean_topic(text: str) -> str:
     text = _INLINE_CODE_RE.sub(r"\1", text)
     text = _WS_RE.sub(" ", text).strip()
     return text
-
 
 def _is_real_user_message(obj) -> bool:
     """Return True for genuine human user turns (not tool_result-only echoes)."""
@@ -3769,7 +3308,6 @@ def _is_real_user_message(obj) -> bool:
                 return bool(block.get("text", "").strip())
         return False
     return False
-
 
 def _scan_session_head(jsonl_path, max_lines: int = 40) -> tuple:
     """Cheap scan: return (topic, cwd) from the first ``max_lines`` of a session."""
@@ -3795,7 +3333,6 @@ def _scan_session_head(jsonl_path, max_lines: int = 40) -> tuple:
     except OSError:
         pass
     return topic, cwd
-
 
 def _scan_codex_session_head(jsonl_path, max_lines: int = 80) -> tuple:
     """Return (session_id, topic, cwd) from the head of a Codex session JSONL."""
@@ -3835,7 +3372,6 @@ def _scan_codex_session_head(jsonl_path, max_lines: int = 80) -> tuple:
     except OSError:
         pass
     return session_id, topic, cwd
-
 
 def _scan_gemini_session(json_path, cwd_fallback: str = "") -> tuple:
     """Return (session_id, topic, cwd) by parsing a Gemini session JSON file."""
@@ -3877,14 +3413,8 @@ def _scan_gemini_session(json_path, cwd_fallback: str = "") -> tuple:
 
     return session_id, topic, cwd
 
-
 def _parse_copilot_workspace_yaml(yaml_path) -> dict:
-    """Parse a minimal Copilot workspace.yaml into a plain dict.
-
-    Only handles simple ``key: value`` lines — no full YAML parser needed
-    because Copilot's workspace.yaml is a flat document with scalar values.
-    Returns an empty dict if the file is absent or unreadable.
-    """
+    """Parse a minimal Copilot workspace.yaml into a plain dict."""
     result = {}
     try:
         text = yaml_path.read_text(encoding="utf-8", errors="replace")
@@ -3904,7 +3434,6 @@ def _parse_copilot_workspace_yaml(yaml_path) -> dict:
             val = val[1:-1]
         result[key] = val
     return result
-
 
 def _scan_copilot_events_head(jsonl_path, max_lines: int = 40) -> tuple:
     """Return (session_id, cwd, topic, mod_dt) from events.jsonl head."""
@@ -3944,20 +3473,10 @@ def _scan_copilot_events_head(jsonl_path, max_lines: int = 40) -> tuple:
         pass
     return session_id, cwd, topic, mod_dt
 
-
 def load_session_preview(
     session_or_path, max_messages: int = 4, max_lines: int = 400, provider: str = "claude"
 ) -> dict:
-    """Load opening prompt + first few message turns for the preview pane.
-
-    Dispatches to a per-provider loader based on ``provider``.  The first
-    argument may be a Path to a file (Claude/Codex JSONL) or to a directory
-    (Copilot session dir), or a Path to a JSON file (Gemini).
-
-    Reads at most ``max_lines`` lines/entries and returns once ``max_messages``
-    real user/assistant turns have been collected.  ``truncated`` is True if
-    the session has more content than was returned.
-    """
+    """Load opening prompt + first few message turns for the preview pane."""
     if provider == "gemini":
         return _load_gemini_preview(session_or_path, max_messages=max_messages)
     if provider == "codex":
@@ -3966,7 +3485,6 @@ def load_session_preview(
         return _load_copilot_preview(session_or_path, max_messages=max_messages)
     # Default: Claude JSONL
     return _load_claude_preview(session_or_path, max_messages=max_messages, max_lines=max_lines)
-
 
 def _load_claude_preview(jsonl_path, max_messages: int = 4, max_lines: int = 400) -> dict:
     """Load preview for a Claude Code JSONL session."""
@@ -4008,7 +3526,6 @@ def _load_claude_preview(jsonl_path, max_messages: int = 4, max_lines: int = 400
     except OSError as e:
         return {"messages": [], "cwd": "", "truncated": False, "error": str(e)}
     return {"messages": messages, "cwd": cwd, "truncated": truncated, "error": None}
-
 
 def _load_codex_preview(jsonl_path, max_messages: int = 4, max_lines: int = 400) -> dict:
     """Load preview for a Codex CLI JSONL session."""
@@ -4056,7 +3573,6 @@ def _load_codex_preview(jsonl_path, max_messages: int = 4, max_lines: int = 400)
         return {"messages": [], "cwd": "", "truncated": False, "error": str(e)}
     return {"messages": messages, "cwd": cwd, "truncated": truncated, "error": None}
 
-
 def _load_gemini_preview(json_path, max_messages: int = 4) -> dict:
     """Load preview for a Gemini CLI JSON session file."""
     messages = []
@@ -4097,7 +3613,6 @@ def _load_gemini_preview(json_path, max_messages: int = 4) -> dict:
             break
 
     return {"messages": messages, "cwd": cwd, "truncated": truncated, "error": None}
-
 
 def _load_copilot_preview(session_dir, max_messages: int = 4) -> dict:
     """Load preview for a GitHub Copilot session directory."""
@@ -4147,14 +3662,8 @@ def _load_copilot_preview(session_dir, max_messages: int = 4) -> dict:
 
     return {"messages": messages, "cwd": cwd, "truncated": truncated, "error": None}
 
-
 def decode_project_path(encoded: str) -> str:
-    """Decode Claude Code's project dir name back into a readable path.
-
-    ``-Users-netz-Documents-git-altergo`` -> ``/home/user/Documents/git/altergo``.
-    Best-effort: dashes inside path components are indistinguishable from
-    separators in this encoding scheme, so we return the most likely form.
-    """
+    """Decode Claude Code's project dir name back into a readable path."""
     if not encoded:
         return ""
     s = encoded
@@ -4164,19 +3673,8 @@ def decode_project_path(encoded: str) -> str:
         s = s.replace("-", "/")
     return s
 
-
 def format_project_name(encoded):
-    """Short, readable project name (last path component).
-
-    For Claude Code sessions ``encoded`` is a dash-encoded directory name
-    (e.g. ``-Users-netz-Documents-git-altergo``).  For every other provider
-    we store a plain label directly (e.g. ``altergo`` or ``myproject``), so
-    we skip the Claude-style decode in those cases.
-
-    Heuristic: if the value already contains a ``/`` (an absolute path crept
-    in) or does NOT start with ``-`` (the Claude dash-encoding marker), return
-    the last path component without further decoding.
-    """
+    """Short, readable project name (last path component)."""
     if not encoded:
         return ""
     # Non-Claude providers store a plain label or basename — return it directly.
@@ -4186,7 +3684,6 @@ def format_project_name(encoded):
     decoded = decode_project_path(encoded)
     name = decoded.rstrip("/").rsplit("/", 1)[-1]
     return name or encoded
-
 
 def relative_time(dt: datetime, now: datetime = None) -> str:
     """Return a compact relative-time string ('2h ago', 'yesterday', '3d ago')."""
@@ -4215,9 +3712,7 @@ def relative_time(dt: datetime, now: datetime = None) -> str:
         return f"{days // 30}mo ago"
     return f"{days // 365}y ago"
 
-
-# --- Interactive Menu ---
-
+# Interactive Menu
 
 def interactive_picker(sessions):
     """Arrow-key driven session picker using curses."""
@@ -4227,7 +3722,6 @@ def interactive_picker(sessions):
 
     selected = curses.wrapper(_draw_picker, sessions)
     return selected
-
 
 # Per-page tint offsets: each page picks a different point on the theme's
 # banner gradient for its nav sweep base color, giving each screen a subtly
@@ -4245,20 +3739,8 @@ _PAGE_TINTS = {
 # _picker_attrs call; safe to re-init because curses allows re-init of pairs).
 _NAV_TINT_PAIR = 10
 
-
 def _picker_attrs(page: str = "default"):
-    """Initialize color pairs for the picker. Returns an attrs dict.
-
-    Falls back to monochrome (A_BOLD/A_REVERSE/A_DIM) when colors aren't
-    available so the picker degrades gracefully on dumb terminals.
-
-    Parameters
-    ----------
-    page
-        Logical page name used to select a tint offset from ``_PAGE_TINTS``
-        so each screen's nav sweep animation uses a slightly different shade
-        from the same theme palette.
-    """
+    """Initialize color pairs for the picker. Returns an attrs dict."""
     has_color = False
     try:
         if curses.has_colors():
@@ -4343,7 +3825,6 @@ def _picker_attrs(page: str = "default"):
         attrs["size_warn"] = curses.A_DIM
     return attrs
 
-
 def _compute_columns(max_x: int) -> dict:
     """Responsive column widths. Topic gets the leftover space."""
     proj_w = 18 if max_x >= 100 else (14 if max_x >= 80 else 10)
@@ -4356,7 +3837,6 @@ def _compute_columns(max_x: int) -> dict:
     topic_w = min(topic_w, max(40, max_x - used - 1))
     return {"gutter": gutter, "proj": proj_w, "time": time_w, "size": size_w, "topic": topic_w}
 
-
 def _truncate(text: str, width: int) -> str:
     if width <= 0:
         return ""
@@ -4366,14 +3846,12 @@ def _truncate(text: str, width: int) -> str:
         return "…"
     return text[: width - 1] + "…"
 
-
 def _safe_addnstr(stdscr, y, x, text, n, attr=0):
     """addnstr that swallows curses.error at the bottom-right cell."""
     try:
         stdscr.addnstr(y, x, text, n, attr)
     except curses.error:
         pass
-
 
 def _safe_addch(stdscr, y, x, ch, attr=0):
     """Single-char writer that swallows curses.error."""
@@ -4382,14 +3860,8 @@ def _safe_addch(stdscr, y, x, ch, attr=0):
     except curses.error:
         pass
 
-
 def _draw_animated_nav(stdscr, row, text, max_width, phase, attrs):
-    """Render the footer nav line with a BBS-style shine sweep + twinkling
-    separators. The word 'pixelabs' is rendered in brand indigo (bold).
-
-    phase increments every ~80ms; shine sweeps across width then pauses,
-    separator dots twinkle on a staggered per-position cycle.
-    """
+    """Render the footer nav line with a BBS-style shine sweep + twinkling."""
     if max_width <= 0:
         return
     width = min(len(text), max_width)
@@ -4432,7 +3904,6 @@ def _draw_animated_nav(stdscr, row, text, max_width, phase, attrs):
 
         _safe_addch(stdscr, row, i, ch, attr)
 
-
 def _session_matches(s, query):
     """Return True if *query* (lowercase) matches any searchable field."""
     q = query.lower()
@@ -4441,18 +3912,11 @@ def _session_matches(s, query):
             return True
     return False
 
-
 _RESUME_PROVIDER_CYCLE = [None, "claude", "gemini", "codex", "copilot"]
 _RESUME_SORT_MODES = ["time", "project", "provider"]
 
-
 def _apply_resume_view(sessions, filter_provider, sort_mode, search_query, starred_only: bool = False):
-    """Return the sorted+filtered session list for the resume picker.
-
-    Applied in order: starred filter → provider filter → search filter → sort.
-    ``starred_only`` and ``filter_provider`` are orthogonal — both can be
-    active at the same time.
-    """
+    """Return the sorted+filtered session list for the resume picker."""
     result = sessions
 
     # Starred-only filter
@@ -4474,7 +3938,6 @@ def _apply_resume_view(sessions, filter_provider, sort_mode, search_query, starr
         result = sorted(result, key=lambda s: (s.get("provider", ""), -s["modified"].timestamp()))
     # "time" is the default (already sorted by get_sessions)
     return result
-
 
 def _draw_picker(stdscr, sessions):
     curses.curs_set(0)
@@ -4760,7 +4223,6 @@ def _draw_picker(stdscr, sessions):
         elif key == curses.KEY_RESIZE:
             continue
 
-
 def _wrap_text(text: str, width: int):
     """Simple word-wrap that also breaks on existing newlines."""
     if width <= 0:
@@ -4788,7 +4250,6 @@ def _wrap_text(text: str, width: int):
                 line = word
         out.append(line)
     return out
-
 
 def _draw_preview(stdscr, attrs, session, preview):
     """Modal preview pane. Returns 'resume' if user hit Enter, else 'back'."""
@@ -4881,16 +4342,10 @@ def _draw_preview(stdscr, attrs, session, preview):
         elif key == curses.KEY_RESIZE:
             continue
 
-
 # --- Full-Text Session Search ---
 
-
 def _parse_search_query(raw: str):
-    """Parse a search query, supporting quoted exact phrases and bare terms.
-
-    Returns a list of lowercase terms/phrases to match. All must match (AND).
-    Example: 'fix "please go ahead" bug' -> ['fix', 'please go ahead', 'bug']
-    """
+    """Parse a search query, supporting quoted exact phrases and bare terms."""
     terms = []
     i = 0
     while i < len(raw):
@@ -4913,15 +4368,8 @@ def _parse_search_query(raw: str):
             i = j
     return terms
 
-
 def _search_sessions(sessions, terms, project_filter=None, on_progress=None):
-    """Search full conversation text in session JSONL files.
-
-    Returns list of dicts: {session, matches: [{line_text, line_no, role}], ...}
-    sorted newest-to-oldest. ``terms`` is a list of lowercase strings (AND logic).
-    ``project_filter`` is an optional lowercase project name substring.
-    ``on_progress(done, total)`` is called after each file.
-    """
+    """Search full conversation text in session JSONL files."""
     results = []
     targets = sessions
     if project_filter:
@@ -4982,14 +4430,12 @@ def _search_sessions(sessions, terms, project_filter=None, on_progress=None):
         on_progress(len(targets), len(targets))
     return results
 
-
 def interactive_search(sessions):
     """Full-text search across all conversation sessions."""
     if not sessions:
         print("No sessions found.")
         return None
     return curses.wrapper(_draw_search, sessions)
-
 
 def _draw_search(stdscr, sessions):
     curses.curs_set(1)
@@ -5264,8 +4710,7 @@ def _draw_search(stdscr, sessions):
             elif key == curses.KEY_RESIZE:
                 continue
 
-
-# --- Settings TUI ---
+# Settings TUI
 
 # Page definitions — index matches page number (0-based)
 _SETTINGS_PAGES = [
@@ -5286,13 +4731,8 @@ _SETTINGS_PAGES = [
 # Color swatch characters for theme preview (3 blocks per theme stop)
 _SWATCH_BLOCK = "\u2588"  # █
 
-
 def _hex_to_curses_256(hex_color: str) -> int:
-    """Approximate a hex color to the nearest xterm-256 color index.
-
-    Uses the 6x6x6 color cube (indices 16–231) for best coverage. This is
-    a simple nearest-neighbor approximation — good enough for swatches.
-    """
+    """Approximate a hex color to the nearest xterm-256 color index."""
     r = int(hex_color[1:3], 16)
     g = int(hex_color[3:5], 16)
     b = int(hex_color[5:7], 16)
@@ -5305,7 +4745,6 @@ def _hex_to_curses_256(hex_color: str) -> int:
     ri, gi, bi = nearest(r), nearest(g), nearest(b)
     return 16 + 36 * ri + 6 * gi + bi
 
-
 def _draw_settings(stdscr):
     """Multi-page settings TUI. Returns dict of all changes on save, None on cancel."""
     curses.curs_set(0)
@@ -5314,7 +4753,7 @@ def _draw_settings(stdscr):
     # Snapshot original theme so we can restore on cancel
     original_theme = get_current_theme()
 
-    # ── Working state for all three pages ────────────────────────────────────
+    # Working state for all three pages
 
     # Page 0: Appearance
     theme_names = list(THEMES.keys())
@@ -5357,7 +4796,7 @@ def _draw_settings(stdscr):
         cred_rows.append({"type": "entry", "entry": entry})
     cred_selectable = [i for i, r in enumerate(cred_rows) if r["type"] == "entry"]
 
-    # ── Navigation state ──────────────────────────────────────────────────────
+    # Navigation state
     current_page = 0
     n_pages = len(_SETTINGS_PAGES)
 
@@ -5398,7 +4837,7 @@ def _draw_settings(stdscr):
     page2_cursor = 0
     page2_scroll = 0
 
-    # ── Swatch color pairs — pairs 20+ reserved for swatches ─────────────────
+    # Swatch color pairs — pairs 20+ reserved for swatches
     # We allocate one pair per theme stop (up to 6 stops × 6 themes = 36 pairs)
     # starting at pair index 20. If terminal lacks 256 colors we skip swatches.
     swatch_pairs: dict = {}  # (theme_id, stop_idx) → curses pair number
@@ -5415,16 +4854,10 @@ def _draw_settings(stdscr):
                 except curses.error:
                     pass
 
-    # ── Scroll helpers for page 0 ─────────────────────────────────────────────
+    # Scroll helpers for page 0
 
     def _cursor_to_vrow(c: int) -> int:
-        """Map a page-0 cursor index to its virtual row in the content list.
-
-        Virtual row 0 is the Theme section header.  All visible rows in the
-        content area are rendered at ``screen_row = content_start + vrow - page0_scroll``.
-        Font section uses a two-column grid: _n_font_rows virtual rows, each
-        rendering two fonts side-by-side (column-major order).
-        """
+        """Map a page-0 cursor index to its virtual row in the content list."""
         T = len(theme_names)
         F = len(_banner_fonts)
         NF = _n_font_rows  # virtual rows the font section occupies
@@ -5460,7 +4893,7 @@ def _draw_settings(stdscr):
             page0_scroll = target - visible_h + 1
         page0_scroll = max(0, page0_scroll)
 
-    # ── Helper: draw one tab bar line ─────────────────────────────────────────
+    # Helper: draw one tab bar line
     def _draw_tab_bar(max_x):
         x = 0
         for pi, page in enumerate(_SETTINGS_PAGES):
@@ -5476,7 +4909,7 @@ def _draw_settings(stdscr):
                 _safe_addnstr(stdscr, 0, x, "\u2502", 1, attrs["dim"])  # │
                 x += 1
 
-    # ── Helper: draw page 0 (Appearance) ─────────────────────────────────────
+    # Helper: draw page 0 (Appearance)
     def _draw_page0(max_y, max_x, attrs_local):
         content_start = 3
         # Rows content_start .. max_y-3 are the scrollable content area.
@@ -5498,7 +4931,7 @@ def _draw_settings(stdscr):
 
         vrow = 0
 
-        # ── Theme ─────────────────────────────────────────────────────────────
+        # Theme
         _draw_vr(vrow, 2, ("Theme " + "\u2500" * 34)[: max_x - 3], max_x - 3, attrs_local["accent"] | curses.A_BOLD)
         vrow += 1
 
@@ -5531,7 +4964,7 @@ def _draw_settings(stdscr):
 
         vrow += 1  # blank line
 
-        # ── Font ──────────────────────────────────────────────────────────────
+        # Font
         _draw_vr(vrow, 2, ("Font " + "\u2500" * 35)[: max_x - 3], max_x - 3, attrs_local["accent"] | curses.A_BOLD)
         vrow += 1
 
@@ -5606,7 +5039,7 @@ def _draw_settings(stdscr):
 
         vrow += 1  # blank line
 
-        # ── Animation ─────────────────────────────────────────────────────────
+        # Animation
         _draw_vr(vrow, 2, ("Animation " + "\u2500" * 30)[: max_x - 3], max_x - 3, attrs_local["accent"] | curses.A_BOLD)
         vrow += 1
 
@@ -5668,7 +5101,7 @@ def _draw_settings(stdscr):
 
         vrow += 1  # blank line
 
-        # ── Randomize ─────────────────────────────────────────────────────────
+        # Randomize
         _draw_vr(vrow, 2, ("Randomize " + "\u2500" * 30)[: max_x - 3], max_x - 3, attrs_local["accent"] | curses.A_BOLD)
         vrow += 1
 
@@ -5751,7 +5184,7 @@ def _draw_settings(stdscr):
                     attrs_local["dim"],
                 )
 
-    # ── Helper: draw page 1 (Behavior) ───────────────────────────────────────
+    # Helper: draw page 1 (Behavior)
     def _draw_page1(max_y, max_x):
         content_start = 3
         row = content_start
@@ -5790,7 +5223,7 @@ def _draw_settings(stdscr):
                 _safe_addnstr(stdscr, row, lx, hint[: max_x - lx - 1], max_x - lx - 1, attrs["dim"])
             row += 1
 
-    # ── Helper: draw page 2 (Credentials) ────────────────────────────────────
+    # Helper: draw page 2 (Credentials)
     def _draw_page2(max_y, max_x):
         nonlocal page2_scroll
         content_start = 3
@@ -5817,7 +5250,7 @@ def _draw_settings(stdscr):
                 _safe_addnstr(stdscr, screen_row, 2, section[: max_x - 3], max_x - 3, attrs["accent"] | curses.A_BOLD)
             else:
                 entry = crow["entry"]
-                enabled = is_enabled(entry, cred_overrides)
+                enabled = _is_enabled(entry, cred_overrides)
                 is_current = row_idx == current_row_idx
                 has_warn = "warning" in entry
 
@@ -5849,7 +5282,7 @@ def _draw_settings(stdscr):
                 if nx < max_x - 4:
                     _safe_addnstr(stdscr, screen_row, nx, path_hint[: max_x - nx - 1], max_x - nx - 1, attrs["dim"])
 
-    # ── Helper: draw footer ───────────────────────────────────────────────────
+    # Helper: draw footer
     def _draw_footer(max_y, max_x):
         footer_row = max_y - 2
 
@@ -5898,7 +5331,7 @@ def _draw_settings(stdscr):
             nav = "  \u2191\u2193/jk navigate  Space toggle  \u2190\u2192/hl/Tab page  s save  q/Esc cancel"
         _safe_addnstr(stdscr, max_y - 1, 0, nav[: max_x - 1], max_x - 1, attrs["dim"])
 
-    # ── Main event loop ───────────────────────────────────────────────────────
+    # Main event loop
     while True:
         stdscr.erase()
         max_y, max_x = stdscr.getmaxyx()
@@ -5942,7 +5375,7 @@ def _draw_settings(stdscr):
         if key == -1:
             continue
 
-        # ── Page navigation ──────────────────────────────────────────────────
+        # Page navigation
         # Only Tab / Shift-Tab switch pages.  ←/→ are reserved for per-page use.
         if key == ord("\t"):  # Tab → next page
             current_page = (current_page + 1) % n_pages
@@ -5951,7 +5384,7 @@ def _draw_settings(stdscr):
             current_page = (current_page - 1) % n_pages
             continue
 
-        # ── Global keys ──────────────────────────────────────────────────────
+        # Global keys
         elif key in (ord("q"), 27):  # Esc / q → cancel
             # Restore original theme on cancel
             set_current_theme(original_theme)
@@ -6084,11 +5517,10 @@ def _draw_settings(stdscr):
                 page2_cursor = min(len(cred_selectable) - 1, page2_cursor + 5)
             elif key == ord(" "):
                 entry = cred_rows[cred_selectable[page2_cursor]]["entry"]
-                new_val = not is_enabled(entry, cred_overrides)
+                new_val = not _is_enabled(entry, cred_overrides)
                 cred_overrides[entry["id"]] = new_val
                 if new_val and entry["id"] in ("gh", "glab"):
                     cred_overrides["gitconfig"] = True
-
 
 def interactive_settings():
     """Open the multi-page settings TUI, save on confirm, and apply changes."""
@@ -6098,7 +5530,7 @@ def interactive_settings():
         print("Cancelled.")
         return
 
-    # ── Persist all settings in a single atomic write ──────────────────────────
+    # Persist all settings in a single atomic write
     new_theme = result.get("theme", get_current_theme())
     if new_theme in THEMES:
         set_current_theme(new_theme)
@@ -6147,7 +5579,6 @@ def interactive_settings():
     print()
     print(_c(C("success"), "Settings saved and applied."))
 
-
 ### Keychain isolation (macOS)
 #
 # [keychain-impl] Empirical verifications performed 2026-04-20 on macOS 25.2.0:
@@ -6172,18 +5603,11 @@ _KC_SERVICE = "com.altergo.account-unlock"
 _KC_GUID = "{87191ca3-0fc9-11d4-849a-000502b52122}"  # Apple CSSM DL GUID — constant across all Macs
 _KC_SUBSERVICE_TYPE = 6  # CSSM_SERVICE_DL
 
-
 class KeychainError(Exception):
     """Raised when a /usr/bin/security operation fails in an unexpected way."""
 
-
 def _sec(argv: list, *, check: bool = True, timeout: int = 10) -> subprocess.CompletedProcess:
-    """Thin wrapper around /usr/bin/security.
-
-    Prepends SECURITY_CMD to argv and runs it. If check=True and the process
-    exits non-zero, raises KeychainError with stderr context. Catches a missing
-    binary and re-raises as KeychainError so callers get a uniform exception.
-    """
+    """Thin wrapper around /usr/bin/security."""
     try:
         r = subprocess.run(
             [SECURITY_CMD] + argv,
@@ -6197,24 +5621,16 @@ def _sec(argv: list, *, check: bool = True, timeout: int = 10) -> subprocess.Com
         raise KeychainError(f"security {argv[0]} failed (exit {r.returncode}): {r.stderr.strip()}")
     return r
 
-
 def _keychain_path(account_home: Path) -> Path:
     """Return the per-account keychain file path. Pure."""
     return account_home / "Library" / "Keychains" / "login.keychain-db"
-
 
 def _keychain_prefs_path(account_home: Path) -> Path:
     """Return the per-account security preferences plist path. Pure."""
     return account_home / "Library" / "Preferences" / "com.apple.security.plist"
 
-
 def _write_keychain_prefs(account_home: Path) -> None:
-    """Write com.apple.security.plist so processes with HOME=account_home use the per-account keychain.
-
-    Uses the legacy DbName form ("login.keychain" without "-db") — this is what
-    macOS itself writes and what the Security framework resolves. The on-disk
-    keychain file is still named login.keychain-db; both names work.
-    """
+    """Write com.apple.security.plist so processes with HOME=account_home use the per-account keychain."""
     prefs_path = _keychain_prefs_path(account_home)
     prefs_path.parent.mkdir(parents=True, exist_ok=True)
     plist_data = {
@@ -6229,16 +5645,8 @@ def _write_keychain_prefs(account_home: Path) -> None:
     with open(prefs_path, "wb") as f:
         plistlib.dump(plist_data, f, fmt=plistlib.FMT_XML)
 
-
 def _create_account_keychain(account_home: Path, slug: str) -> None:
-    """Create the per-account keychain and register an unlock entry in the login keychain.
-
-    Idempotent: if the keychain file already exists, skips creation and reuses
-    whatever password is already stored. The unlock entry in the login keychain
-    is deleted and re-added to ensure it is current (pre-flight idempotency).
-
-    Requires macOS (darwin). Callers should guard with sys.platform == "darwin".
-    """
+    """Create the per-account keychain and register an unlock entry in the login keychain."""
     kc_path = _keychain_path(account_home)
     kc_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -6284,14 +5692,8 @@ def _create_account_keychain(account_home: Path, slug: str) -> None:
 
     _write_keychain_prefs(account_home)
 
-
 def _unlock_account_keychain(account_home: Path, slug: str) -> None:
-    """Unlock the per-account keychain using the stored password.
-
-    Reads the unlock password from the real login keychain (already unlocked
-    since GUI login) and calls security unlock-keychain on the per-account
-    keychain. The keychain stays unlocked for the lifetime of the session.
-    """
+    """Unlock the per-account keychain using the stored password."""
     r = _sec(["find-generic-password", "-s", _KC_SERVICE, "-a", slug, "-w"], check=False)
     if r.returncode != 0:
         stderr = r.stderr.strip()
@@ -6316,39 +5718,19 @@ def _unlock_account_keychain(account_home: Path, slug: str) -> None:
             ) from e
         raise
 
-
 def _delete_account_keychain(account_home: Path, slug: str) -> None:
-    """Remove the per-account keychain and its unlock entry from the login keychain.
-
-    Tolerates missing keychain file or missing unlock entry (both check=False).
-    The caller (do_delete_account) handles rmtree for any residue.
-    """
+    """Remove the per-account keychain and its unlock entry from the login keychain."""
     _sec(["delete-keychain", str(_keychain_path(account_home))], check=False)
     _sec(["delete-generic-password", "-s", _KC_SERVICE, "-a", slug], check=False)
-
 
 def _is_keychain_isolated(meta: dict | None) -> bool:
     """Return True if the account metadata requests per-account keychain isolation."""
     return bool(meta) and meta.get("keychain") == "isolated"
 
-
-# --- Launch ---
-
+# Launch
 
 def _build_alt_env(account: str = "default") -> dict:
-    """Return a copy of the environment with HOME set to the account home.
-
-    For the "native" account, $HOME is left unchanged — the provider runs in
-    the real user home without any altergo isolation.
-
-    If account_home/.local/bin exists, it is prepended to PATH so that Claude
-    Code's startup PATH check (which resolves relative to $HOME) doesn't warn
-    about a missing native-installation directory.  The guard on existence is
-    intentional: we only inject the directory when something has actually been
-    installed there (e.g. via `claude update` inside an altergo session).
-    Without the guard we would prepend a ghost path on every launch and give
-    an uncontrolled write target higher precedence than all system binaries.
-    """
+    """Return a copy of the environment with HOME set to the account home."""
     if account == _NATIVE_ACCOUNT:
         return os.environ.copy()
     account_home, _ = resolve_account(account)
@@ -6369,14 +5751,8 @@ def _build_alt_env(account: str = "default") -> dict:
             env["PATH"] = acct_local_bin_str + ":" + env.get("PATH", "")
     return env
 
-
 def _find_claude() -> str | None:
-    """Find the claude binary, checking PATH and common install locations.
-
-    PATH may be incomplete if the user invokes altergo before their shell rc
-    has finished loading (e.g., typing very quickly in a new terminal window).
-    The fallbacks cover the most common Claude Code install locations.
-    """
+    """Find the claude binary, checking PATH and common install locations."""
     path = shutil.which("claude")
     if path:
         return path
@@ -6391,17 +5767,8 @@ def _find_claude() -> str | None:
             return str(p)
     return None
 
-
 def _sweep_existing_accounts() -> bool:
-    """Repair any accounts that still have real dirs where symlinks are expected.
-
-    Reads each account's v2 metadata to determine its configured provider and
-    sweeps the correct dot-dir.  Falls back to Claude-only for legacy accounts
-    (no account.json).
-
-    Called from --config to repair accounts that still have real dirs where
-    symlinks are expected.  Silent unless something actually changes.
-    """
+    """Repair any accounts that still have real dirs where symlinks are expected."""
     changed = False
     for acct in list_accounts():
         account_home, account_claude = resolve_account(acct)
@@ -6428,31 +5795,17 @@ def _sweep_existing_accounts() -> bool:
                     changed = True
     return changed
 
-
 def _tmux_available() -> bool:
     """Return True if tmux is installed and reachable on PATH."""
     return shutil.which("tmux") is not None
 
-
 def _tmux_session_name(account: str, provider: str) -> str:
-    """Return a tmux session name for an altergo session.
-
-    Format: ``<account>/<provider>`` (e.g. ``hocus/claude``).
-    Short and readable — shown verbatim in the status bar session block.
-    No random suffix needed: destroy-unattached keeps at most one live
-    session per account, so uniqueness within a launch is guaranteed.
-    """
+    """Return a tmux session name for an altergo session."""
     safe = account.replace(".", "-").replace(":", "-")
     return f"{safe}/{provider}"
 
-
 def _tmux_unique_session_name(base: str) -> str:
-    """Return a tmux session name that does not collide with any existing session.
-
-    If *base* is free, returns it unchanged.  If ``hocus/claude`` already
-    exists, tries ``hocus/claude-2``, ``hocus/claude-3``, … until a free
-    slot is found.
-    """
+    """Return a tmux session name that does not collide with any existing session."""
     try:
         result = subprocess.run(
             ["tmux", "list-sessions", "-F", "#{session_name}"],
@@ -6473,20 +5826,8 @@ def _tmux_unique_session_name(base: str) -> str:
             return candidate
         n += 1
 
-
 def _build_tmux_cmd(inner_cmd: list, env: dict, session_name: str, cwd: str | None = None) -> list:
-    """Wrap *inner_cmd* in a ``tmux new-session`` call.
-
-    The altered HOME and PATH from the altergo account env are forwarded into
-    the tmux window via ``-e`` flags so the account context is fully preserved
-    inside the session.  tmux itself runs in the caller's real environment.
-
-    If *cwd* is provided, ``-c <cwd>`` is passed to ``tmux new-session`` so the
-    window starts in the session's original working directory.
-
-    On non-zero exit the pane pauses with a prompt so the user can read any
-    error output before tmux closes the alternate screen and the text is lost.
-    """
+    """Wrap *inner_cmd* in a ``tmux new-session`` call."""
     # Build a POSIX shell wrapper: run the command, then pause for Enter before
     # the tmux session closes so the provider's exit screen stays visible until
     # the user dismisses it. Signal exits (130/131) skip the prompt.
@@ -6517,7 +5858,6 @@ def _build_tmux_cmd(inner_cmd: list, env: dict, session_name: str, cwd: str | No
     tmux_cmd += ["--", "sh", "-c", wrapper]
     return tmux_cmd
 
-
 def launch_claude(
     account: str = "default",
     args=None,
@@ -6525,17 +5865,7 @@ def launch_claude(
     force_tmux: bool = False,
     cwd: "str | Path | None" = None,
 ):
-    """Launch a provider CLI with account HOME, passing args through unchanged.
-
-    If provider is None, reads account.json to determine which provider to use.
-    Falls back to "claude" for legacy accounts with no metadata.
-
-    If *cwd* is provided and resolves to an existing directory the provider CLI
-    is started with that as its working directory.  This lets ``--recall`` and
-    ``--search`` resume a session in the folder where it originally ran.  If the
-    path no longer exists a dim notice is printed and the launch continues from
-    the caller's cwd instead.
-    """
+    """Launch a provider CLI with account HOME, passing args through unchanged."""
     account_home, _ = resolve_account(account)
 
     # Resolve provider
@@ -6661,7 +5991,6 @@ def launch_claude(
     _print_launch_message()
     return result.returncode
 
-
 def launch_shell(account: str = "default"):
     """Open an interactive shell with HOME set to account directory."""
     account_home, _ = resolve_account(account)
@@ -6719,7 +6048,6 @@ def launch_shell(account: str = "default"):
     _print_launch_message()
     return result.returncode
 
-
 def launch_command(account: str = "default", cmd_args=None):
     """Run an arbitrary command with HOME set to account directory."""
     if not cmd_args:
@@ -6758,9 +6086,7 @@ def launch_command(account: str = "default", cmd_args=None):
     _print_launch_message()
     return result.returncode
 
-
-# --- Account name disambiguation helper ---
-
+# Account name disambiguation helper
 
 _KNOWN_COMMANDS = frozenset(
     [
@@ -6785,7 +6111,6 @@ _KNOWN_COMMANDS = frozenset(
     ]
 )
 
-
 def _looks_like_account(token: str) -> bool:
     """Return True if token could be an account name (not a flag, not a known command)."""
     if token.startswith("-"):
@@ -6795,17 +6120,10 @@ def _looks_like_account(token: str) -> bool:
     # Must look like a valid account name (alphanumeric start, no spaces)
     return bool(re.match(r"^[a-zA-Z0-9][a-zA-Z0-9_-]*$", token))
 
-
-# --- Interactive prompt helpers ---
-
+# Interactive prompt helpers
 
 def _prompt_new_account_name_tui(existing: list) -> str | None:
-    """Full-screen curses name-entry for a brand-new account.
-
-    Returns the validated name on Enter, or None on Esc/cancel.
-    Exits with a clear error when curses isn't available — altergo has no
-    text-based naming fallback anymore.
-    """
+    """Full-screen curses name-entry for a brand-new account."""
     if not sys.stdin.isatty() or not sys.stdout.isatty():
         print(
             "altergo: creating an account requires an interactive terminal.\n"
@@ -6935,17 +6253,8 @@ def _prompt_new_account_name_tui(existing: list) -> str | None:
         return None
     return state["result"]
 
-
 def _prompt_provider_picker(current_provider: str | None = None) -> str:
-    """Curses-based single-select provider picker.
-
-    Arrow keys navigate, Enter confirms the highlighted provider.
-
-    current_provider: pre-highlighted provider ID (None = detect installed or "claude").
-
-    Returns a single provider_id string.
-    Falls back to a plain-text prompt when stdin/stdout are not a TTY.
-    """
+    """Curses-based single-select provider picker."""
     # Build ordered list: installed ones first, then others
     installed = [pid for pid, p in PROVIDERS.items() if shutil.which(p["binary"])]
     all_providers = list(PROVIDERS.keys())
@@ -7040,15 +6349,8 @@ def _prompt_provider_picker(current_provider: str | None = None) -> str:
 
     return ordered[state["cursor"]]
 
-
 def _build_config_rows(accounts: list) -> list:
-    """Produce the row list rendered by the --config picker.
-
-    Row kinds:
-        ("account", name, provider_id, is_active, email)
-        ("native",  "native", None, is_active, None)   — passthrough to real $HOME
-        ("create",  None, None, False, None)
-    """
+    """Produce the row list rendered by the --config picker."""
     active = get_active_account()
     rows = []
     for acct in accounts:
@@ -7069,12 +6371,8 @@ def _build_config_rows(accounts: list) -> list:
     rows.append(("create", None, None, False, None))
     return rows
 
-
 def _confirm_delete_account_tui(account: str, path) -> bool:
-    """Full-screen warning/confirm for irreversible account deletion.
-
-    Returns True if the user pressed 'y', False on n/Esc/anything else.
-    """
+    """Full-screen warning/confirm for irreversible account deletion."""
 
     def _draw(stdscr, state):
         curses.curs_set(0)
@@ -7148,18 +6446,8 @@ def _confirm_delete_account_tui(account: str, path) -> bool:
         return False
     return state["confirmed"]
 
-
 def _run_config_picker(accounts: list, start_cursor: int = 0) -> tuple | None:
-    """Render the config picker once and return an action tuple:
-
-        ("account", name)     — reconfigure this account
-        ("create",)           — create a new account
-        ("remove", name, idx) — user pressed r/Delete (awaiting confirmation)
-        None                  — user quit
-
-    Set-default (d) is handled inline with a confirmation flash — the row
-    list is rebuilt in place so the ● marker moves without returning.
-    """
+    """Render the config picker once and return an action tuple:."""
 
     def _draw(stdscr, state):
         curses.curs_set(0)
@@ -7351,16 +6639,8 @@ def _run_config_picker(accounts: list, start_cursor: int = 0) -> tuple | None:
         return ("account", picked[1])
     return ("create",)
 
-
 def _prompt_config_menu(existing: list) -> str | None:
-    """Curses TUI listing existing accounts + a 'Create new' entry.
-
-    Returns the selected account name (either an existing one to reconfigure,
-    or a freshly typed name for a new account). Returns None when the user
-    cancels with q/Esc.
-
-    Requires a TTY — there is no text-prompt fallback.
-    """
+    """Curses TUI listing existing accounts + a 'Create new' entry."""
     if not sys.stdin.isatty() or not sys.stdout.isatty():
         print(
             "altergo: --config requires an interactive terminal.\n  Use: altergo --config <name> --provider <provider>",
@@ -7397,12 +6677,10 @@ def _prompt_config_menu(existing: list) -> str | None:
             accounts = list_accounts()
             cursor = min(cursor, max(0, len(accounts) - 1))
 
-
-# --- Goodbye messages ---
+# Goodbye messages
 #
 # The bank lives in :mod:`altergo_greetings` (``GOODBYES``) alongside the
 # greeting bank — both are session-message copy and share the same voice rules.
-
 
 def _print_launch_message():
     """Print a witty handoff line to stderr before handing off to an AI session."""
@@ -7423,8 +6701,7 @@ def _print_launch_message():
     colored = "".join(parts) + "\033[0m"
     print(f"\n  {emoji}  {colored}\n", file=sys.stderr)
 
-
-# --- Interactive provider+account launcher ---
+# Interactive provider+account launcher
 
 _LAUNCHER_PROVIDERS = [
     {"id": "claude", "label": "anthropic", "binary": "claude"},
@@ -7433,13 +6710,8 @@ _LAUNCHER_PROVIDERS = [
     {"id": "copilot", "label": "github", "binary": "copilot"},
 ]
 
-
 def build_launcher_menu() -> list:
-    """Build provider-grouped account menu for the interactive launcher.
-
-    Returns a list of provider dicts:
-        [{"provider_id": str, "label": str, "accounts": [{"name": str, "age": str, "available": bool}]}]
-    """
+    """Build provider-grouped account menu for the interactive launcher."""
     accounts = list_accounts()
     # Group accounts by their provider(s) from account.json.  Multi-provider
     # accounts appear under every provider they host — the user picks which
@@ -7501,14 +6773,8 @@ def build_launcher_menu() -> list:
         menu.append({"provider_id": pid, "label": label, "accounts": chips})
     return menu
 
-
 def _draw_launcher(stdscr, menu, context_msg: str | None = None):
-    """Two-axis curses TUI: ↑↓ providers, ←→ account chips. Returns (account, provider_id, shell_mode).
-
-    When ``context_msg`` is supplied, a banner row is rendered between the
-    header separator and the provider grid to explain why the user landed
-    here (e.g. pass-through of --yolo-resume <id>).
-    """
+    """Two-axis curses TUI: ↑↓ providers, ←→ account chips. Returns (account, provider_id, shell_mode)."""
     curses.curs_set(0)
     attrs = _picker_attrs("launcher")
     stdscr.timeout(80)
@@ -7661,15 +6927,8 @@ def _draw_launcher(stdscr, menu, context_msg: str | None = None):
         elif key == curses.KEY_RESIZE:
             continue
 
-
 def _first_run_onboarding():
-    """Full-screen onboarding for brand-new users with zero accounts configured.
-
-    Shows a thin-font logo, two lines of copy, a config-options hint, and an
-    inline name prompt. On a valid name the function runs do_config() then drops
-    straight into interactive_launcher() so the user never has to type a second
-    command. On empty input or Ctrl-C it prints a hint and exits cleanly.
-    """
+    """Full-screen onboarding for brand-new users with zero accounts configured."""
     # Rich is always present (show_banner uses it); import locally so the
     # function is self-contained and mirrors the pattern in show_banner().
     try:
@@ -7683,7 +6942,7 @@ def _first_run_onboarding():
         print("altergo: no accounts found. Run 'altergo --config' first.", file=sys.stderr)
         sys.exit(1)
 
-    # ── Logo ──────────────────────────────────────────────────────────────────
+    # Logo
     # Use pyfiglet's "thin" font (onboarding-only — show_banner stays smslant).
     # Apply the current theme's banner gradient character-by-character across
     # all non-whitespace glyphs so it reads as a gradient sweep.
@@ -7721,7 +6980,7 @@ def _first_run_onboarding():
 
         console.print(text)
 
-    # ── Spinner beat — gives the screen a living feel for ~0.8 s ─────────────
+    # Spinner beat — gives the screen a living feel for ~0.8 s
     # Pick a spinner that matches the active theme (same helper the banner uses).
     try:
         import altergo_greetings as _greet
@@ -7747,7 +7006,7 @@ def _first_run_onboarding():
     with Live(Padding(_spin_row, (0, 0, 0, 2)), console=console, refresh_per_second=12, transient=True):
         time.sleep(0.75)
 
-    # ── Copy ──────────────────────────────────────────────────────────────────
+    # Copy
     # Determine theme accent color for styled hint lines (brand/accent hex stop).
     _mid_hex = grad[len(grad) // 2] if len(grad) > 2 else grad[0]
     console.print()
@@ -7778,7 +7037,7 @@ def _first_run_onboarding():
     console.print(_hint2)
     console.print()
 
-    # ── Name prompt loop ──────────────────────────────────────────────────────
+    # Name prompt loop
     while True:
         try:
             raw = Prompt.ask(
@@ -7821,7 +7080,7 @@ def _first_run_onboarding():
         # Valid name — proceed.
         break
 
-    # ── Provider selection ────────────────────────────────────────────────────
+    # Provider selection
     # Use the interactive picker so the user explicitly chooses.
     # If stdin is not a TTY (non-interactive / CI), fall back to "claude".
     if sys.stdin.isatty():
@@ -7830,24 +7089,13 @@ def _first_run_onboarding():
         detected_providers = [pid for pid, p in PROVIDERS.items() if shutil.which(p["binary"])]
         chosen_provider = detected_providers[0] if detected_providers else "claude"
 
-    # ── Run config then drop into the launcher ───────────────────────────────
+    # Run config then drop into the launcher
     console.print()
     do_config(raw, chosen_provider)
     interactive_launcher()
 
-
 def interactive_launcher(pending_args: list | None = None, context_msg: str | None = None):
-    """Show the provider+account picker and launch the selected account.
-
-    When ``pending_args`` is supplied, the picker renders a context banner
-    (``context_msg``) explaining the pass-through, promotes the chosen
-    account to the active one via ``set_active_account``, forwards the
-    args to the single launch, and returns instead of looping — so the
-    user isn't dropped back into a picker after their --yolo-resume exits.
-
-    Otherwise it loops: after each session exits the menu is shown again
-    so the user can launch another account or press q to quit.
-    """
+    """Show the provider+account picker and launch the selected account."""
     single_shot = pending_args is not None
     while True:
         menu = build_launcher_menu()
@@ -7874,9 +7122,7 @@ def interactive_launcher(pending_args: list | None = None, context_msg: str | No
             launch_claude(account, provider=provider_id)
         # Session exited — loop back to the menu
 
-
-# --- Main ---
-
+# Main
 
 def main():
     # Load the user's persisted theme before anything prints so the banner,
@@ -8138,7 +7384,7 @@ def main():
         launch_claude(p_account, p_remaining, provider=p_provider, force_tmux=True)
         sys.exit(0)
 
-    # ── Account name as first positional arg ──────────────────────────────────
+    # Account name as first positional arg
     # altergo <name> [sub-command | claude flags...]
     account = None
     if args and _looks_like_account(args[0]):
@@ -8158,7 +7404,7 @@ def main():
             account = candidate
             args = args[1:]
 
-    # ── Implicit account resolution (no positional name given) ───────────────
+    # Implicit account resolution (no positional name given)
     if account is None:
         _all_accounts = list_accounts()
         _active = get_active_account()
@@ -8260,7 +7506,7 @@ def main():
     if args and args[0] == "--":
         sys.exit(launch_command(account, args[1:]))
 
-    # ── Everything else → pass straight through to provider ──────────────────
+    # Everything else → pass straight through to provider
     # altergo                    → provider (active account)
     # altergo work               → provider (work account, args=[])
     # altergo --resume x         → provider --resume x
@@ -8281,7 +7527,6 @@ def main():
         sys.exit(1)
 
     sys.exit(launch_claude(account, args, provider=provider))
-
 
 if __name__ == "__main__":
     main()

@@ -3,26 +3,25 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>altergo — Don't break flow. Switch accounts.</title>
-  <meta name="description" content="Multi-account session manager for Claude Code, Gemini CLI, Codex, and GitHub Copilot. Switch accounts without losing your flow — rate-limited, mid-session, or running two model tiers in tandem. Open source." />
+  <title>altergo — Switch AI Accounts Without Breaking Flow | CLI for Claude, Gemini, Codex</title>
+  <meta name="description" content="Swap Claude Code, Gemini CLI, Codex, and Copilot credentials in one command. Same project, same history, no ramp-up. Named accounts, isolated credentials, shared history. Free, open source, macOS &amp; Linux." />
+  <meta name="keywords" content="altergo, claude code accounts, gemini cli switch, AI account manager, codex credentials, copilot accounts, multi-account AI, session manager, pip install altergo" />
   <meta name="robots" content="index, follow" />
   <link rel="canonical" href="https://altergo.pixelabs.net/" />
 
   <!-- Open Graph -->
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://altergo.pixelabs.net/" />
-  <meta property="og:title" content="altergo — Don't break flow. Switch accounts." />
-  <meta property="og:description" content="Named accounts — personal, pro, sideproject. One command to switch. Credentials isolated, history shared." />
-  <meta property="og:image" content="https://altergo.pixelabs.net/og-image.png" />
-  <meta property="og:image:width" content="1200" />
-  <meta property="og:image:height" content="630" />
-  <meta property="og:image:alt" content="Altergo — multi-account session manager for AI coding assistants" />
-  <meta property="og:site_name" content="Altergo" />
+  <meta property="og:title" content="altergo — Switch AI accounts without breaking flow" />
+  <meta property="og:description" content="Swap Claude Code, Gemini CLI, Codex, and Copilot credentials in one command. Same project, same history, no ramp-up." />
+  <meta property="og:image" content="https://altergo.pixelabs.net/images/gits/ghost_duality.png" />
+  <meta property="og:image:alt" content="altergo — cyberpunk ghost duality, representing seamless AI account switching" />
+  <meta property="og:site_name" content="altergo" />
   <meta property="og:locale" content="en_US" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="altergo — Don't break flow. Switch accounts." />
-  <meta name="twitter:description" content="Named accounts — personal, pro, sideproject. `altergo backup` — that's it. Credentials isolated, history shared." />
-  <meta name="twitter:image" content="https://altergo.pixelabs.net/og-image.png" />
+  <meta name="twitter:title" content="altergo — Switch AI accounts without breaking flow" />
+  <meta name="twitter:description" content="Swap Claude Code, Gemini CLI, Codex, and Copilot credentials in one command. Same project, same history, no ramp-up." />
+  <meta name="twitter:image" content="https://altergo.pixelabs.net/images/gits/ghost_duality.png" />
   <meta name="twitter:creator" content="@thepixelabs" />
 
   <!-- JSON-LD Structured Data -->
@@ -30,8 +29,8 @@
   {
     "@context": "https://schema.org",
     "@type": "SoftwareApplication",
-    "name": "Altergo",
-    "description": "Multi-account session manager for AI coding assistants — Claude Code, Gemini CLI, Codex, and GitHub Copilot",
+    "name": "altergo",
+    "description": "Swap Claude Code, Gemini CLI, Codex, and Copilot credentials in one command. Same project, same history, no ramp-up.",
     "applicationCategory": "DeveloperApplication",
     "operatingSystem": "macOS, Linux",
     "url": "https://altergo.pixelabs.net",
@@ -210,6 +209,7 @@
     [data-theme="light"] .gits-how-bg img {
       opacity: 0.32;
       filter: invert(1) hue-rotate(185deg) saturate(0.4) brightness(1.2) contrast(0.8);
+      object-position: center top;
     }
     [data-theme="light"] .recall-highlight-img {
       opacity: 0.45;
@@ -777,7 +777,7 @@
 
     .hero-inner {
       display: grid;
-      grid-template-columns: minmax(360px, 1fr) 1fr;
+      grid-template-columns: minmax(0, 1fr) 1fr;
       gap: 48px;
       align-items: center;
     }
@@ -793,7 +793,9 @@
       .hero-inner { gap: 28px; }
     }
 
-    .hero-content { order: 2; }
+    @media (min-width: 901px) {
+      .hero-content { order: 2; }
+    }
 
     .hero-eyebrow {
       display: inline-flex;
@@ -917,8 +919,10 @@
       border: 1px solid var(--border-subtle);
       border-radius: var(--radius-md);
       padding: 13px 18px;
-      max-width: fit-content;
+      max-width: 100%;
       width: auto;
+      min-width: 0;
+      overflow: hidden;
     }
     .snippet-divider {
       width: 1px;
@@ -932,7 +936,10 @@
       color: var(--cyan);
       letter-spacing: 0.02em;
       white-space: nowrap;
-      flex-shrink: 0;
+      flex-shrink: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
     .copy-btn {
       margin-left: auto;
@@ -1277,7 +1284,11 @@
       letter-spacing: -0.01em;
       white-space: nowrap;
       overflow: hidden;
-      text-overflow: clip;
+      text-overflow: ellipsis;
+      max-width: 100%;
+    }
+    @media (max-width: 400px) {
+      .step-command { font-size: 0.88rem; }
     }
     .step-command .prompt {
       color: var(--green);
@@ -1818,6 +1829,11 @@
       background-position: center 40%;
       will-change: transform;
     }
+    @media (max-width: 900px) {
+      .hero-bg-img {
+        background-position: calc(50% + 500px) 40%;
+      }
+    }
     .hero-bg-img::after {
       content: '';
       position: absolute;
@@ -2061,21 +2077,19 @@
     }
     .persistent-layout {
       display: grid;
-      grid-template-columns: 1fr 480px;
-      gap: 64px;
-      align-items: center;
-    }
-    @media (max-width: 1100px) {
-      .persistent-layout { grid-template-columns: 1fr 360px; gap: 40px; }
-    }
-    @media (max-width: 800px) {
-      .persistent-layout { grid-template-columns: 1fr; gap: 32px; }
+      grid-template-columns: 1fr;
+      position: relative;
+      z-index: 1;
     }
     .persistent-ghost-wrap {
-      position: relative;
-      display: flex;
-      align-items: center;
-      justify-content: center;
+      position: absolute;
+      right: -60px;
+      top: 50%;
+      transform: translateY(-50%);
+      pointer-events: none;
+      z-index: 0;
+      width: 560px;
+      opacity: 0.55;
     }
     .persistent-ghost-wrap::before {
       content: '';
@@ -2093,7 +2107,6 @@
     .persistent-ghost-img {
       display: block;
       width: 100%;
-      max-width: 480px;
       mix-blend-mode: screen;
       opacity: 0.90;
       animation: ghost-float 9s ease-in-out infinite, ghost-glow-pulse 5s ease-in-out infinite;
@@ -2101,7 +2114,15 @@
       filter: drop-shadow(0 0 40px rgba(0,229,255,0.30)) drop-shadow(0 0 100px rgba(99,102,241,0.20));
     }
     @media (max-width: 800px) {
-      .persistent-ghost-img { max-width: 320px; margin: 0 auto; display: block; }
+      .persistent-ghost-wrap {
+        position: absolute;
+        bottom: -40px;
+        right: -20px;
+        top: auto;
+        transform: none;
+        width: 260px;
+        opacity: 0.35;
+      }
     }
 
     /* Scroll progress bar — GITS colors */
@@ -2300,6 +2321,7 @@
     /* #how section background in light mode */
     [data-theme="light"] #how {
       background: rgba(165, 190, 228, 0.55) !important;
+      padding-bottom: 96px !important;
     }
 
     /* Hero data rain — pale indigo tones */
@@ -2375,6 +2397,118 @@
     [data-theme="light"] .section {
       border-top: 1px solid rgba(99, 102, 241, 0.06);
     }
+
+    /* ============================================================
+       FIXED GHOST BACKGROUND — cross-browser mobile fix
+       iOS Safari doesn't support background-attachment: fixed on
+       body/sections, so we use a separate fixed div behind content.
+    ============================================================ */
+    #ghost-bg-fixed {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+      background-image: url('images/gits/ghost_circle.png');
+      background-size: 70vmin;
+      background-repeat: no-repeat;
+      background-position: center center;
+      opacity: 0.06;
+      mix-blend-mode: screen;
+      /* Promote to own compositing layer */
+      will-change: transform;
+    }
+    /* On desktop the hero already has its own rich background layers,
+       so we only show this fixed ghost prominently on mobile */
+    @media (min-width: 769px) {
+      #ghost-bg-fixed {
+        opacity: 0.04;
+        background-size: 55vmin;
+      }
+    }
+    @media (max-width: 480px) {
+      #ghost-bg-fixed {
+        opacity: 0.07;
+        background-size: 85vmin;
+      }
+    }
+    [data-theme="light"] #ghost-bg-fixed {
+      opacity: 0.04;
+      filter: invert(1) hue-rotate(185deg) saturate(0.4) brightness(1.1);
+    }
+
+    /* ============================================================
+       MOBILE OVERFLOW — root-cause fixes
+    ============================================================ */
+    html, body {
+      max-width: 100%;
+    }
+
+    /* Prevent any direct children of container from blowing out */
+    .container > * {
+      min-width: 0;
+    }
+
+    /* Grid children need min-width: 0 to respect their track constraints */
+    .hero-inner > *,
+    .gits-two-col > *,
+    .why-grid > *,
+    .how-steps > *,
+    .features-grid > *,
+    .docs-grid > *,
+    .install-grid > *,
+    .persistent-layout > * {
+      min-width: 0;
+    }
+
+    /* Hero actions: stack on very narrow screens */
+    @media (max-width: 360px) {
+      .hero-actions {
+        flex-direction: column;
+      }
+      .hero-actions .btn {
+        width: 100%;
+        justify-content: center;
+      }
+    }
+
+    /* Pypi stat: hide the label text on very small screens to avoid squeeze */
+    @media (max-width: 420px) {
+      .pypi-stat-label {
+        display: none;
+      }
+    }
+
+    /* Hero meta pills: allow more aggressive wrapping */
+    .hero-meta {
+      overflow: hidden;
+    }
+
+    /* Code blocks: ensure long URLs wrap on mobile */
+    @media (max-width: 600px) {
+      .code-block code {
+        white-space: pre-wrap;
+        word-break: break-all;
+      }
+    }
+
+    /* Footer text: wrap gracefully on small screens */
+    @media (max-width: 600px) {
+      .footer-inner {
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+      .footer-inner span {
+        margin-left: 0 !important;
+        font-size: 0.72rem !important;
+      }
+    }
+
+    /* recall-highlight-content padding on mobile */
+    @media (max-width: 480px) {
+      .recall-highlight-content {
+        padding: 20px 16px;
+      }
+    }
   </style>
 </head>
 <body>
@@ -2388,6 +2522,11 @@
   <!-- Canvas background -->
   <canvas id="canvas-bg" aria-hidden="true" role="presentation"></canvas>
 
+  <!-- Fixed ghost background — visible on all screen sizes including mobile.
+       Uses a separate fixed div because iOS Safari doesn't support
+       background-attachment: fixed on body/section elements. -->
+  <div id="ghost-bg-fixed" aria-hidden="true" role="presentation"></div>
+
   <!-- ============================================================
        NAV
   ============================================================ -->
@@ -2399,7 +2538,7 @@
             <span class="brand-alt" aria-hidden="true">alt</span><span class="brand-chop" aria-hidden="true"></span><span class="brand-e" aria-hidden="true">e</span><span class="brand-r" aria-hidden="true">r</span><span class="brand-go" aria-hidden="true">go</span>
           </a>
           <a href="https://github.com/thepixelabs/altergo/releases" target="_blank" rel="noopener noreferrer" class="nav-version-link" aria-label="View current version v0.30.0 on GitHub">
-            <span class="nav-version">v0.30.0</span>
+            <span class="nav-version" id="nav-version-badge">v0.30.0</span>
           </a>
         </div>
 
@@ -2991,11 +3130,11 @@
           </div>
         </div>
           </div><!-- end left column -->
-
-          <div class="persistent-ghost-wrap reveal reveal-delay-2" aria-hidden="true">
-            <img src="images/gits/ghost_circle.png" alt="" class="persistent-ghost-img" role="presentation" />
-          </div>
         </div><!-- end persistent-layout -->
+
+        <div class="persistent-ghost-wrap" aria-hidden="true">
+          <img src="images/gits/ghost_circle.png" alt="" class="persistent-ghost-img" role="presentation" />
+        </div>
       </div>
     </section>
 
@@ -4025,6 +4164,47 @@
           timer = setTimeout(run, 600);
         }
       });
+    })();
+  </script>
+
+  <script>
+    (function() {
+      const CACHE_KEY = 'altergo_ver';
+      const CACHE_TS_KEY = 'altergo_ver_ts';
+      const TTL_MS = 2.5 * 24 * 60 * 60 * 1000; // 2.5 days
+      const el = document.getElementById('nav-version-badge');
+      if (!el) return;
+
+      function applyVersion(v) {
+        el.textContent = v;
+        const link = el.closest('a');
+        if (link) link.setAttribute('aria-label', 'View current version ' + v + ' on GitHub');
+      }
+
+      try {
+        const cached = localStorage.getItem(CACHE_KEY);
+        const ts = parseInt(localStorage.getItem(CACHE_TS_KEY) || '0', 10);
+        if (cached && (Date.now() - ts < TTL_MS)) {
+          applyVersion(cached);
+          return;
+        }
+      } catch(e) {}
+
+      fetch('https://api.github.com/repos/thepixelabs/altergo/releases/latest', {
+        headers: { Accept: 'application/vnd.github+json' },
+        cache: 'no-store'
+      })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (!data || !data.tag_name) return;
+        const v = data.tag_name.startsWith('v') ? data.tag_name : 'v' + data.tag_name;
+        applyVersion(v);
+        try {
+          localStorage.setItem(CACHE_KEY, v);
+          localStorage.setItem(CACHE_TS_KEY, String(Date.now()));
+        } catch(e) {}
+      })
+      .catch(() => {});
     })();
   </script>
 </body>

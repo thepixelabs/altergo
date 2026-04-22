@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.42.0 (2026-04-22)
+
+### Features
+
+- **docs**: Add ghost_duality image and update landing page
+  ([`c27860a`](https://github.com/thepixelabs/altergo/commit/c27860ad211467cfc80f32841902186aa49e3ee6))
+
+
 ## v0.41.0 (2026-04-21)
 
 ### Features

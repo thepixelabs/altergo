@@ -32,3 +32,6 @@ htmlcov/
 .claude/
 .mcp.json
 .tasks/
+
+# Raw/staging image generations (not published)
+docs/images/gits/

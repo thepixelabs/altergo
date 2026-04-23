@@ -1,6 +1,74 @@
 # CHANGELOG
 
 
+## v0.43.1 (2026-04-23)
+
+### Bug Fixes
+
+- **yolo-resume**: Honor explicit account token
+  ([#28](https://github.com/thepixelabs/altergo/pull/28),
+  [`bb56ba3`](https://github.com/thepixelabs/altergo/commit/bb56ba38eb2712cfee550d176fa6f2c754d73a10))
+
+`altergo <account> --yolo-resume <id>` was silently dropping the leading account token because the
+  yolo-resume intercept runs before the normal account-parsing block. Native users hit an
+  account-picker prompt that didn't even list 'native'. Parse a leading account from the residual
+  args inside the yolo-resume handler, accepting 'native' or any existing account dir, and forward
+  remaining tokens through to the launch.
+
+### Documentation
+
+- Inject PyPI count at build time, float why-card icons, add favicon
+  ([`e6a95a9`](https://github.com/thepixelabs/altergo/commit/e6a95a9ee39a0447d1a333faff43528d2acb839f))
+
+Client-side fetches to pypistats/shields were hitting 429s from shared visitor IPs; moving the
+  lookup into the Pages build runs it once per deploy (plus a daily scheduled refresh) and falls
+  back to the committed value if upstream is down. Also reflows why-card icons with float +
+  shape-outside so the title/body wrap around the badge instead of stacking under it, and caps the
+  pypi-stat pill width so a long injected count can't blow out the header row.
+
+- Rename 'backup' placeholder account to 'secondary' in examples
+  ([`bc3d6dd`](https://github.com/thepixelabs/altergo/commit/bc3d6ddcf6370fd2c524eff2ad70449fcacf2d59))
+
+The landing page used 'backup' as the example account name throughout (hero, step 3, feature card,
+  install block, reference table, static fallback). With altergo being a credentials-management
+  tool, 'altergo backup' reads like a subcommand verb instead of 'launch the account called backup'.
+  Renamed to 'secondary' everywhere — clearly a noun, unambiguously an account identifier.
+
+- Unify why-card layout, swap cross-platform for keychain card, strip em-dashes
+  ([`90cfb7a`](https://github.com/thepixelabs/altergo/commit/90cfb7aaf7152ff6a4e834ab3fb5c9c67aaa4a72))
+
+why-card icons now use the same plain float+margin mechanic as feature-icon instead of the
+  shape-outside / display:inline / ::after nbsp / clearfix stack that was there. Cross-platform card
+  replaced with a keychain-isolated credentials card, since the landing page had no mention of the
+  per-account keychain feature. Also replaced every em-dash in the file with commas, colons, or
+  periods depending on context, and cleaned up the comma splices the bulk pass introduced.
+
+- **keychain**: Lead with meaning, document UX surfaces, reframe ceiling
+  ([#27](https://github.com/thepixelabs/altergo/pull/27),
+  [`be4ba44`](https://github.com/thepixelabs/altergo/commit/be4ba441882fc6b2c30d060ef5fd638b50dfe2e8))
+
+Clarity pass on the keychain isolation docs (README section + docs/keychain-isolation.md). Triggered
+  by a review loop — the original docs were technically correct but opened with implementation
+  detail (login.keychain-db, DLDBSearchList, com.altergo.account-unlock) before helping a reader
+  understand the two modes or decide which to pick.
+
+Changes: - Open with plain-English framing of system vs isolated; add a minimal "which should I
+  pick?" prose block (not a callout — the decision is asymmetric and a box primes second-guessing).
+  - Document the UX surfaces: the interactive picker's "keychain: isolated" row suffix and the
+  "Current keychain:" line at the top of --config. - Clarify that enabling isolation on an existing
+  account starts with an empty keychain (one re-auth needed). - State the interactive "y" prompt is
+  equivalent to --keychain isolated. - Reorder the Re-upgrade block to lead with the outcome (prior
+  tokens immediately accessible) before the mechanism. - Reframe "use separate macOS user accounts"
+  from a permanent ceiling to today's path — no roadmap commitment, but leaves room for future
+  stronger isolation (e.g. SE-wrap) without creating retroactive credibility problems. - Remove a
+  third redundant mention of the same escape hatch that read apologetic. - Bump "Applies to" stamp
+  to v0.41.0+ and add a v0.43.0 note for the preserve-and-reuse semantics change. - Fix dead
+  cross-ref to SECURITY.md#keychain-isolation-macos-opt-in (that anchor doesn't exist) — point to
+  in-doc §5 instead. - Correct three statements that didn't match the current code: the keychain key
+  is always written (not absent in system mode); orphan handling now auto-rebuilds (not "warns and
+  aborts"); §6 manual rm recovery step removed (reconciler handles it).
+
+
 ## v0.43.0 (2026-04-23)
 
 ### Documentation

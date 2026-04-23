@@ -27,15 +27,17 @@ altergo --config <account> --keychain isolated
 
 Or run `altergo --config <account>` interactively — altergo will prompt whether to enable keychain isolation.
 
-**Disable isolation and revert to shared:**
+**Disable isolation and revert to system (default) keychain:**
 
 ```bash
-altergo --config <account> --keychain shared
+altergo --config <account> --keychain system
 ```
 
-When you flip an account from `isolated` back to `shared`, altergo deletes the per-account keychain file and the login-keychain unlock entry. The cleanup is complete — no orphan files remain.
+`--keychain shared` is a deprecated alias for `--keychain system` and will be removed in the next minor version. It prints a warning to stderr and behaves identically.
 
-**Default:** `shared` on upgrade and for all new accounts unless you explicitly pass `--keychain isolated`. Existing accounts are not changed.
+When you flip an account from `isolated` back to `system`, altergo removes the per-account `com.apple.security.plist` so runtime Security.framework routing falls back to the real user's login keychain. The per-account `login.keychain-db` file and the `com.altergo.account-unlock` entry in your real login keychain are preserved on disk.
+
+**Default:** `system` on upgrade and for all new accounts unless you explicitly pass `--keychain isolated`. Existing accounts are not changed.
 
 **Rerunning `--config` without a `--keychain` flag** preserves the existing setting.
 
@@ -67,7 +69,7 @@ The `account.json` for an isolated account includes a `keychain` key:
 }
 ```
 
-The `keychain` key is absent when `shared` (the default).
+The `keychain` key is absent in `system` mode (the default).
 
 ---
 
@@ -89,14 +91,22 @@ If the keychain file already exists (idempotent re-run), altergo reuses it and s
 
 The keychain stays unlocked for the duration of the session, matching macOS's own login keychain behavior.
 
-**Downgrade** — `altergo --config <account> --keychain shared`:
+**Downgrade** — `altergo --config <account> --keychain system`:
 
-1. Delete the per-account keychain: `security delete-keychain <path>`.
-2. Delete the login-keychain unlock entry: `security delete-generic-password -s com.altergo.account-unlock -a <account>`.
-3. Remove `Library/Keychains/` and `Library/Preferences/` from the account home.
+1. Remove `Library/Preferences/com.apple.security.plist` from the account home. This is the only file that routes Security.framework to the per-account keychain; removing it causes keychain operations under `HOME=<account_home>` to fall through to the real user's login keychain.
+2. Leave `Library/Keychains/login.keychain-db` on disk.
+3. Leave the `com.altergo.account-unlock` entry in the real login keychain.
 4. Rewrite `account.json` without the `keychain` key.
 
-**Delete account** — `do_delete_account` runs the same keychain cleanup before removing the account home directory.
+Rationale: a mode toggle switches which keychain is active, not whether your stored tokens survive. If you want the data gone, use `altergo --delete-account <account>`.
+
+**Re-upgrade** — `altergo --config <account> --keychain isolated` on an account that was previously downgraded:
+
+altergo detects that `Library/Keychains/login.keychain-db` already exists and that the `com.altergo.account-unlock` unlock entry is still present in the real login keychain. It prints "Keychain already exists, reusing", rewrites the `com.apple.security.plist`, and updates `account.json` with `"keychain": "isolated"`. No new keychain is created and no new unlock password is generated — the prior one is reused. Any tokens that were stored in the per-account keychain before the downgrade are immediately accessible again.
+
+If the file exists but the unlock entry is missing (a true orphan, not a preserved downgrade), altergo still warns and aborts. See the troubleshooting section.
+
+**Delete account** — `altergo --delete-account <account>` tears down keychain artifacts unconditionally based on file-presence, not the `keychain` meta flag. If `Library/Keychains/login.keychain-db` exists or the `com.altergo.account-unlock` entry is present in the real login keychain, altergo removes both before deleting the account home directory. This ensures that a keychain preserved by a prior downgrade is still cleaned up when the account is removed.
 
 ---
 
@@ -136,7 +146,9 @@ altergo cannot recover the unlock password. The per-account keychain is effectiv
 
 **Orphaned keychain recovery**
 
-If the keychain file exists but the unlock password entry is gone:
+If you downgraded an account with `--keychain system`, it is normal for `Library/Keychains/login.keychain-db` to remain on disk alongside a `com.altergo.account-unlock` entry in your real login keychain. That is the preserve-and-reuse design — those files are not orphans. Re-upgrading with `--keychain isolated` will reuse them and restore prior tokens.
+
+A true orphan is the case where the keychain file exists but the `com.altergo.account-unlock` unlock entry is gone (for example, after manually deleting it from Keychain Access, or restoring from a backup that excluded keychain data). altergo detects this at upgrade time and aborts. Recovery:
 
 ```bash
 # Remove the orphaned keychain file

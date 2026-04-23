@@ -183,7 +183,7 @@ That is the full workflow. The first time you run `altergo personal`, your confi
 | `altergo <account> portal` | Same as above, scoped to a named account |
 | `altergo --search <query>` | Full-text search across every session from every account |
 | `altergo --config <account>` | Create or reconfigure a named account, wire symlinks automatically |
-| `altergo --config <account> --keychain isolated\|shared` | Enable or disable per-account keychain isolation (macOS only) |
+| `altergo --config <account> --keychain isolated\|system` | Enable or disable per-account keychain isolation (macOS only) |
 | `altergo <account> --add-provider <id>` | Add another provider to an existing account (reconciles any orphan data) |
 | `altergo <account> --remove-provider <id>` | Remove a provider from an account (session data in MAIN_HOME untouched) |
 | `altergo <account> --default-provider <id>` | Set which provider plain `altergo <account>` launches |
@@ -294,7 +294,7 @@ altergo supports opt-in per-account keychain isolation on macOS. When enabled fo
 
 **This is workflow isolation, not cryptographic separation.** Any process running under your macOS user can read your login keychain (which is already unlocked during your session) and therefore derive any altergo account's keychain password. If you need hard isolation between accounts — e.g., client work under NDA — use separate macOS user accounts. altergo's keychain isolation is complementary to, not a replacement for, OS-level user separation.
 
-Defaults to `shared` (disabled) on upgrade. Opt in per account with `altergo --config <account> --keychain isolated` or answer "y" to the prompt during interactive `--config`. Flip back with `--keychain shared` — altergo cleans up the per-account keychain and the login-keychain unlock entry. `altergo native` bypasses keychain isolation entirely. `gh` / `aws` credentials remain shared across accounts via existing CATALOG symlinks; keychain isolation applies only to AI-provider tokens.
+Defaults to `system` (disabled) on upgrade. Opt in per account with `altergo --config <account> --keychain isolated` or answer "y" to the prompt during interactive `--config`. Flip back with `--keychain system` — altergo removes the per-account routing plist so Security.framework falls back to your real login keychain, but preserves the keychain file and unlock entry so tokens survive the toggle. Re-upgrading with `--keychain isolated` reuses the preserved file and restores prior tokens. Full cleanup happens on `altergo --delete-account <account>`. `altergo native` bypasses keychain isolation entirely. `gh` / `aws` credentials remain shared across accounts via existing CATALOG symlinks; keychain isolation applies only to AI-provider tokens.
 
 See [docs/keychain-isolation.md](docs/keychain-isolation.md) for the full lifecycle and troubleshooting guide.
 
@@ -303,7 +303,7 @@ See [docs/keychain-isolation.md](docs/keychain-isolation.md) for the full lifecy
 ## <img src="docs/icons/migrate.svg" width="22" align="center"> Migrating older installs
 
 - **v0.40.0 — multi-provider accounts, `--recall` across all providers, cwd-on-recall, `b`/`*` rebind:** `account.json` upgrades to v3 automatically on the next account mutation (e.g. `--add-provider`). v2 files load forever without being rewritten — no user action required. The picker's `b` key now bookmarks; `*` toggles a starred-only filter. Resumed sessions launch in their saved cwd. See [docs/migration.md](docs/migration.md#v0400--accountjson-v2--v3-schema) for details.
-- **v0.41.0 — opt-in keychain isolation (macOS):** Default is `shared` — no behavior change on upgrade. Opt in per account with `altergo --config <account> --keychain isolated`. See [docs/keychain-isolation.md](docs/keychain-isolation.md).
+- **v0.41.0 — opt-in keychain isolation (macOS):** Default is `system` — no behavior change on upgrade. Opt in per account with `altergo --config <account> --keychain isolated`. See [docs/keychain-isolation.md](docs/keychain-isolation.md).
 - **From v0.4.x:** auto-migration existed through v0.35.2 and was removed in v0.35.3. If you are still on a pre-v0.5.0 layout today, see [docs/migration.md](docs/migration.md#archived-migration-notes-v04x--v050) for the archived steps — or open an issue for manual guidance.
 - **Syntax change in v0.34.0:** `altergo --config --name <n>` is now `altergo --config <account>`. The old form was removed; update any aliases.
 - **From claude100-resume:** credentials and aliases are not picked up automatically. See [docs/migration.md](docs/migration.md) for step-by-step instructions.

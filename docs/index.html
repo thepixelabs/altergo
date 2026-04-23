@@ -2735,7 +2735,7 @@
             <p class="hero-h1-alt reveal reveal-delay-1">Isolates credentials. Shares everything else.</p>
 
             <p class="hero-subtitle reveal reveal-delay-2">
-              You're mid-session and your AI hits a limit, or you need a different model for the next task. <code style="font-family:var(--font-mono);font-size:0.9em;color:var(--cyan)">altergo backup</code> swaps credentials in place. Same project, same history, no ramp-up. You just keep working.
+              You're mid-session and your AI hits a limit, or you need a different model for the next task. <code style="font-family:var(--font-mono);font-size:0.9em;color:var(--cyan)">altergo secondary</code> swaps credentials in place. Same project, same history, no ramp-up. You just keep working.
             </p>
 
             <div class="hero-actions reveal reveal-delay-3">
@@ -2991,7 +2991,7 @@
               <span class="step-win-title">switch</span>
             </div>
             <div class="step-body">
-              <code class="step-command"><span class="prompt" aria-hidden="true">$</span><span class="cmd">altergo backup</span></code>
+              <code class="step-command"><span class="prompt" aria-hidden="true">$</span><span class="cmd">altergo secondary</span></code>
               <p class="step-caption">Use the account name to launch. That's it. Run <code>altergo --resume</code> any time to open the interactive session picker across all accounts.</p>
             </div>
           </div>
@@ -3066,7 +3066,7 @@
               </svg>
             </div>
             <h3>One Command to Switch</h3>
-            <p><code style="font-family:var(--font-mono);font-size:0.82em;color:var(--cyan)">altergo backup</code> launches your configured AI assistant with the right credentials. No flags, no config editing, just the account name.</p>
+            <p><code style="font-family:var(--font-mono);font-size:0.82em;color:var(--cyan)">altergo secondary</code> launches your configured AI assistant with the right credentials. No flags, no config editing, just the account name.</p>
           </div>
           <div class="feature-item reveal reveal-delay-4" role="listitem" style="--shimmer-duration:40s; --shimmer-delay:5s">
             <div class="feature-icon" aria-hidden="true">
@@ -3274,11 +3274,11 @@
             <div class="code-block">
               <code><span class="comment"># Name your accounts, run once per login you have</span>
 <span class="cmd">altergo --config work</span>
-<span class="cmd">altergo --config backup</span>
+<span class="cmd">altergo --config secondary</span>
 
 <span class="comment"># Switch, just use the account name</span>
-<span class="cmd">altergo backup</span></code>
-              <button class="code-copy-btn" aria-label="Copy configure and switch commands" data-copy="altergo --config work &amp;&amp; altergo --config backup &amp;&amp; altergo backup">
+<span class="cmd">altergo secondary</span></code>
+              <button class="code-copy-btn" aria-label="Copy configure and switch commands" data-copy="altergo --config work &amp;&amp; altergo --config secondary &amp;&amp; altergo secondary">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                   <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
                   <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
@@ -3314,8 +3314,8 @@
             </h3>
             <table class="cmd-table" role="table" aria-label="altergo command reference">
               <tbody>
-                <tr><td>altergo &lt;account&gt;</td><td>Launch the named account (e.g. <code>altergo backup</code>)</td></tr>
-                <tr><td>altergo &lt;account&gt; &lt;provider&gt;</td><td>Launch with a specific provider, <code>altergo backup gemini</code>, <code>altergo backup codex</code></td></tr>
+                <tr><td>altergo &lt;account&gt;</td><td>Launch the named account (e.g. <code>altergo secondary</code>)</td></tr>
+                <tr><td>altergo &lt;account&gt; &lt;provider&gt;</td><td>Launch with a specific provider, <code>altergo secondary gemini</code>, <code>altergo secondary codex</code></td></tr>
                 <tr><td>altergo --config &lt;account&gt; --provider &lt;p&gt;</td><td>Create or reconfigure an account with a specific provider, <code>claude</code>, <code>gemini</code>, <code>codex</code>, <code>copilot</code></td></tr>
                 <tr><td>altergo --resume</td><td>Interactive session picker, browse, preview, resume</td></tr>
                 <tr><td>altergo --search</td><td>Full-text search across all conversation history</td></tr>
@@ -3334,9 +3334,9 @@
               </svg>
               Credentials &amp; Auth
             </h3>
-            <p class="docs-note">Each account gets its own isolated credentials. altergo logs you in fresh per account. Just run <code>altergo backup</code> and authenticate when prompted. That's it.</p>
+            <p class="docs-note">Each account gets its own isolated credentials. altergo logs you in fresh per account. Just run <code>altergo secondary</code> and authenticate when prompted. That's it.</p>
             <p class="docs-note"><strong>Shared by default:</strong> AWS, gcloud, Azure, Docker, kubectl, Terraform, GitHub CLI, so your infra tools keep working across accounts without re-auth. Toggle anything via <code>altergo --settings</code>.</p>
-            <p class="docs-note"><strong>Need to auth a tool for one account?</strong> <code>altergo backup -- gh auth login</code> runs any command inside that account's environment.</p>
+            <p class="docs-note"><strong>Need to auth a tool for one account?</strong> <code>altergo secondary -- gh auth login</code> runs any command inside that account's environment.</p>
           </div>
 
           <!-- What gets symlinked -->
@@ -3845,8 +3845,8 @@
         const body = document.getElementById('term-body');
         if (!body) return;
         body.innerHTML = [
-          '<span class="term-line visible"><span class="tc-prompt">~/my-app $</span> <span class="tc-cmd">altergo backup</span></span>',
-          '<span class="term-line visible"><span class="tc-green">&#10003; Credentials active (@backup)</span></span>',
+          '<span class="term-line visible"><span class="tc-prompt">~/my-app $</span> <span class="tc-cmd">altergo secondary</span></span>',
+          '<span class="term-line visible"><span class="tc-green">&#10003; Credentials active (@secondary)</span></span>',
           '<span class="term-line visible"><span class="tc-cyan">Launching assistant...</span></span>',
         ].join('');
         return;

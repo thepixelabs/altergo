@@ -16,12 +16,15 @@
   <a href="LICENSE"><img alt="License: PolyForm Shield 1.0.0" src="https://img.shields.io/badge/license-PolyForm%20Shield%201.0.0-blue.svg"></a>
   <a href="https://github.com/thepixelabs/altergo/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/thepixelabs/altergo/actions/workflows/ci.yml/badge.svg"></a>
   <a href="https://github.com/thepixelabs/altergo/actions/workflows/release.yml"><img alt="CD" src="https://github.com/thepixelabs/altergo/actions/workflows/release.yml/badge.svg"></a>
+  <img alt="Status: work in progress" src="https://img.shields.io/badge/work%20in%20progress-issues%20welcome-orange.svg">
 </p>
 
 <p align="center">
   Personal account, Pro subscription, side project — as many as you need.<br>
   <code>altergo personal</code> and you are in. Isolates credentials. Shares everything else.
 </p>
+
+> **Active development** — rough edges exist. If something breaks, [open an issue](https://github.com/thepixelabs/altergo/issues).
 
 ---
 
@@ -166,8 +169,8 @@ That is the full workflow. The first time you run `altergo personal`, your confi
 
 | Command | What it does |
 |---|---|
-| `altergo <name>` | Launch the configured AI assistant as the named account (e.g. `altergo personal`) |
-| `altergo <name> <provider>` | Launch a specific provider under the named account, overriding that account's default (e.g. `altergo personal gemini`) |
+| `altergo <account>` | Launch the configured AI assistant as the named account (e.g. `altergo personal`) |
+| `altergo <account> <provider>` | Launch a specific provider under the named account, overriding that account's default (e.g. `altergo personal gemini`) |
 | `altergo` | Launch the default account's AI assistant (backwards compatible) |
 | `altergo native` | Launch your configured provider against your real `$HOME` — no isolation, no symlinks |
 | `altergo native <provider>` | Same as above, but force a specific provider (e.g. `altergo native gemini`) |
@@ -177,21 +180,21 @@ That is the full workflow. The first time you run `altergo personal`, your confi
 | `altergo --star [<id>]` | Star the last-exited session, or star a specific session by ID |
 | `altergo --launch` | Open the interactive launcher directly |
 | `altergo portal [<account>] [<provider>]` | Force a tmux-backed launch — keeps the session alive over SSH reconnects |
-| `altergo <name> portal` | Same as above, scoped to a named account |
+| `altergo <account> portal` | Same as above, scoped to a named account |
 | `altergo --search <query>` | Full-text search across every session from every account |
-| `altergo --config <name>` | Create or reconfigure a named account, wire symlinks automatically |
-| `altergo --config <name> --keychain isolated\|shared` | Enable or disable per-account keychain isolation (macOS only) |
-| `altergo <name> --add-provider <id>` | Add another provider to an existing account (reconciles any orphan data) |
-| `altergo <name> --remove-provider <id>` | Remove a provider from an account (session data in MAIN_HOME untouched) |
-| `altergo <name> --default-provider <id>` | Set which provider plain `altergo <name>` launches |
+| `altergo --config <account>` | Create or reconfigure a named account, wire symlinks automatically |
+| `altergo --config <account> --keychain isolated\|shared` | Enable or disable per-account keychain isolation (macOS only) |
+| `altergo <account> --add-provider <id>` | Add another provider to an existing account (reconciles any orphan data) |
+| `altergo <account> --remove-provider <id>` | Remove a provider from an account (session data in MAIN_HOME untouched) |
+| `altergo <account> --default-provider <id>` | Set which provider plain `altergo <account>` launches |
 | `altergo --yolo` | Skip provider permission prompts (translates to the provider-native flag) |
 | `altergo --yolo-resume [<id>]` | Skip permission prompts and resume the last session (or a specific session by ID) |
 | `altergo --rename <old> <new>` | Rename an existing account (credentials and history preserved) |
 | `altergo --teardown` | Remove symlinks (account directory and credentials untouched) |
 | `altergo --teardown --name <n>` | Remove a specific named account's symlinks |
 | `altergo --settings` | Multi-page settings TUI: appearance, behavior, and credentials |
-| `altergo <name> shell` | Interactive shell inside the named account HOME |
-| `altergo <name> -- <cmd>` | Run one command with HOME set to the named account directory |
+| `altergo <account> shell` | Interactive shell inside the named account HOME |
+| `altergo <account> -- <cmd>` | Run one command with HOME set to the named account directory |
 | `altergo --version` | Show version number |
 | `altergo --help` | Show help text |
 
@@ -229,7 +232,7 @@ That is the full workflow. The first time you run `altergo personal`, your confi
 
 ## <img src="docs/icons/howitworks.svg" width="22" align="center"> How it works
 
-altergo sets `HOME=~/.altergo/accounts/<name>` for the provider process. Each account's token lives in its isolated provider directory (e.g. `.claude/.credentials.json` for Claude Code, `.gemini/oauth_creds.json` for Gemini CLI, `.codex/auth.json` for Codex CLI, `.copilot/config.json` for GitHub Copilot). Everything else is shared via symlinks back to the primary provider directory.
+altergo sets `HOME=~/.altergo/accounts/<account>` for the provider process. Each account's token lives in its isolated provider directory (e.g. `.claude/.credentials.json` for Claude Code, `.gemini/oauth_creds.json` for Gemini CLI, `.codex/auth.json` for Codex CLI, `.copilot/config.json` for GitHub Copilot). Everything else is shared via symlinks back to the primary provider directory.
 
 ```
 ~/.claude/                        Your primary Claude Code account (untouched)
@@ -270,7 +273,7 @@ Claude Code stores both `mcpServers` and `oauthAccount` inside `~/.claude.json`.
 
 ### Running other tools in account context
 
-Some tools (`gh`, `git`, SSH) read credentials from your home directory. Use `altergo <name> shell` or `altergo <name> -- <cmd>` to run them inside a specific account's HOME:
+Some tools (`gh`, `git`, SSH) read credentials from your home directory. Use `altergo <account> shell` or `altergo <account> -- <cmd>` to run them inside a specific account's HOME:
 
 ```bash
 # Authenticate gh inside a specific account's environment
@@ -291,7 +294,7 @@ altergo supports opt-in per-account keychain isolation on macOS. When enabled fo
 
 **This is workflow isolation, not cryptographic separation.** Any process running under your macOS user can read your login keychain (which is already unlocked during your session) and therefore derive any altergo account's keychain password. If you need hard isolation between accounts — e.g., client work under NDA — use separate macOS user accounts. altergo's keychain isolation is complementary to, not a replacement for, OS-level user separation.
 
-Defaults to `shared` (disabled) on upgrade. Opt in per account with `altergo --config <name> --keychain isolated` or answer "y" to the prompt during interactive `--config`. Flip back with `--keychain shared` — altergo cleans up the per-account keychain and the login-keychain unlock entry. `altergo native` bypasses keychain isolation entirely. `gh` / `aws` credentials remain shared across accounts via existing CATALOG symlinks; keychain isolation applies only to AI-provider tokens.
+Defaults to `shared` (disabled) on upgrade. Opt in per account with `altergo --config <account> --keychain isolated` or answer "y" to the prompt during interactive `--config`. Flip back with `--keychain shared` — altergo cleans up the per-account keychain and the login-keychain unlock entry. `altergo native` bypasses keychain isolation entirely. `gh` / `aws` credentials remain shared across accounts via existing CATALOG symlinks; keychain isolation applies only to AI-provider tokens.
 
 See [docs/keychain-isolation.md](docs/keychain-isolation.md) for the full lifecycle and troubleshooting guide.
 
@@ -300,9 +303,9 @@ See [docs/keychain-isolation.md](docs/keychain-isolation.md) for the full lifecy
 ## <img src="docs/icons/migrate.svg" width="22" align="center"> Migrating older installs
 
 - **v0.40.0 — multi-provider accounts, `--recall` across all providers, cwd-on-recall, `b`/`*` rebind:** `account.json` upgrades to v3 automatically on the next account mutation (e.g. `--add-provider`). v2 files load forever without being rewritten — no user action required. The picker's `b` key now bookmarks; `*` toggles a starred-only filter. Resumed sessions launch in their saved cwd. See [docs/migration.md](docs/migration.md#v0400--accountjson-v2--v3-schema) for details.
-- **v0.41.0 — opt-in keychain isolation (macOS):** Default is `shared` — no behavior change on upgrade. Opt in per account with `altergo --config <name> --keychain isolated`. See [docs/keychain-isolation.md](docs/keychain-isolation.md).
+- **v0.41.0 — opt-in keychain isolation (macOS):** Default is `shared` — no behavior change on upgrade. Opt in per account with `altergo --config <account> --keychain isolated`. See [docs/keychain-isolation.md](docs/keychain-isolation.md).
 - **From v0.4.x:** auto-migration existed through v0.35.2 and was removed in v0.35.3. If you are still on a pre-v0.5.0 layout today, see [docs/migration.md](docs/migration.md#archived-migration-notes-v04x--v050) for the archived steps — or open an issue for manual guidance.
-- **Syntax change in v0.34.0:** `altergo --config --name <n>` is now `altergo --config <name>`. The old form was removed; update any aliases.
+- **Syntax change in v0.34.0:** `altergo --config --name <n>` is now `altergo --config <account>`. The old form was removed; update any aliases.
 - **From claude100-resume:** credentials and aliases are not picked up automatically. See [docs/migration.md](docs/migration.md) for step-by-step instructions.
 
 ---

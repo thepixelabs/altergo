@@ -129,11 +129,11 @@ Keychain isolation is a **per-account** setting stored in `account.json`, not in
 Toggle it via the CLI:
 
 ```bash
-altergo --config <name> --keychain isolated   # enable
-altergo --config <name> --keychain shared     # disable and clean up
+altergo --config <account> --keychain isolated   # enable
+altergo --config <account> --keychain shared     # disable and clean up
 ```
 
-Or answer "y" to the keychain isolation prompt during interactive `altergo --config <name>`.
+Or answer "y" to the keychain isolation prompt during interactive `altergo --config <account>`.
 
 See [docs/keychain-isolation.md](keychain-isolation.md) for the full guide.
 

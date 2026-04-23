@@ -1,6 +1,48 @@
 # CHANGELOG
 
 
+## v0.43.0 (2026-04-23)
+
+### Documentation
+
+- Rename <name> placeholder to <account> in help and docs
+  ([`a9440c4`](https://github.com/thepixelabs/altergo/commit/a9440c4f2bdc1ac38f27bde369258e2b516a1a2f))
+
+The <name> placeholder in the help menu and documentation was ambiguous ("name of what?"); <account>
+  is self-describing. Also rename <name> to <theme> in --theme usage for the same reason.
+
+### Features
+
+- **keychain**: Preserve-and-reuse downgrade + reconciler state machine
+  ([#26](https://github.com/thepixelabs/altergo/pull/26),
+  [`7d660fc`](https://github.com/thepixelabs/altergo/commit/7d660fc53ea68380dc863953548c13ae25e8475b))
+
+* feat(keychain): preserve-and-reuse downgrade + reconciler state machine
+
+- Preserve-and-reuse on `--keychain isolated → system`: only the per-account plist is removed;
+  keychain file + login-keychain unlock entry preserved. Full cleanup moves to `--delete-account`. -
+  Rename `shared` → `system`; old name accepted as deprecated alias (stderr warning, one-minor
+  window). - New `_reconcile_keychain_state` heals 14 reachable partial-state combinations across
+  (A=meta, B=plist, C=keychain file, D=unlock entry). - `_create_account_keychain` restructured into
+  5-case reconciler (reuse / wrong-password rebuild / orphan-C rebuild / stale-D rebuild / fresh).
+  Removes the old orphan early-return-and-ask-user-to-rm dead-end. - `do_delete_account` gates on
+  file-presence (B OR C OR D), not meta — prevents artifact leaks when deleting a
+  preserved-but-currently-system account. - `_delete_account_keychain` also unlinks B. - Meta
+  normalization: `keychain` key always written (`"isolated"` or `"system"`). Legacy absent still
+  read as system. - Write order: meta written before keychain artifacts, so crashes mid-upgrade are
+  self-healing via the reconciler on next launch. - Surface keychain mode in the `--config` picker
+  and at the top of the `--config` flow. - Fix pre-existing E501 lint violation at altergo.py:6983.
+  - Tests: rewrote 6 dead-route tests, added 5 P0 reconciler tests. 65 keychain tests, 261 total,
+  all passing. - Docs: updated across keychain-isolation.md, architecture.md, how-it-works.md,
+  settings.md, migration.md, README.md.
+
+* fix(tests): mock _sec in test_do_delete_account_continues_on_keychain_error
+
+do_delete_account's file-presence probe calls _sec before the _delete_account_keychain mock fires.
+  On Linux CI runners without /usr/bin/security, the probe raised KeychainError and aborted the test
+  before reaching the intended assertion.
+
+
 ## v0.42.0 (2026-04-22)
 
 ### Features

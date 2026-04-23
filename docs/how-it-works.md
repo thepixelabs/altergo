@@ -75,7 +75,7 @@ The insight is that only one thing needs to differ between accounts: the credent
 
 altergo implements this with two mechanisms working together:
 
-1. **Override `HOME` to the account directory** so Claude Code reads credentials from `~/.altergo/accounts/<name>/.claude/.credentials.json` (a real, isolated file specific to that account).
+1. **Override `HOME` to the account directory** so Claude Code reads credentials from `~/.altergo/accounts/<account>/.claude/.credentials.json` (a real, isolated file specific to that account).
 
 2. **Symlink everything else** inside the account's `.claude/` directory back to the corresponding paths inside `~/.claude/` so every account sees the same session history, settings, and context as the primary account.
 
@@ -173,7 +173,7 @@ The fallback to `os.environ["HOME"]` is only reached if the passwd entry's path 
 
 ## The PATH problem and its fix
 
-Claude Code's startup sequence includes a native installation health check. It tests whether `$HOME/.local/bin` is present in `PATH`. With HOME overridden to an account directory, the check looks for `~/.altergo/accounts/<name>/.local/bin` in PATH. That directory was never added to PATH (your shell's PATH was set up before altergo ran), so the check would fail with a spurious warning.
+Claude Code's startup sequence includes a native installation health check. It tests whether `$HOME/.local/bin` is present in `PATH`. With HOME overridden to an account directory, the check looks for `~/.altergo/accounts/<account>/.local/bin` in PATH. That directory was never added to PATH (your shell's PATH was set up before altergo ran), so the check would fail with a spurious warning.
 
 The `_build_alt_env` function handles this:
 
@@ -193,7 +193,7 @@ def _build_alt_env(account: str = "default") -> dict:
 
 The guard `if acct_local_bin.exists()` is a security decision. Without it, altergo would unconditionally prepend a nonexistent path to PATH on every launch — giving a directory that anyone with write access to your home could later populate with malicious binaries higher precedence than all system tools.
 
-The guard means PATH injection only activates when something has actually installed a binary there — specifically, when you have run `claude update` inside an altergo session, which installs the claude binary to `$HOME/.local/bin` (i.e., `~/.altergo/accounts/<name>/.local/bin`). At that point the directory genuinely exists and does contain the correct claude binary.
+The guard means PATH injection only activates when something has actually installed a binary there — specifically, when you have run `claude update` inside an altergo session, which installs the claude binary to `$HOME/.local/bin` (i.e., `~/.altergo/accounts/<account>/.local/bin`). At that point the directory genuinely exists and does contain the correct claude binary.
 
 ---
 
@@ -327,7 +327,7 @@ The `DLDBSearchList` plist uses `~/Library/Keychains/login.keychain` (without `-
 
 ### Idempotency behavior
 
-`_create_account_keychain` checks whether the keychain file exists before creating it. Reuse if present, skip creation. If the file exists but the unlock entry is missing, it warns and aborts — it cannot recover a lost password. The recovery procedure is: `rm -rf <account_home>/Library/Keychains/login.keychain-db` followed by `altergo --config <name> --keychain isolated`.
+`_create_account_keychain` checks whether the keychain file exists before creating it. Reuse if present, skip creation. If the file exists but the unlock entry is missing, it warns and aborts — it cannot recover a lost password. The recovery procedure is: `rm -rf <account_home>/Library/Keychains/login.keychain-db` followed by `altergo --config <account> --keychain isolated`.
 
 ### Downgrade cleanup
 
@@ -356,7 +356,7 @@ Under the covers, `altergo native` skips the env-override entirely — `HOME` is
 - One-off sessions where you explicitly want the primary account and do not care about account switching
 - Scripts that want to invoke the provider without disturbing altergo's state
 
-If you find yourself reaching for `altergo native` often, you probably want to reconfigure: `altergo --config <name>` and use the named account path instead.
+If you find yourself reaching for `altergo native` often, you probably want to reconfigure: `altergo --config <account>` and use the named account path instead.
 
 ---
 
@@ -423,7 +423,7 @@ altergo client-a shell      # PS1 shows (altergo:client-a)
 
 ---
 
-## The `altergo <name> -- <cmd>` passthrough
+## The `altergo <account> -- <cmd>` passthrough
 
 This is the one-shot version of `altergo shell`. It runs a single command with HOME set to the account directory and then exits:
 
@@ -472,7 +472,7 @@ Because it also uses `os.execvpe`, the altergo process is replaced by the target
 
 Symlinking the file gives you the first half at the cost of the second. Not sharing it gives you the second at the cost of the first. altergo resolves the conflict with a **bidirectional merge**, implemented in `_sync_claude_mcps` (altergo.py:2509-2576):
 
-1. Read `~/.claude.json` (primary) and `~/.altergo/accounts/<name>/.claude.json` (account).
+1. Read `~/.claude.json` (primary) and `~/.altergo/accounts/<account>/.claude.json` (account).
 2. Union-merge the `mcpServers` maps from both files. On key collision, the account entry wins — that way, the server you just registered with `claude mcp add` is preserved.
 3. Write the merged result back into *both* files, atomically (temp file + rename). `oauthAccount` in each file is left completely untouched.
 

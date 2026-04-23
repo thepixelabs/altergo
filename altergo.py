@@ -475,12 +475,12 @@ def show_help():
     # or the sentinel string "" for a blank spacer row.
     SEC_LAUNCH = [
         ("altergo", kw("altergo"), "Open launcher / active account"),
-        ("altergo <name>", f"{kw('altergo')} {arg('<name>')}", "Launch a named account"),
-        ("altergo <name> <prov>", f"{kw('altergo')} {arg('<name>')} {arg('<prov>')}", "Launch with specific provider"),
+        ("altergo <account>", f"{kw('altergo')} {arg('<account>')}", "Launch a named account"),
+        ("altergo <account> <prov>", f"{kw('altergo')} {arg('<account>')} {arg('<prov>')}", "Launch with specific provider"),
     ]
     SEC_ACCOUNTS = [
         ("altergo --config", kw("altergo --config"), "Create or reconfigure account"),
-        ("altergo --config <name>", f"{kw('altergo --config')} {arg('<name>')}", "Create/reconfigure named account"),
+        ("altergo --config <account>", f"{kw('altergo --config')} {arg('<account>')}", "Create/reconfigure named account"),
         (
             "altergo --rename <old> <new>",
             f"{kw('altergo --rename')} {arg('<old>')} {arg('<new>')}",
@@ -491,24 +491,24 @@ def show_help():
             f"{kw('altergo --config --provider')} {arg('<p>')}",
             "claude gemini codex copilot",
         ),
-        ("altergo --use <name>", f"{kw('altergo --use')} {arg('<name>')}", "Set as default account"),
+        ("altergo --use <account>", f"{kw('altergo --use')} {arg('<account>')}", "Set as default account"),
         ("altergo --teardown", f"{kw('altergo --teardown')} {arg('[--name <n>]')}", "Remove account + symlinks"),
         ("altergo --settings", kw("altergo --settings"), "Manage shared credentials"),
     ]
     SEC_MULTI_PROVIDER = [
         (
-            "altergo <name> --add-provider",
-            f"{kw('altergo')} {arg('<name>')} {kw('--add-provider')} {arg('<id>')}",
+            "altergo <account> --add-provider",
+            f"{kw('altergo')} {arg('<account>')} {kw('--add-provider')} {arg('<id>')}",
             "Add another provider to account",
         ),
         (
-            "altergo <name> --remove-provider",
-            f"{kw('altergo')} {arg('<name>')} {kw('--remove-provider')} {arg('<id>')}",
+            "altergo <account> --remove-provider",
+            f"{kw('altergo')} {arg('<account>')} {kw('--remove-provider')} {arg('<id>')}",
             "Remove a provider from account",
         ),
         (
-            "altergo <name> --default-provider",
-            f"{kw('altergo')} {arg('<name>')} {kw('--default-provider')} {arg('<id>')}",
+            "altergo <account> --default-provider",
+            f"{kw('altergo')} {arg('<account>')} {kw('--default-provider')} {arg('<id>')}",
             "Set default provider for account",
         ),
     ]
@@ -523,38 +523,38 @@ def show_help():
     _portal = kw("portal")
     SEC_PORTAL = [
         ("altergo portal", f"{kw('altergo')} {_portal}", "Open portal, active account"),
-        ("altergo portal <name>", f"{kw('altergo')} {_portal} {arg('<name>')}", "Open portal, named account"),
+        ("altergo portal <account>", f"{kw('altergo')} {_portal} {arg('<account>')}", "Open portal, named account"),
         (
-            "altergo portal <name> <prov>",
-            f"{kw('altergo')} {_portal} {arg('<name>')} {arg('<prov>')}",
+            "altergo portal <account> <prov>",
+            f"{kw('altergo')} {_portal} {arg('<account>')} {arg('<prov>')}",
             "Open portal, specific provider",
         ),
         (
-            "altergo portal <name> --resume",
-            f"{kw('altergo')} {_portal} {arg('<name>')} {kw('--resume')}",
+            "altergo portal <account> --resume",
+            f"{kw('altergo')} {_portal} {arg('<account>')} {kw('--resume')}",
             "Reconnect to last session",
         ),
         (
-            "altergo portal <name> --resume <id>",
-            f"{kw('altergo')} {_portal} {arg('<name>')} {kw('--resume')} {arg('<id>')}",
+            "altergo portal <account> --resume <id>",
+            f"{kw('altergo')} {_portal} {arg('<account>')} {kw('--resume')} {arg('<id>')}",
             "Reconnect specific session",
         ),
     ]
     SEC_CUSTOM = [
         ("altergo --theme", kw("altergo --theme"), "Show active theme"),
         (
-            "altergo --theme <name>",
-            f"{kw('altergo --theme')} {arg('<name>')}",
+            "altergo --theme <theme>",
+            f"{kw('altergo --theme')} {arg('<theme>')}",
             f"Set theme  ({', '.join(THEMES.keys())})",
         ),
     ]
     SEC_ADVANCED = [
         ("altergo native", f"{kw('altergo')} {arg('native')}", "Launch real $HOME (no isolation)"),
         ("altergo native <prov>", f"{kw('altergo')} {arg('native')} {arg('<prov>')}", "Launch provider, real $HOME"),
-        ("altergo <name> shell", f"{kw('altergo')} {arg('<name>')} {kw('shell')}", "Shell inside account HOME"),
+        ("altergo <account> shell", f"{kw('altergo')} {arg('<account>')} {kw('shell')}", "Shell inside account HOME"),
         (
-            "altergo <name> -- <cmd>",
-            f"{kw('altergo')} {arg('<name>')} {kw('--')} {arg('<cmd>')}",
+            "altergo <account> -- <cmd>",
+            f"{kw('altergo')} {arg('<account>')} {kw('--')} {arg('<cmd>')}",
             "Run command in account context",
         ),
         ("altergo --yolo", kw("altergo --yolo"), "Skip all provider permission prompts"),
@@ -6294,7 +6294,7 @@ def _prompt_new_account_name_tui(existing: list) -> str | None:
     if not sys.stdin.isatty() or not sys.stdout.isatty():
         print(
             "altergo: creating an account requires an interactive terminal.\n"
-            "  Use: altergo --config <name> --provider <provider>",
+            "  Use: altergo --config <account> --provider <provider>",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -6815,7 +6815,7 @@ def _prompt_config_menu(existing: list) -> str | None:
     """Curses TUI listing existing accounts + a 'Create new' entry."""
     if not sys.stdin.isatty() or not sys.stdout.isatty():
         print(
-            "altergo: --config requires an interactive terminal.\n  Use: altergo --config <name> --provider <provider>",
+            "altergo: --config requires an interactive terminal.\n  Use: altergo --config <account> --provider <provider>",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -7210,7 +7210,7 @@ def _first_run_onboarding():
 
     _hint2 = Text()
     _hint2.append("  or ", style="dim")
-    _hint2.append("altergo --config <name>", style=f"bold {_mid_hex}")
+    _hint2.append("altergo --config <account>", style=f"bold {_mid_hex}")
     _hint2.append(" to skip the prompts", style="dim")
     console.print(_hint2)
     console.print()
@@ -7226,7 +7226,7 @@ def _first_run_onboarding():
             ).strip()
         except KeyboardInterrupt:
             console.print()
-            console.print("  \u2192 run: altergo --config <name> when ready")
+            console.print("  \u2192 run: altergo --config <account> when ready")
             sys.exit(0)
 
         if not raw:
@@ -7431,7 +7431,7 @@ def main():
                 name = _c(C("command"), t["display_name"].ljust(10))
                 print(f"  {marker} {name}  {_c(C('dim'), t['description'])}")
             print()
-            print(_c(C("dim"), "  Set with: altergo --theme <name>   ·   or press 't' in the launcher"))
+            print(_c(C("dim"), "  Set with: altergo --theme <theme>   ·   or press 't' in the launcher"))
             sys.exit(0)
         name = args[1]
         if name not in THEMES:
@@ -7467,13 +7467,99 @@ def main():
         if recall_account is None:
             print(
                 f"altergo: no account configured for provider '{provider_id}'.\n"
-                f"  Create one with: altergo --config <name> --provider {provider_id}",
+                f"  Create one with: altergo --config <account> --provider {provider_id}",
                 file=sys.stderr,
             )
             sys.exit(1)
         recall_cwd = selected.get("cwd") or decode_project_path(selected.get("project", ""))
         launch_claude(recall_account, ["--resume", selected["id"]], cwd=recall_cwd or None)
         sys.exit(0)
+
+    # --yolo-resume [<id>] → resume a session with skip-permissions flags.
+    # Intercept before account/provider resolution so the user never has to
+    # specify an account name; we derive it from the session metadata.
+    _yr_present, _yr_session_id, _yr_rest = _extract_yolo_resume(args)
+    if _yr_present:
+        if not list_accounts():
+            print("altergo: no accounts found. Run 'altergo --config' first.", file=sys.stderr)
+            sys.exit(1)
+
+        if _yr_session_id is None:
+            # Case 1: no ID — open the interactive picker, then launch with yolo.
+            show_banner()
+            _yr_sessions = _status_wrap("Scanning sessions…", get_sessions)
+            _yr_selected = interactive_picker(_yr_sessions)
+            if not _yr_selected:
+                print("Cancelled.")
+                sys.exit(0)
+            _yr_provider = _yr_selected.get("provider", "claude")
+            _yr_skip = list(PROVIDERS.get(_yr_provider, {}).get("flags", {}).get("skip_perms", []))
+            _yr_account = _account_for_provider(_yr_provider)
+            if _yr_account is None:
+                print(
+                    f"altergo: no account configured for provider '{_yr_provider}'.\n"
+                    f"  Create one with: altergo --config <account> --provider {_yr_provider}",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            _yr_cwd = _yr_selected.get("cwd") or decode_project_path(_yr_selected.get("project", ""))
+            launch_claude(_yr_account, ["--resume", _yr_selected["id"]] + _yr_skip, cwd=_yr_cwd or None)
+            sys.exit(0)
+        else:
+            # Case 2: ID given — find session metadata, pick account, launch.
+            _yr_all_sessions = _status_wrap("Scanning sessions…", get_sessions)
+            _yr_match = next((s for s in _yr_all_sessions if s["id"] == _yr_session_id), None)
+            if _yr_match is None:
+                print(
+                    _c(C("warn"), f"  altergo: session '{_yr_session_id}' not found in local history "
+                    f"— continuing anyway (the provider will validate the ID)."),
+                    file=sys.stderr,
+                )
+                _yr_provider = "claude"
+                _yr_cwd = None
+            else:
+                _yr_provider = _yr_match.get("provider", "claude")
+                _yr_cwd = _yr_match.get("cwd") or decode_project_path(_yr_match.get("project", ""))
+
+            _yr_skip = list(PROVIDERS.get(_yr_provider, {}).get("flags", {}).get("skip_perms", []))
+
+            # Determine which accounts support this provider.
+            def _yr_has_provider(acct_name: str) -> bool:
+                _m = load_account_meta(ACCOUNTS_DIR / acct_name)
+                if _m is None:
+                    return _yr_provider == "claude"
+                return _yr_provider in _m["providers"]
+
+            _yr_eligible = [a for a in list_accounts() if _yr_has_provider(a)]
+
+            if not _yr_eligible:
+                print(
+                    f"altergo: no account configured for provider '{_yr_provider}'.\n"
+                    f"  Create one with: altergo --config <account> --provider {_yr_provider}",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            elif len(_yr_eligible) == 1:
+                _yr_account = _yr_eligible[0]
+            else:
+                # Multiple eligible accounts — prompt the user to pick one.
+                print(f"\n  Multiple accounts support '{_yr_provider}'. Pick one:\n")
+                for _yi, _ya in enumerate(_yr_eligible, 1):
+                    print(f"  [{_yi}] {_c(C('command'), _ya)}")
+                print()
+                while True:
+                    try:
+                        _yr_raw = input(f"  Account [1-{len(_yr_eligible)}]: ").strip()
+                    except (KeyboardInterrupt, EOFError):
+                        print("\nCancelled.")
+                        sys.exit(0)
+                    if _yr_raw.isdigit() and 1 <= int(_yr_raw) <= len(_yr_eligible):
+                        _yr_account = _yr_eligible[int(_yr_raw) - 1]
+                        break
+                    print(f"  Please enter a number between 1 and {len(_yr_eligible)}.")
+
+            launch_claude(_yr_account, ["--resume", _yr_session_id] + _yr_skip, cwd=_yr_cwd or None)
+            sys.exit(0)
 
     if args and args[0] == "--use":
         if len(args) < 2:
@@ -7557,7 +7643,7 @@ def main():
                 sys.exit(1)
             else:
                 print(
-                    f"altergo: multiple accounts ({', '.join(_all)}) — specify one: altergo portal <name>",
+                    f"altergo: multiple accounts ({', '.join(_all)}) — specify one: altergo portal <account>",
                     file=sys.stderr,
                 )
                 sys.exit(1)
@@ -7619,8 +7705,8 @@ def main():
             # Multiple accounts, non-interactive — cannot pick one silently
             print(
                 f"altergo: multiple accounts exist ({', '.join(_all_accounts)}).\n"
-                f"  Run 'altergo <name>' to launch a specific account, or\n"
-                f"  'altergo --use <name>' to set an active account for bare 'altergo'.",
+                f"  Run 'altergo <account>' to launch a specific account, or\n"
+                f"  'altergo --use <account>' to set an active account for bare 'altergo'.",
                 file=sys.stderr,
             )
             sys.exit(1)
@@ -7638,7 +7724,7 @@ def main():
             )
             sys.exit(1)
         if len(args) < 2 or args[1].startswith("-"):
-            print(f"altergo: usage: altergo <name> {args[0]} <provider-id>", file=sys.stderr)
+            print(f"altergo: usage: altergo <account> {args[0]} <provider-id>", file=sys.stderr)
             sys.exit(1)
         sub, pid = args[0], args[1]
         yes = "--yes" in args[2:]

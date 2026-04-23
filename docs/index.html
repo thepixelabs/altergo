@@ -1120,6 +1120,7 @@
     ============================================================ */
     #why {
       padding: 56px 0;
+      overflow: hidden;
     }
     @media (max-width: 500px) {
       #when, #why, #how, #features, #docs, #install { padding-top: 28px; padding-bottom: 28px; }
@@ -1324,6 +1325,7 @@
     #features {
       padding: 56px 0;
       position: relative;
+      overflow: hidden;
     }
     #features .features-grid {
       position: relative;
@@ -1578,26 +1580,28 @@
 
     .install-grid {
       display: grid;
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: 1fr 1fr 1fr;
       gap: 20px;
       margin-top: 32px;
     }
     .install-method-curl {
-      grid-column: 1 / -1;
-      display: grid;
-      grid-template-columns: auto 1fr;
-      align-items: start;
-      gap: 16px 20px;
-    }
-    .install-method-curl .install-method-label {
-      margin-bottom: 0;
-      padding-top: 14px;
-      white-space: nowrap;
+      /* no longer full-width; resets to normal card in 3-col grid */
     }
     @media (max-width: 900px) {
       .install-grid { grid-template-columns: 1fr; gap: 16px; }
-      .install-method-curl { grid-template-columns: 1fr; }
-      .install-method-curl .install-method-label { padding-top: 0; margin-bottom: 12px; }
+    }
+
+    .install-followup {
+      margin-top: 20px;
+      background: var(--bg-1);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 22px 20px;
+      transition: border-color var(--transition-fast);
+    }
+    .install-followup:hover { border-color: var(--border-glow); }
+    .install-followup .install-method-label {
+      margin-bottom: 12px;
     }
 
     .install-method {
@@ -1610,11 +1614,11 @@
     .install-method:hover { border-color: var(--border-glow); }
 
     .install-method-label {
-      font-size: 0.72rem;
-      font-weight: 600;
-      letter-spacing: 0.1em;
+      font-size: 0.85rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
       text-transform: uppercase;
-      color: var(--text-3);
+      color: var(--text-1);
       margin-bottom: 12px;
       display: flex;
       align-items: center;
@@ -1677,7 +1681,7 @@
     }
     .code-block code .kw { color: var(--indigo-bright); }
     .code-block code .cmd { color: var(--cyan); }
-    .code-block code .comment { color: var(--text-3); }
+    .code-block code .comment { color: var(--text-2); }
     .code-block code .str { color: var(--green); }
 
     .code-copy-btn {
@@ -1831,7 +1835,7 @@
     }
     @media (max-width: 900px) {
       .hero-bg-img {
-        background-position: calc(50% + 500px) 40%;
+        background-position: calc(60% - 400px) 40%;
       }
     }
     .hero-bg-img::after {
@@ -2508,6 +2512,31 @@
       .recall-highlight-content {
         padding: 20px 16px;
       }
+      .recall-highlight {
+        min-height: 420px;
+      }
+      .recall-highlight-img {
+        opacity: 0.75;
+        transform: scale(1.6);
+        transform-origin: center center;
+      }
+      .recall-highlight::after {
+        background: linear-gradient(180deg,
+          rgba(7,9,26,0.35) 0%,
+          rgba(7,9,26,0.15) 35%,
+          rgba(5,7,16,0.25) 100%);
+      }
+    }
+    [data-theme="light"] .recall-highlight-img {
+      /* preserve existing light-mode filter */
+    }
+    @media (max-width: 480px) {
+      [data-theme="light"] .recall-highlight::after {
+        background: linear-gradient(180deg,
+          rgba(235,240,255,0.25) 0%,
+          rgba(235,240,255,0.10) 35%,
+          rgba(235,240,255,0.20) 100%);
+      }
     }
   </style>
 </head>
@@ -3161,15 +3190,8 @@
               </div>
               <div class="code-block">
                 <code><span class="comment"># Install from PyPI</span>
-<span class="cmd">pip install altergo</span>
-
-<span class="comment"># Name your accounts — run once per login you have</span>
-<span class="cmd">altergo --config work</span>
-<span class="cmd">altergo --config backup</span>
-
-<span class="comment"># Switch — just use the account name</span>
-<span class="cmd">altergo backup</span></code>
-                <button class="code-copy-btn" aria-label="Copy pip install commands" data-copy="pip install altergo &amp;&amp; altergo --config work &amp;&amp; altergo --config backup &amp;&amp; altergo backup">
+<span class="cmd">pip install altergo</span></code>
+                <button class="code-copy-btn" aria-label="Copy pip install command" data-copy="pip install altergo">
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
                     <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
@@ -3185,15 +3207,8 @@
               </div>
               <div class="code-block">
                 <code><span class="comment"># Isolated environment</span>
-<span class="cmd">pipx install altergo</span>
-
-<span class="comment"># Name your accounts — run once per login you have</span>
-<span class="cmd">altergo --config work</span>
-<span class="cmd">altergo --config backup</span>
-
-<span class="comment"># Switch — just use the account name</span>
-<span class="cmd">altergo backup</span></code>
-                <button class="code-copy-btn" aria-label="Copy pipx install commands" data-copy="pipx install altergo &amp;&amp; altergo --config work &amp;&amp; altergo --config backup &amp;&amp; altergo backup">
+<span class="cmd">pipx install altergo</span></code>
+                <button class="code-copy-btn" aria-label="Copy pipx install command" data-copy="pipx install altergo">
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
                     <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
@@ -3208,16 +3223,39 @@
                 Manual / curl
               </div>
               <div class="code-block">
-                <code style="white-space: pre-wrap; word-break: break-all;"><span class="comment"># Core only — no pip required</span>
-<span class="cmd">curl -fsSL https://raw.githubusercontent.com/thepixelabs/altergo/main/altergo.py -o ~/.local/bin/altergo</span>
+                <code><span class="comment"># Core only — no pip required</span>
+<span class="cmd">curl -fsSL \</span>
+<span class="cmd">  https://raw.githubusercontent.com/thepixelabs/altergo/main/altergo.py \</span>
+<span class="cmd">  -o ~/.local/bin/altergo</span>
 <span class="cmd">chmod +x ~/.local/bin/altergo</span></code>
-                <button class="code-copy-btn" aria-label="Copy manual curl install command" data-copy="curl -fsSL https://raw.githubusercontent.com/thepixelabs/altergo/main/altergo.py -o ~/.local/bin/altergo && chmod +x ~/.local/bin/altergo">
+                <button class="code-copy-btn" aria-label="Copy manual curl install command" data-copy="curl -fsSL \&#10;  https://raw.githubusercontent.com/thepixelabs/altergo/main/altergo.py \&#10;  -o ~/.local/bin/altergo&#10;chmod +x ~/.local/bin/altergo">
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
                     <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
                   </svg>
                 </button>
               </div>
+            </div>
+          </div>
+
+          <!-- Shared configure + switch block — runs after any install method -->
+          <div class="install-followup reveal reveal-delay-4">
+            <div class="install-method-label">
+              Configure your accounts
+            </div>
+            <div class="code-block">
+              <code><span class="comment"># Name your accounts — run once per login you have</span>
+<span class="cmd">altergo --config work</span>
+<span class="cmd">altergo --config backup</span>
+
+<span class="comment"># Switch — just use the account name</span>
+<span class="cmd">altergo backup</span></code>
+              <button class="code-copy-btn" aria-label="Copy configure and switch commands" data-copy="altergo --config work &amp;&amp; altergo --config backup &amp;&amp; altergo backup">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                </svg>
+              </button>
             </div>
           </div>
         </div>
@@ -3248,13 +3286,13 @@
             </h3>
             <table class="cmd-table" role="table" aria-label="altergo command reference">
               <tbody>
-                <tr><td>altergo &lt;name&gt;</td><td>Launch the named account (e.g. <code>altergo backup</code>)</td></tr>
-                <tr><td>altergo &lt;name&gt; &lt;provider&gt;</td><td>Launch with a specific provider — <code>altergo backup gemini</code>, <code>altergo backup codex</code></td></tr>
-                <tr><td>altergo --config &lt;name&gt; --provider &lt;p&gt;</td><td>Create or reconfigure an account with a specific provider — <code>claude</code>, <code>gemini</code>, <code>codex</code>, <code>copilot</code></td></tr>
+                <tr><td>altergo &lt;account&gt;</td><td>Launch the named account (e.g. <code>altergo backup</code>)</td></tr>
+                <tr><td>altergo &lt;account&gt; &lt;provider&gt;</td><td>Launch with a specific provider — <code>altergo backup gemini</code>, <code>altergo backup codex</code></td></tr>
+                <tr><td>altergo --config &lt;account&gt; --provider &lt;p&gt;</td><td>Create or reconfigure an account with a specific provider — <code>claude</code>, <code>gemini</code>, <code>codex</code>, <code>copilot</code></td></tr>
                 <tr><td>altergo --resume</td><td>Interactive session picker — browse, preview, resume</td></tr>
                 <tr><td>altergo --search</td><td>Full-text search across all conversation history</td></tr>
                 <tr><td>altergo --settings</td><td>Configure themes, behavior, and credential sharing</td></tr>
-                <tr><td>altergo &lt;name&gt; -- &lt;cmd&gt;</td><td>Run any command inside a named account's HOME</td></tr>
+                <tr><td>altergo &lt;account&gt; -- &lt;cmd&gt;</td><td>Run any command inside a named account's HOME</td></tr>
                 <tr><td>altergo --teardown</td><td>Remove symlinks — data and credentials untouched</td></tr>
               </tbody>
             </table>
@@ -3281,7 +3319,7 @@
               </svg>
               What gets symlinked
             </h3>
-            <p class="docs-note" style="margin-bottom:10px;">These paths inside each account's <code>~/.altergo/accounts/&lt;name&gt;/.claude/</code> are symlinked to your primary <code>~/.claude/</code> — all accounts share them:</p>
+            <p class="docs-note" style="margin-bottom:10px;">These paths inside each account's <code>~/.altergo/accounts/&lt;account&gt;/.claude/</code> are symlinked to your primary <code>~/.claude/</code> — all accounts share them:</p>
             <div class="docs-symlink-list" role="list">
               <span class="docs-symlink-tag" role="listitem">projects/</span>
               <span class="docs-symlink-tag" role="listitem">tasks/</span>
@@ -3312,7 +3350,7 @@
               </svg>
               Compatibility &amp; Disclaimers
             </h3>
-            <p class="docs-note">altergo depends on each provider's internal directory layout. Any provider may change their structure without notice — if altergo breaks after a tool update, please <a href="https://github.com/thepixelabs/altergo/issues" target="_blank" rel="noopener noreferrer">open an issue</a>.</p>
+            <p class="docs-note">altergo depends on each provider's internal directory layout. Any provider may change their structure without notice — if altergo breaks after a tool update, please <a href="https://github.com/thepixelabs/altergo/issues" target="_blank" rel="noopener noreferrer">open an issue</a>. altergo is work in progress — issues and rough edges are expected.</p>
             <p class="docs-note">altergo is <strong>not affiliated with or endorsed by Anthropic, Google, OpenAI, or GitHub</strong>. "Claude", "Gemini", "Codex", and "GitHub Copilot" are trademarks of their respective owners.</p>
             <div class="docs-disclaimer" role="note">
               This software is provided "as is" — back up your provider data directories before first use.

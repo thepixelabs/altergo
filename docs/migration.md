@@ -13,13 +13,13 @@ The default is `shared` — no behavior change on upgrade. Existing accounts con
 To opt in for an account:
 
 ```bash
-altergo --config <name> --keychain isolated
+altergo --config <account> --keychain isolated
 ```
 
 To revert:
 
 ```bash
-altergo --config <name> --keychain shared
+altergo --config <account> --keychain shared
 ```
 
 Reverting triggers automatic cleanup — altergo deletes the per-account `login.keychain-db` and the `com.altergo.account-unlock` entry from your login keychain. No manual steps required.
@@ -37,9 +37,9 @@ See [docs/keychain-isolation.md](keychain-isolation.md) for the full guide.
 No user action is required. v2 `account.json` files (`{"version": 2, "provider": "claude"}`) load forever without being rewritten. The file on disk flips to v3 only when you mutate the account via one of the new provider-management commands:
 
 ```bash
-altergo <name> --add-provider codex
-altergo <name> --remove-provider codex
-altergo <name> --default-provider gemini
+altergo <account> --add-provider codex
+altergo <account> --remove-provider codex
+altergo <account> --default-provider gemini
 ```
 
 A v2 account that you never mutate will remain on disk as a v2 file indefinitely — all v0.40.0+ code reads it correctly.
@@ -67,7 +67,7 @@ If you have muscle memory for pressing `*` to bookmark a session, use `b` instea
 
 ---
 
-## v0.34.0 — CLI syntax change: positional `--config <name>`
+## v0.34.0 — CLI syntax change: positional `--config <account>`
 
 **Applies to:** Anyone upgrading across v0.34.0.
 
@@ -87,7 +87,7 @@ Also introduced: `altergo --rename <old> <new>` for renaming an existing account
 
 ## v0.22.0 — `.claude.json` silent unsymlink
 
-**Applies to:** Anyone who had `~/.altergo/accounts/<name>/.claude/.claude.json` as a symlink before v0.22.0 (created by older altergo versions that treated it as shared).
+**Applies to:** Anyone who had `~/.altergo/accounts/<account>/.claude/.claude.json` as a symlink before v0.22.0 (created by older altergo versions that treated it as shared).
 
 `~/.claude.json` holds both `mcpServers` and `oauthAccount`. Symlinking it across accounts leaks OAuth identity, which is a real security problem. In v0.22.0 altergo switched to a **bidirectional merge** for `mcpServers` only — see [how-it-works.md](how-it-works.md#mcp-servers-sync-not-symlink) for the mechanics.
 
@@ -95,8 +95,8 @@ On the first Claude launch after upgrading, altergo atomically replaces any pre-
 
 ```bash
 # Should report "regular file", not "symbolic link"
-stat -f '%HT' ~/.altergo/accounts/<name>/.claude/.claude.json   # macOS
-stat -c '%F'  ~/.altergo/accounts/<name>/.claude/.claude.json   # Linux
+stat -f '%HT' ~/.altergo/accounts/<account>/.claude/.claude.json   # macOS
+stat -c '%F'  ~/.altergo/accounts/<account>/.claude/.claude.json   # Linux
 ```
 
 ## v0.22.0 — removal of multi-provider bundling
@@ -112,7 +112,7 @@ altergo --config --name pro --provider claude,gemini
 altergo --config pro            # pick the provider interactively
 ```
 
-Running `altergo <name> use <provider>` today prints a clear error pointing you to `altergo --config`. There is no silent fallback.
+Running `altergo <account> use <provider>` today prints a clear error pointing you to `altergo --config`. There is no silent fallback.
 
 ---
 

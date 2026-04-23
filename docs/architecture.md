@@ -99,7 +99,7 @@ The following describes the filesystem state after `altergo --config` has been r
 
 ### Accounts directory
 
-All altergo accounts live under `~/.altergo/accounts/`. The `default` account is used when you run `altergo` with no account name. Named accounts (e.g. `work`, `client-a`) are created with `altergo --config <name>` (positional form since v0.34.0).
+All altergo accounts live under `~/.altergo/accounts/`. The `default` account is used when you run `altergo` with no account name. Named accounts (e.g. `work`, `client-a`) are created with `altergo --config <account>` (positional form since v0.34.0).
 
 ```
 ~/.altergo/
@@ -214,7 +214,7 @@ Account names must pass `validate_account_name()`:
 - Maximum 64 characters
 - Must not be in `_RESERVED_NAMES`: `default`, `main`, `list`, `new`, `rm`, `shell`, `config`, `setup`, `teardown`, `help`, `version`, `legacy`, `backup`, `migrate`, `use`
 
-`validate_account_name()` is called only during `altergo --config <name>`. It is not called during account lookup in `main()` — if the directory does not exist, the user sees a "not found" error with a hint to run `altergo --config <name>`.
+`validate_account_name()` is called only during `altergo --config <account>`. It is not called during account lookup in `main()` — if the directory does not exist, the user sees a "not found" error with a hint to run `altergo --config <account>`.
 
 
 
@@ -336,16 +336,16 @@ These symlinks live directly in the account home (e.g., `~/.altergo/accounts/wor
 
 | Path | Why isolated |
 |---|---|
-| `~/.altergo/accounts/<name>/.claude/.credentials.json` | This is the entire purpose of altergo. Each account must authenticate separately. |
-| `~/.altergo/accounts/<name>/.claude/.claude.json` | Holds `oauthAccount` (per-account identity). Symlinking would leak identity across accounts. `mcpServers` inside it is bidirectionally synced separately. |
-| `~/.altergo/accounts/<name>/account.json` | v3 metadata: providers list, default_provider, optional keychain flag. Written by `save_account_meta`. v2 files (`{"version": 2, "provider": "..."}`) load forever but are only rewritten to v3 on mutation. |
+| `~/.altergo/accounts/<account>/.claude/.credentials.json` | This is the entire purpose of altergo. Each account must authenticate separately. |
+| `~/.altergo/accounts/<account>/.claude/.claude.json` | Holds `oauthAccount` (per-account identity). Symlinking would leak identity across accounts. `mcpServers` inside it is bidirectionally synced separately. |
+| `~/.altergo/accounts/<account>/account.json` | v3 metadata: providers list, default_provider, optional keychain flag. Written by `save_account_meta`. v2 files (`{"version": 2, "provider": "..."}`) load forever but are only rewritten to v3 on mutation. |
 
 ### Unmanaged (written by the provider CLI, not tracked by altergo)
 
 | Path | Notes |
 |---|---|
-| `~/.altergo/accounts/<name>/.claude/paste-cache/` | Ephemeral. Safe to leave isolated. |
-| `~/.altergo/accounts/<name>/.claude/plugins/` | Plugin state is isolated per-account. If you use plugins and want them shared, manually symlink this directory after running `altergo --config`. |
+| `~/.altergo/accounts/<account>/.claude/paste-cache/` | Ephemeral. Safe to leave isolated. |
+| `~/.altergo/accounts/<account>/.claude/plugins/` | Plugin state is isolated per-account. If you use plugins and want them shared, manually symlink this directory after running `altergo --config`. |
 
 ---
 
@@ -355,10 +355,10 @@ These symlinks live directly in the account home (e.g., `~/.altergo/accounts/wor
 
 | Variable | Modification | Condition |
 |---|---|---|
-| `HOME` | Set to `~/.altergo/accounts/<name>` | Always |
-| `PATH` | `~/.altergo/accounts/<name>/.local/bin` prepended | Only if that directory exists on disk AND is not already in PATH |
-| `PS1` | `(altergo:<name>) ` prefix prepended | Only in `launch_shell()`, only for bash/sh |
-| `PROMPT` | `(altergo:<name>) ` prefix prepended | Only in `launch_shell()`, only for zsh |
+| `HOME` | Set to `~/.altergo/accounts/<account>` | Always |
+| `PATH` | `~/.altergo/accounts/<account>/.local/bin` prepended | Only if that directory exists on disk AND is not already in PATH |
+| `PS1` | `(altergo:<account>) ` prefix prepended | Only in `launch_shell()`, only for bash/sh |
+| `PROMPT` | `(altergo:<account>) ` prefix prepended | Only in `launch_shell()`, only for zsh |
 
 Additionally, before the environment dict is returned on macOS when keychain isolation is enabled, `_unlock_account_keychain(account_home, account)` is called. It reads the unlock password from the real login keychain (silent) and unlocks the per-account `login.keychain-db`. The keychain remains unlocked for the session. On `KeychainError`, `_build_alt_env` exits 1.
 
@@ -513,7 +513,7 @@ No polling, no background thread. The merge is a few lines of JSON and runs inli
 6. **Symlink provider dirs** — for each entry in `PROVIDERS[provider]["symlink_dirs"]`, run through `_ensure_symlinked_dir()`.
 7. **Symlink provider files** — for each entry in `PROVIDERS[provider]["symlink_files"]`, unlink any existing file at the destination (safe because these are config files the provider will re-fetch/re-render) and create the symlink. Skipped silently if the source doesn't exist yet.
 8. **Symlink home-level files** — `PROVIDERS[provider].get("symlink_home_files", [])`. Currently empty for all providers; kept as an extension point.
-9. **Report credentials state.** If the provider's credentials file is absent, print a hint to authenticate by running `altergo <name>`.
+9. **Report credentials state.** If the provider's credentials file is absent, print a hint to authenticate by running `altergo <account>`.
 10. **MCP sync (Claude only).** `_sync_claude_mcps(account_home)`.
 11. **Apply the CLI-credentials catalog.** For each `CATALOG` entry, honour the user's override in `.altergo.json` or fall back to `default_on`. Link or unlink accordingly at the account-home level (not inside the dot-dir).
 12. **Keychain setup (macOS, opt-in).** If `--keychain isolated` was passed, or if the account already has `keychain: isolated` in its metadata, call `_create_account_keychain(account_home, account)`. This creates the per-account `login.keychain-db`, writes `com.apple.security.plist`, and stores the unlock password in the real login keychain. The function is idempotent — if the keychain file already exists it is reused. On `KeychainError`, `do_config` downgrades the setting to `shared` and continues. See [Keychain isolation reference](#keychain-isolation-reference) below.
@@ -539,7 +539,7 @@ Introduced in v0.40.0. v3 supports multiple providers per account:
 |---|---|---|
 | `version` | int | Always `3` for v3 files on disk |
 | `providers` | list[str] | Ordered list of installed provider ids (`claude`, `gemini`, `codex`, `copilot`) |
-| `default_provider` | str | Provider used by bare `altergo <name>`. Must be in `providers`. |
+| `default_provider` | str | Provider used by bare `altergo <account>`. Must be in `providers`. |
 | `created` | str | ISO 8601 timestamp, set at account creation, never overwritten |
 | `keychain` | str (optional) | `"isolated"` when macOS per-account keychain is enabled. Absent when `shared` (default). |
 
@@ -549,9 +549,9 @@ The `keychain` key is present only when keychain isolation is enabled (macOS, op
 
 **Disk write triggers:** the disk file flips from v2 to v3 only when the user runs one of:
 
-- `altergo <name> --add-provider <id>` — installs symlinks for a new provider; reconciles any account-local orphan data via `_reconcile_orphan_dot_dir` (MAIN wins on collision; losers archived under `<dot>.orphaned/<timestamp>/`); appends to `providers`.
-- `altergo <name> --remove-provider <id> [--yes]` — removes provider symlinks; refuses to remove the last remaining provider; rebinds `default_provider` if needed.
-- `altergo <name> --default-provider <id>` — updates `default_provider`; zero filesystem effect on dot-dirs.
+- `altergo <account> --add-provider <id>` — installs symlinks for a new provider; reconciles any account-local orphan data via `_reconcile_orphan_dot_dir` (MAIN wins on collision; losers archived under `<dot>.orphaned/<timestamp>/`); appends to `providers`.
+- `altergo <account> --remove-provider <id> [--yes]` — removes provider symlinks; refuses to remove the last remaining provider; rebinds `default_provider` if needed.
+- `altergo <account> --default-provider <id>` — updates `default_provider`; zero filesystem effect on dot-dirs.
 
 `load_account_meta()` treats any of the following as a legacy Claude account:
 - No `account.json` file but a `.claude/` directory exists
@@ -611,7 +611,7 @@ Type annotations are used selectively in the source — newer functions carry re
 
 ### Idempotency
 
-`_create_account_keychain` checks whether the keychain file already exists before creating it. If it does, creation is skipped and the existing keychain is reused. If the keychain file exists but the unlock entry in the login keychain is missing (orphan state), altergo warns and aborts — it cannot reconstruct a lost unlock password. Recovery: delete `<account_home>/Library/Keychains/login.keychain-db` and re-run `altergo --config <name> --keychain isolated`.
+`_create_account_keychain` checks whether the keychain file already exists before creating it. If it does, creation is skipped and the existing keychain is reused. If the keychain file exists but the unlock entry in the login keychain is missing (orphan state), altergo warns and aborts — it cannot reconstruct a lost unlock password. Recovery: delete `<account_home>/Library/Keychains/login.keychain-db` and re-run `altergo --config <account> --keychain isolated`.
 
 ### Tests
 

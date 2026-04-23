@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>altergo — Switch AI Accounts Without Breaking Flow | CLI for Claude, Gemini, Codex</title>
+  <title>altergo: Switch AI Accounts Without Breaking Flow | CLI for Claude, Gemini, Codex</title>
   <meta name="description" content="Swap Claude Code, Gemini CLI, Codex, and Copilot credentials in one command. Same project, same history, no ramp-up. Named accounts, isolated credentials, shared history. Free, open source, macOS &amp; Linux." />
   <meta name="keywords" content="altergo, claude code accounts, gemini cli switch, AI account manager, codex credentials, copilot accounts, multi-account AI, session manager, pip install altergo" />
   <meta name="robots" content="index, follow" />
@@ -13,14 +13,14 @@
   <!-- Open Graph -->
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://altergo.pixelabs.net/" />
-  <meta property="og:title" content="altergo — Switch AI accounts without breaking flow" />
+  <meta property="og:title" content="altergo: Switch AI accounts without breaking flow" />
   <meta property="og:description" content="Swap Claude Code, Gemini CLI, Codex, and Copilot credentials in one command. Same project, same history, no ramp-up." />
   <meta property="og:image" content="https://altergo.pixelabs.net/images/gits/ghost_duality.png" />
-  <meta property="og:image:alt" content="altergo — cyberpunk ghost duality, representing seamless AI account switching" />
+  <meta property="og:image:alt" content="altergo, cyberpunk ghost duality, representing seamless AI account switching" />
   <meta property="og:site_name" content="altergo" />
   <meta property="og:locale" content="en_US" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="altergo — Switch AI accounts without breaking flow" />
+  <meta name="twitter:title" content="altergo: Switch AI accounts without breaking flow" />
   <meta name="twitter:description" content="Swap Claude Code, Gemini CLI, Codex, and Copilot credentials in one command. Same project, same history, no ramp-up." />
   <meta name="twitter:image" content="https://altergo.pixelabs.net/images/gits/ghost_duality.png" />
   <meta name="twitter:creator" content="@thepixelabs" />
@@ -106,13 +106,13 @@
       --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', ui-monospace, monospace;
     }
 
-    /* GITS: dark-only — light theme removed */
+    /* GITS: dark-only, light theme removed */
 
     /* ============================================================
        LIGHT THEME OVERRIDES
     ============================================================ */
     [data-theme="light"] {
-      /* Deep slate-blue palette — hackery, not white */
+      /* Deep slate-blue palette, hackery, not white */
       --void: #c8d8f0;
       --bg-0: #d0dcf0;
       --bg-1: #c2d0ea;
@@ -198,7 +198,7 @@
     }
     [data-theme="light"] #canvas-bg { opacity: 0.35; }
 
-    /* Light mode — invert dark images into blue-tinted blueprints */
+    /* Light mode, invert dark images into blue-tinted blueprints */
     [data-theme="light"] .hero-bg-img {
       opacity: 0.55;
       filter: invert(1) hue-rotate(185deg) saturate(0.55) brightness(1.15) contrast(0.85);
@@ -1075,13 +1075,13 @@
     }
 
     /* Colors matching altergo curses TUI */
-    .tc-prompt  { color: #6366f1; }        /* indigo — prompt $ */
-    .tc-cmd     { color: #e2e8ff; }        /* near-white — typed command */
+    .tc-prompt  { color: #6366f1; }        /* indigo, prompt $ */
+    .tc-cmd     { color: #e2e8ff; }        /* near-white, typed command */
     .tc-dim     { color: #3d4268; }        /* dim */
-    .tc-cyan    { color: #00e5ff; }        /* cyan — info */
-    .tc-green   { color: #0ffa7a; }        /* green — success */
-    .tc-yellow  { color: #fbbf24; }        /* yellow — warning/account */
-    .tc-indigo  { color: #818cf8; }        /* indigo bright — headings */
+    .tc-cyan    { color: #00e5ff; }        /* cyan, info */
+    .tc-green   { color: #0ffa7a; }        /* green, success */
+    .tc-yellow  { color: #fbbf24; }        /* yellow, warning/account */
+    .tc-indigo  { color: #818cf8; }        /* indigo bright, headings */
     .tc-white   { color: #c8ceee; }        /* body text */
     .tc-sel     { background: rgba(99,102,241,0.22); color: #a5b4fc; display: inline-block; width: 100%; }
     .tc-row     { color: #7880b0; display: inline-block; width: 100%; }
@@ -1164,15 +1164,9 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      margin: 0 14px 0 0;
-      shape-outside: border-box;
+      margin: 0 14px 8px 0;
       font-size: 1.4rem;
       flex-shrink: 0;
-    }
-    .why-card::after {
-      content: '';
-      display: block;
-      clear: both;
     }
     .why-icon-indigo { background: var(--indigo-glow); border: 1px solid rgba(99, 102, 241, 0.2); }
     .why-icon-cyan   { background: var(--cyan-dim);    border: 1px solid rgba(0, 229, 255, 0.2); }
@@ -1183,20 +1177,12 @@
       font-size: 1.1rem;
       font-weight: 700;
       color: var(--text-0);
-      display: inline;
-      margin: 0;
-      line-height: 1.55;
-    }
-    .why-card h3::after {
-      content: "  ";
-      white-space: pre;
+      margin-bottom: 6px;
     }
     .why-card p {
       font-size: 0.95rem;
       color: var(--text-1);
       line-height: 1.7;
-      display: inline;
-      margin: 0;
     }
 
     @media (max-width: 600px) {
@@ -1206,7 +1192,6 @@
       .why-icon {
         width: 40px;
         height: 40px;
-        margin: 2px 12px 0 0;
       }
       .why-card h3 {
         font-size: 1rem;
@@ -1340,7 +1325,7 @@
       line-height: 1.55;
     }
 
-    /* Light theme — soften the glow slightly */
+    /* Light theme, soften the glow slightly */
     [data-theme="light"] .how-step {
       border-color: var(--border-glow);
       box-shadow:
@@ -1414,7 +1399,7 @@
       pointer-events: none;
       z-index: 1;
       border-radius: inherit;
-      /* GPU-composited — no paint invalidation on surrounding content. */
+      /* GPU-composited, no paint invalidation on surrounding content. */
       will-change: transform, opacity;
     }
     .feature-item:hover {
@@ -1841,7 +1826,7 @@
     }
 
     /* ============================================================
-       GHOST IN THE SHELL — GITS OVERRIDES
+       GHOST IN THE SHELL, GITS OVERRIDES
     ============================================================ */
 
     body {
@@ -1924,7 +1909,7 @@
       z-index: 3;
     }
 
-    /* Ghost circle — large atmospheric hero background element */
+    /* Ghost circle, large atmospheric hero background element */
     @keyframes ghost-float {
       0%, 100% { transform: translateY(0px) scale(1); }
       50%       { transform: translateY(-18px) scale(1.015); }
@@ -1968,7 +1953,7 @@
       will-change: transform, filter;
     }
 
-    /* Glow halo behind the ghost circle — layered light effect */
+    /* Glow halo behind the ghost circle, layered light effect */
     .hero-ghost-circle::before {
       content: '';
       position: absolute;
@@ -1989,7 +1974,7 @@
       border-color: rgba(0,229,255,0.25) !important;
     }
 
-    /* ---- NAV — GITS HUD ---- */
+    /* ---- NAV, GITS HUD ---- */
     .nav-links a {
       font-family: var(--font-mono);
       font-size: 0.75rem;
@@ -2032,7 +2017,7 @@
       .gits-two-col .gits-illustration { max-width: 480px; margin: 0 auto; }
     }
 
-    /* isolated_shells — full-bleed section background */
+    /* isolated_shells, full-bleed section background */
     .gits-how-bg {
       position: absolute;
       inset: 0;
@@ -2051,7 +2036,7 @@
       position: relative;
       z-index: 1;
     }
-    /* how-step cards — glass over background */
+    /* how-step cards, glass over background */
     .how-step {
       background: rgba(7, 9, 26, 0.55) !important;
       backdrop-filter: blur(8px) !important;
@@ -2111,14 +2096,14 @@
       display: block;
     }
 
-    /* How section — vault atmosphere with full-bleed background */
+    /* How section, vault atmosphere with full-bleed background */
     #how {
       background: var(--void) !important;
       position: relative;
       overflow: hidden;
     }
 
-    /* ---- PERSISTENT SECTION — ghost circle integration ---- */
+    /* ---- PERSISTENT SECTION, ghost circle integration ---- */
     #persistent {
       position: relative;
       overflow: hidden;
@@ -2173,12 +2158,12 @@
       }
     }
 
-    /* Scroll progress bar — GITS colors */
+    /* Scroll progress bar, GITS colors */
     .scroll-progress {
       background: linear-gradient(90deg, var(--cyan) 0%, var(--indigo) 50%, var(--green) 100%) !important;
     }
 
-    /* Footer — monospace minimal */
+    /* Footer, monospace minimal */
     footer {
       border-top: 1px solid rgba(0,229,255,0.10) !important;
     }
@@ -2189,7 +2174,7 @@
     }
 
     /* ============================================================
-       LIGHT THEME — COMPONENT OVERRIDES
+       LIGHT THEME, COMPONENT OVERRIDES
     ============================================================ */
 
     /* Nav in light mode */
@@ -2353,7 +2338,7 @@
       box-shadow: 0 0 8px rgba(99, 102, 241, 0.15);
     }
 
-    /* Hero data rain — less harsh in light mode */
+    /* Hero data rain, less harsh in light mode */
     [data-theme="light"] .hero-data-rain span {
       opacity: 0.08;
     }
@@ -2372,7 +2357,7 @@
       padding-bottom: 96px !important;
     }
 
-    /* Hero data rain — pale indigo tones */
+    /* Hero data rain, pale indigo tones */
     [data-theme="light"] .rain-col {
       color: rgba(80, 100, 200, 0.22);
       opacity: 1;
@@ -2391,7 +2376,7 @@
       color: var(--indigo);
     }
 
-    /* Terminal mockup — stays dark in light mode (intentional dark UI on blue bg) */
+    /* Terminal mockup, stays dark in light mode (intentional dark UI on blue bg) */
     [data-theme="light"] .term-wrap {
       background: #0e1228;
       border-color: rgba(99, 102, 241, 0.35);
@@ -2406,7 +2391,7 @@
                   #0b0d1e;
     }
 
-    /* Docs / install section — teal cmd text is unreadable on blue bg; shift to indigo */
+    /* Docs / install section, teal cmd text is unreadable on blue bg; shift to indigo */
     [data-theme="light"] .cmd-table td:first-child {
       color: var(--indigo);
     }
@@ -2447,7 +2432,7 @@
     }
 
     /* ============================================================
-       FIXED GHOST BACKGROUND — cross-browser mobile fix
+       FIXED GHOST BACKGROUND, cross-browser mobile fix
        iOS Safari doesn't support background-attachment: fixed on
        body/sections, so we use a separate fixed div behind content.
     ============================================================ */
@@ -2485,7 +2470,7 @@
     }
 
     /* ============================================================
-       MOBILE OVERFLOW — root-cause fixes
+       MOBILE OVERFLOW, root-cause fixes
     ============================================================ */
     html, body {
       max-width: 100%;
@@ -2595,7 +2580,7 @@
   <!-- Canvas background -->
   <canvas id="canvas-bg" aria-hidden="true" role="presentation"></canvas>
 
-  <!-- Fixed ghost background — visible on all screen sizes including mobile.
+  <!-- Fixed ghost background, visible on all screen sizes including mobile.
        Uses a separate fixed div because iOS Safari doesn't support
        background-attachment: fixed on body/section elements. -->
   <div id="ghost-bg-fixed" aria-hidden="true" role="presentation"></div>
@@ -2645,11 +2630,11 @@
             </svg>
           </button>
           <button class="theme-toggle" id="theme-toggle" aria-label="Toggle color theme" title="Cycle theme: dark → light → system">
-            <!-- moon icon — dark mode -->
+            <!-- moon icon, dark mode -->
             <svg class="icon-dark" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/>
             </svg>
-            <!-- sun icon — light mode -->
+            <!-- sun icon, light mode -->
             <svg class="icon-light" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <circle cx="12" cy="12" r="5"/>
               <line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/>
@@ -2657,7 +2642,7 @@
               <line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/>
               <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
             </svg>
-            <!-- monitor icon — system mode -->
+            <!-- monitor icon, system mode -->
             <svg class="icon-system" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>
             </svg>
@@ -2750,7 +2735,7 @@
             <p class="hero-h1-alt reveal reveal-delay-1">Isolates credentials. Shares everything else.</p>
 
             <p class="hero-subtitle reveal reveal-delay-2">
-              You're mid-session and your AI hits a limit — or you need a different model for the next task. <code style="font-family:var(--font-mono);font-size:0.9em;color:var(--cyan)">altergo backup</code> swaps credentials in place. Same project, same history, no ramp-up. You just keep working.
+              You're mid-session and your AI hits a limit, or you need a different model for the next task. <code style="font-family:var(--font-mono);font-size:0.9em;color:var(--cyan)">altergo backup</code> swaps credentials in place. Same project, same history, no ramp-up. You just keep working.
             </p>
 
             <div class="hero-actions reveal reveal-delay-3">
@@ -2783,7 +2768,7 @@
                 </svg>
               </button>
               <span class="snippet-divider" aria-hidden="true"></span>
-              <a class="pypi-stat" id="pypi-downloads" href="https://pypi.org/project/altergo/" target="_blank" rel="noopener noreferrer" aria-label="PyPI project page — pip pulls per month" title="View on PyPI">
+              <a class="pypi-stat" id="pypi-downloads" href="https://pypi.org/project/altergo/" target="_blank" rel="noopener noreferrer" aria-label="PyPI project page, pip pulls per month" title="View on PyPI">
                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                   <path d="M12 4v16m-7-7 7 7 7-7"/>
                 </svg>
@@ -2805,7 +2790,7 @@
                 <span class="term-dot term-dot-red"></span>
                 <span class="term-dot term-dot-yellow"></span>
                 <span class="term-dot term-dot-green"></span>
-                <span class="term-title">zsh — ~/projects/my-app</span>
+                <span class="term-title">zsh: ~/projects/my-app</span>
               </div>
               <div class="term-body" id="term-body">
                 <span class="term-cursor" id="term-cursor"></span>
@@ -2838,7 +2823,7 @@
               </svg>
             </div>
             <h3>Rate-limited. Not stopped.</h3>
-            <p>You hit the wall mid-thought. Another account is ready. altergo switches credentials and drops you back into the same session — no lost context, no starting over.</p>
+            <p>You hit the wall mid-thought. Another account is ready. altergo switches credentials and drops you back into the same session, no lost context, no starting over.</p>
           </div>
           <div class="why-card reveal reveal-delay-2" role="listitem">
             <div class="why-icon why-icon-cyan" aria-hidden="true">
@@ -2852,7 +2837,7 @@
               </svg>
             </div>
             <h3>Thinker, then sprinter.</h3>
-            <p>One account for deep architecture (extended reasoning, heavy models). Another for rapid execution (fast models, high throughput). Flip between them like gear ratios — same codebase, different operating mode.</p>
+            <p>One account for deep architecture (extended reasoning, heavy models). Another for rapid execution (fast models, high throughput). Flip between them like gear ratios, same codebase, different operating mode.</p>
           </div>
           <div class="why-card reveal reveal-delay-3" role="listitem">
             <div class="why-icon why-icon-green" aria-hidden="true">
@@ -2881,11 +2866,11 @@
             <div class="reveal">
               <span class="section-label" aria-hidden="true">Why altergo</span>
               <h2 class="section-title" id="why-heading">Never lose your flow.</h2>
-              <p class="section-subtitle">Your AI tool already saves every conversation locally. altergo reads those files directly — no cloud sync, no re-upload, nothing leaves your machine. Switch accounts in seconds. Resume any session from any account.</p>
+              <p class="section-subtitle">Your AI tool already saves every conversation locally. altergo reads those files directly, no cloud sync, no re-upload, nothing leaves your machine. Switch accounts in seconds. Resume any session from any account.</p>
             </div>
           </div>
           <div class="reveal reveal-delay-2">
-            <img src="images/gits/identity_switch.png" alt="Cyberpunk credential hot-swap — switching between AI accounts in an instant" class="gits-illustration gits-illustration-cyan" />
+            <img src="images/gits/identity_switch.png" alt="Cyberpunk credential hot-swap, switching between AI accounts in an instant" class="gits-illustration gits-illustration-cyan" />
           </div>
         </div>
 
@@ -2903,7 +2888,7 @@
               </svg>
             </div>
             <h3>Many accounts, one brain</h3>
-            <p>Your conversations already live on disk. altergo symlinks those local files so every account sees the same history. Switch accounts, not worlds — your history follows you everywhere.</p>
+            <p>Your conversations already live on disk. altergo symlinks those local files so every account sees the same history. Switch accounts, not worlds. Your history follows you everywhere.</p>
           </div>
           <div class="why-card reveal reveal-delay-2" role="listitem">
             <div class="why-icon why-icon-cyan" aria-hidden="true">
@@ -2920,7 +2905,7 @@
               </svg>
             </div>
             <h3>Zero config drama</h3>
-            <p>Symlinks handle everything. No syncing, no copying, no config files to wrangle. A single config command and you are done — undo it just as easily.</p>
+            <p>Symlinks handle everything. No syncing, no copying, no config files to wrangle. A single config command and you are done, undo it just as easily.</p>
           </div>
           <div class="why-card reveal reveal-delay-3" role="listitem">
             <div class="why-icon why-icon-green" aria-hidden="true">
@@ -2952,7 +2937,7 @@
         <div class="reveal">
           <span class="section-label" aria-hidden="true">How it works</span>
           <h2 class="section-title" id="how-heading">Three commands to go.</h2>
-          <p class="section-subtitle">Your conversations are already on your machine. altergo just wires up the access — no daemon, no background process, no cloud sync.</p>
+          <p class="section-subtitle">Your conversations are already on your machine. altergo just wires up the access, no daemon, no background process, no cloud sync.</p>
           <p class="section-subtitle" style="font-family: var(--font-mono); font-size: 0.78rem; color: var(--text-2); margin-top: 10px; letter-spacing: 0.03em;" aria-hidden="true">~45 sec &nbsp;·&nbsp; no daemon &nbsp;·&nbsp; pure Python</p>
         </div>
 
@@ -2990,7 +2975,7 @@
             </div>
             <div class="step-body">
               <code class="step-command"><span class="prompt" aria-hidden="true">$</span><span class="cmd">altergo --config work</span></code>
-              <p class="step-caption">Create a named account — one per AI account you use. Repeat for each one you have. Symlinks wired automatically.</p>
+              <p class="step-caption">Create a named account, one per AI account you use. Repeat for each one you have. Symlinks wired automatically.</p>
             </div>
           </div>
 
@@ -3025,7 +3010,7 @@
         <div class="reveal">
           <span class="section-label" aria-hidden="true">Features</span>
           <h2 class="section-title" id="features-heading">N accounts. No entourage.</h2>
-          <p class="section-subtitle">Manages as many AI assistant accounts as you need — across Claude Code, Gemini CLI, Codex, and GitHub Copilot — and refuses to be dramatic about it.</p>
+          <p class="section-subtitle">Manages as many AI assistant accounts as you need across Claude Code, Gemini CLI, Codex, and GitHub Copilot. And refuses to be dramatic about it.</p>
         </div>
 
         <!-- Session recall highlight -->
@@ -3034,7 +3019,7 @@
           <div class="recall-highlight-content">
             <span class="section-label" aria-hidden="true">// RECALL</span>
             <h3 style="font-family: var(--font-display); font-size: 1.3rem; font-weight: 700; color: var(--text-0); margin-bottom: 8px;">Total recall across all identities.</h3>
-            <p style="font-size: 0.95rem; color: var(--text-1); max-width: 600px; line-height: 1.7;"><code style="font-family: var(--font-mono); color: var(--cyan); font-size: 0.88em;">altergo --recall</code> opens the interactive TUI picker — every session from every account and every provider. Arrow keys, vim bindings, full-text search, provider filter, bookmarks. Your entire AI history in one view.</p>
+            <p style="font-size: 0.95rem; color: var(--text-1); max-width: 600px; line-height: 1.7;"><code style="font-family: var(--font-mono); color: var(--cyan); font-size: 0.88em;">altergo --recall</code> opens the interactive TUI picker: every session from every account and every provider. Arrow keys, vim bindings, full-text search, provider filter, bookmarks. Your entire AI history in one view.</p>
           </div>
         </div>
 
@@ -3068,8 +3053,8 @@
                 <line x1="16" y1="9" x2="12.5" y2="14" stroke="var(--cyan)" stroke-dasharray="2 1.5"/>
               </svg>
             </div>
-            <h3>Named Accounts — Unlimited</h3>
-            <p>personal, pro, sideproject — one per AI account you use, as many as you need. Each gets its own isolated provider credentials; everything else is shared.</p>
+            <h3>Unlimited named accounts</h3>
+            <p>personal, pro, sideproject. One per AI account you use, as many as you need. Each gets its own isolated provider credentials; everything else is shared.</p>
           </div>
           <div class="feature-item reveal reveal-delay-3" role="listitem" style="--shimmer-duration:28s; --shimmer-delay:18s">
             <div class="feature-icon" aria-hidden="true">
@@ -3081,21 +3066,20 @@
               </svg>
             </div>
             <h3>One Command to Switch</h3>
-            <p><code style="font-family:var(--font-mono);font-size:0.82em;color:var(--cyan)">altergo backup</code> launches your configured AI assistant with the right credentials. No flags, no config editing — just the account name.</p>
+            <p><code style="font-family:var(--font-mono);font-size:0.82em;color:var(--cyan)">altergo backup</code> launches your configured AI assistant with the right credentials. No flags, no config editing, just the account name.</p>
           </div>
           <div class="feature-item reveal reveal-delay-4" role="listitem" style="--shimmer-duration:40s; --shimmer-delay:5s">
             <div class="feature-icon" aria-hidden="true">
-              <!-- apple + linux tux silhouette hint -->
+              <!-- padlock with keyhole, keychain isolation -->
               <svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="var(--indigo-bright)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M14 3 C14 3 14.5 1 16 1.5" stroke="var(--indigo-bright)" stroke-width="1.2"/>
-                <path d="M11 5 C9 5 7.5 6 7 8 C6 11 6.5 14 8 16 C9 17.5 10 18 11 17.5 C12 18 13 17.5 14 16 C15.5 14 16 11 15 8 C14.5 6 13 5 11 5Z" fill="rgba(99,102,241,0.1)"/>
-                <rect x="5" y="14" width="12" height="2" rx="1" fill="rgba(99,102,241,0.15)" stroke="var(--indigo-bright)" stroke-width="1.2"/>
-                <line x1="7.5" y1="16" x2="7.5" y2="19"/>
-                <line x1="14.5" y1="16" x2="14.5" y2="19"/>
+                <path d="M7 10 L7 7 C7 4.8 8.8 3 11 3 C13.2 3 15 4.8 15 7 L15 10" stroke="var(--indigo-bright)" stroke-width="1.4" fill="none"/>
+                <rect x="4.5" y="10" width="13" height="9" rx="1.6" fill="rgba(99,102,241,0.12)" stroke="var(--indigo-bright)" stroke-width="1.4"/>
+                <circle cx="11" cy="14" r="1.4" fill="rgba(0,229,255,0.3)" stroke="var(--cyan)" stroke-width="1.3"/>
+                <line x1="11" y1="15" x2="11" y2="16.8" stroke="var(--cyan)" stroke-width="1.4"/>
               </svg>
             </div>
-            <h3>Cross-platform</h3>
-            <p>Works on macOS and Linux wherever Python 3.10+ is available.</p>
+            <h3>Keychain-isolated credentials</h3>
+            <p>Opt an account into <code style="font-family:var(--font-mono);font-size:0.82em;color:var(--cyan)">--keychain isolated</code> and its provider tokens move into a dedicated macOS keychain, separate from your login keychain and from other altergo accounts. Auto-unlocks with your session, no Touch-ID prompts, no TTL expiry.</p>
           </div>
           <div class="feature-item reveal reveal-delay-6" role="listitem" style="--shimmer-duration:30s; --shimmer-delay:23s">
             <div class="feature-icon" aria-hidden="true">
@@ -3110,7 +3094,7 @@
               </svg>
             </div>
             <h3>Isolates credentials. Shares the rest.</h3>
-            <p>Each account's provider credentials are isolated — Claude Code's <code>.credentials.json</code>, Gemini's <code>oauth_creds.json</code>, Codex's <code>auth.json</code>. AWS, GCP, Docker, kubectl, and GitHub CLI are shared across all accounts by default. Tune it with <code>altergo --settings</code> — a curses TUI, space to toggle, <kbd>s</kbd> to save.</p>
+            <p>Each account's provider credentials are isolated: Claude Code's <code>.credentials.json</code>, Gemini's <code>oauth_creds.json</code>, Codex's <code>auth.json</code>. AWS, GCP, Docker, kubectl, and GitHub CLI are shared across all accounts by default. Tune it with <code>altergo --settings</code>, a curses TUI, space to toggle, <kbd>s</kbd> to save.</p>
           </div>
           <div class="feature-item reveal reveal-delay-6" role="listitem" style="--shimmer-duration:38s; --shimmer-delay:11s">
             <div class="feature-icon" aria-hidden="true">
@@ -3123,7 +3107,7 @@
               </svg>
             </div>
             <h3>Silent Auto-migration</h3>
-            <p>Existing single-account installs upgrade automatically on first run. No manual steps, no config edits — your old setup becomes the default account and keeps working.</p>
+            <p>Existing single-account installs upgrade automatically on first run. No manual steps, no config edits. Your old setup becomes the default account and keeps working.</p>
           </div>
         </div>
       </div>
@@ -3141,7 +3125,7 @@
             <div class="reveal">
               <span class="section-label" aria-hidden="true">Always on</span>
               <h2 class="section-title" id="persistent-heading">Your session outlives the connection.</h2>
-              <p class="section-subtitle">Every altergo session runs inside a named tmux window. Lose the SSH connection, close the laptop, switch devices — reattach in one command and the AI never knew you left.</p>
+              <p class="section-subtitle">Every altergo session runs inside a named tmux window. Lose the SSH connection, close the laptop, switch devices. Reattach in one command and the AI never knew you left.</p>
             </div>
 
         <div class="features-grid" role="list" aria-label="Session persistence features" style="margin-top: 36px;">
@@ -3267,7 +3251,7 @@
                 Manual / curl
               </div>
               <div class="code-block">
-                <code><span class="comment"># Core only — no pip required</span>
+                <code><span class="comment"># Core only, no pip required</span>
 <span class="cmd">curl -fsSL \</span>
 <span class="cmd">  https://raw.githubusercontent.com/thepixelabs/altergo/main/altergo.py \</span>
 <span class="cmd">  -o ~/.local/bin/altergo</span>
@@ -3282,17 +3266,17 @@
             </div>
           </div>
 
-          <!-- Shared configure + switch block — runs after any install method -->
+          <!-- Shared configure + switch block, runs after any install method -->
           <div class="install-followup reveal reveal-delay-4">
             <div class="install-method-label">
               Configure your accounts
             </div>
             <div class="code-block">
-              <code><span class="comment"># Name your accounts — run once per login you have</span>
+              <code><span class="comment"># Name your accounts, run once per login you have</span>
 <span class="cmd">altergo --config work</span>
 <span class="cmd">altergo --config backup</span>
 
-<span class="comment"># Switch — just use the account name</span>
+<span class="comment"># Switch, just use the account name</span>
 <span class="cmd">altergo backup</span></code>
               <button class="code-copy-btn" aria-label="Copy configure and switch commands" data-copy="altergo --config work &amp;&amp; altergo --config backup &amp;&amp; altergo backup">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -3331,13 +3315,13 @@
             <table class="cmd-table" role="table" aria-label="altergo command reference">
               <tbody>
                 <tr><td>altergo &lt;account&gt;</td><td>Launch the named account (e.g. <code>altergo backup</code>)</td></tr>
-                <tr><td>altergo &lt;account&gt; &lt;provider&gt;</td><td>Launch with a specific provider — <code>altergo backup gemini</code>, <code>altergo backup codex</code></td></tr>
-                <tr><td>altergo --config &lt;account&gt; --provider &lt;p&gt;</td><td>Create or reconfigure an account with a specific provider — <code>claude</code>, <code>gemini</code>, <code>codex</code>, <code>copilot</code></td></tr>
-                <tr><td>altergo --resume</td><td>Interactive session picker — browse, preview, resume</td></tr>
+                <tr><td>altergo &lt;account&gt; &lt;provider&gt;</td><td>Launch with a specific provider, <code>altergo backup gemini</code>, <code>altergo backup codex</code></td></tr>
+                <tr><td>altergo --config &lt;account&gt; --provider &lt;p&gt;</td><td>Create or reconfigure an account with a specific provider, <code>claude</code>, <code>gemini</code>, <code>codex</code>, <code>copilot</code></td></tr>
+                <tr><td>altergo --resume</td><td>Interactive session picker, browse, preview, resume</td></tr>
                 <tr><td>altergo --search</td><td>Full-text search across all conversation history</td></tr>
                 <tr><td>altergo --settings</td><td>Configure themes, behavior, and credential sharing</td></tr>
                 <tr><td>altergo &lt;account&gt; -- &lt;cmd&gt;</td><td>Run any command inside a named account's HOME</td></tr>
-                <tr><td>altergo --teardown</td><td>Remove symlinks — data and credentials untouched</td></tr>
+                <tr><td>altergo --teardown</td><td>Remove symlinks, data and credentials untouched</td></tr>
               </tbody>
             </table>
           </div>
@@ -3350,8 +3334,8 @@
               </svg>
               Credentials &amp; Auth
             </h3>
-            <p class="docs-note">Each account gets its own isolated credentials. altergo logs you in fresh per account — just run <code>altergo backup</code> and authenticate when prompted. That's it.</p>
-            <p class="docs-note"><strong>Shared by default:</strong> AWS, gcloud, Azure, Docker, kubectl, Terraform, GitHub CLI — so your infra tools keep working across accounts without re-auth. Toggle anything via <code>altergo --settings</code>.</p>
+            <p class="docs-note">Each account gets its own isolated credentials. altergo logs you in fresh per account. Just run <code>altergo backup</code> and authenticate when prompted. That's it.</p>
+            <p class="docs-note"><strong>Shared by default:</strong> AWS, gcloud, Azure, Docker, kubectl, Terraform, GitHub CLI, so your infra tools keep working across accounts without re-auth. Toggle anything via <code>altergo --settings</code>.</p>
             <p class="docs-note"><strong>Need to auth a tool for one account?</strong> <code>altergo backup -- gh auth login</code> runs any command inside that account's environment.</p>
           </div>
 
@@ -3363,7 +3347,7 @@
               </svg>
               What gets symlinked
             </h3>
-            <p class="docs-note" style="margin-bottom:10px;">These paths inside each account's <code>~/.altergo/accounts/&lt;account&gt;/.claude/</code> are symlinked to your primary <code>~/.claude/</code> — all accounts share them:</p>
+            <p class="docs-note" style="margin-bottom:10px;">These paths inside each account's <code>~/.altergo/accounts/&lt;account&gt;/.claude/</code> are symlinked to your primary <code>~/.claude/</code>. All accounts share them:</p>
             <div class="docs-symlink-list" role="list">
               <span class="docs-symlink-tag" role="listitem">projects/</span>
               <span class="docs-symlink-tag" role="listitem">tasks/</span>
@@ -3383,7 +3367,7 @@
             <div class="docs-symlink-list" role="list">
               <span class="docs-symlink-tag separate" role="listitem">.credentials.json</span>
             </div>
-            <p class="docs-note" style="margin-top:12px;"><strong>CLI tool credentials</strong> — shared or isolated per tool across all named accounts, configurable via <code>altergo --settings</code>. Shared by default: <code>.aws</code>, <code>.config/gcloud</code>, <code>.azure</code>, <code>.docker</code>, <code>.kube</code>, <code>.terraform.d</code>, <code>.config/gh</code>. Isolated by default: <code>.config/glab</code>, <code>.npmrc</code>, <code>.ssh</code>, <code>.gitconfig</code>, <code>.gnupg</code>.</p>
+            <p class="docs-note" style="margin-top:12px;"><strong>CLI tool credentials:</strong> shared or isolated per tool across all named accounts, configurable via <code>altergo --settings</code>. Shared by default: <code>.aws</code>, <code>.config/gcloud</code>, <code>.azure</code>, <code>.docker</code>, <code>.kube</code>, <code>.terraform.d</code>, <code>.config/gh</code>. Isolated by default: <code>.config/glab</code>, <code>.npmrc</code>, <code>.ssh</code>, <code>.gitconfig</code>, <code>.gnupg</code>.</p>
           </div>
 
           <!-- Compatibility & disclaimer -->
@@ -3394,10 +3378,10 @@
               </svg>
               Compatibility &amp; Disclaimers
             </h3>
-            <p class="docs-note">altergo depends on each provider's internal directory layout. Any provider may change their structure without notice — if altergo breaks after a tool update, please <a href="https://github.com/thepixelabs/altergo/issues" target="_blank" rel="noopener noreferrer">open an issue</a>. altergo is work in progress — issues and rough edges are expected.</p>
+            <p class="docs-note">altergo depends on each provider's internal directory layout. Any provider may change their structure without notice. If altergo breaks after a tool update, please <a href="https://github.com/thepixelabs/altergo/issues" target="_blank" rel="noopener noreferrer">open an issue</a>. altergo is work in progress; issues and rough edges are expected.</p>
             <p class="docs-note">altergo is <strong>not affiliated with or endorsed by Anthropic, Google, OpenAI, or GitHub</strong>. "Claude", "Gemini", "Codex", and "GitHub Copilot" are trademarks of their respective owners.</p>
             <div class="docs-disclaimer" role="note">
-              This software is provided "as is" — back up your provider data directories before first use.
+              This software is provided "as is". Back up your provider data directories before first use.
               Full terms in the <a href="https://github.com/thepixelabs/altergo/blob/main/DISCLAIMER.md" target="_blank" rel="noopener noreferrer">DISCLAIMER</a>.
             </div>
           </div>
@@ -3412,7 +3396,7 @@
   <footer role="contentinfo">
     <div class="container">
       <div class="footer-inner">
-        <a href="#hero" class="footer-brand" aria-label="altergo — back to top">
+        <a href="#hero" class="footer-brand" aria-label="altergo, back to top">
           <span class="brand-alt" aria-hidden="true">alt</span><span class="brand-chop" aria-hidden="true"></span><span class="brand-e" aria-hidden="true">e</span><span class="brand-r" aria-hidden="true">r</span><span class="brand-go" aria-hidden="true">go</span>
         </a>
         <span style="font-size:0.78rem;color:var(--text-3);margin-left:auto;">altergo is an independent open-source project by <a href="https://pixelabs.net" target="_blank" rel="noopener noreferrer" style="color:var(--cyan);text-shadow:0 0 8px var(--cyan);text-decoration:underline;text-underline-offset:3px;">Pixelabs</a> · not affiliated with Anthropic, Google, OpenAI, or GitHub</span>
@@ -3469,7 +3453,7 @@
           syncMobileThemeBtns(currentTheme);
 
           const labels = { dark: 'Dark theme active', light: 'Light theme active', system: 'System theme active' };
-          toggleBtn.setAttribute('aria-label', labels[currentTheme] + ' — click to change');
+          toggleBtn.setAttribute('aria-label', labels[currentTheme] + ', click to change');
           setTimeout(() => toggleBtn.setAttribute('aria-label', 'Toggle color theme'), 2000);
         });
       }
@@ -3533,7 +3517,7 @@
     })();
 
     // ============================================================
-    // INTERSECTION OBSERVER — REVEAL ANIMATIONS
+    // INTERSECTION OBSERVER, REVEAL ANIMATIONS
     // ============================================================
     (function () {
       const items = document.querySelectorAll('.reveal');
@@ -3589,7 +3573,7 @@
     })();
 
     // ============================================================
-    // CANVAS — NEURAL CREDENTIAL MESH
+    // CANVAS, NEURAL CREDENTIAL MESH
     // Sparse node graph with data-pulse streams and drift motion.
     // Nodes = accounts/identities. Edges = symlinks. Pulses = active sessions.
     // ============================================================
@@ -3877,14 +3861,14 @@
       const PROMPT_HTML = '<span class="tc-prompt">~/my-app $</span> ';
 
       // We build the script as an array of steps.
-      // 'type'   — simulate typing into the current cmd span
-      // 'enter'  — submit the current line (make it static, start new line)
-      // 'output' — append a pre-rendered output line
-      // 'pause'  — wait N ms
-      // 'tui'    — render the TUI picker block
-      // 'select' — animate row selection change
-      // 'clear'  — wipe terminal
-      // Six scenes — picked randomly, never repeating the same one back-to-back
+      // 'type': simulate typing into the current cmd span
+      // 'enter': submit the current line (make it static, start new line)
+      // 'output': append a pre-rendered output line
+      // 'pause': wait N ms
+      // 'tui': render the TUI picker block
+      // 'select': animate row selection change
+      // 'clear': wipe terminal
+      // Six scenes, picked randomly, never repeating the same one back-to-back
       const SCENES = [
 
         // ── 0: account switch + recall TUI ──────────────────────
@@ -4128,7 +4112,7 @@
             const el = appendLine(step.html || '&nbsp;');
             // Note: .term-body has overflow:hidden so scrollTop is always 0;
             // the assignment was a no-op but still forced a style flush on
-            // every output step — removed to eliminate unnecessary reflows.
+            // every output step, removed to eliminate unnecessary reflows.
             // Start next prompt line if html is empty (blank gap before next prompt)
             if (step.html === '') startPromptLine();
             timer = setTimeout(run, step.delay || 100);
@@ -4195,7 +4179,7 @@
         if (el && countEl) {
           el.classList.remove('loading');
           const v = countEl.textContent.trim();
-          el.setAttribute('title', (v === '···' ? 'View on PyPI' : v + ' pulls this month — view on PyPI'));
+          el.setAttribute('title', (v === '···' ? 'View on PyPI' : v + ' pulls this month, view on PyPI'));
         }
         // Clear any poisoned localStorage from earlier builds.
         try { localStorage.removeItem('altergo_dl'); localStorage.removeItem('altergo_dl_ts'); } catch (e) {}

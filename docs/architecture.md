@@ -593,9 +593,9 @@ Type annotations are used selectively in the source — newer functions carry re
 
 | Location | Function | What happens |
 |---|---|---|
-| `altergo.py:~2725` (`do_config`) | `_create_account_keychain` | Called when `--keychain isolated` is set. Creates keychain, writes plist, stores unlock entry. On `KeychainError`, downgrades to `shared` and continues. |
-| `altergo.py:~2778` (`do_config`) | Downgrade path | When `--keychain shared` is passed and the account was previously isolated, deletes keychain and unlock entry. |
-| `altergo.py:~2955` (`do_delete_account`) | `_delete_account_keychain` | Deletes the per-account keychain and unlock entry before removing the account home. On `KeychainError`, warns and continues — rmtree proceeds regardless. |
+| `altergo.py:~2725` (`do_config`) | `_create_account_keychain` | Called when `--keychain isolated` is set. Creates keychain, writes plist, stores unlock entry. On `KeychainError`, downgrades to `system` and continues. |
+| `altergo.py:~2690` (`do_config`) | Downgrade path | When `--keychain system` is passed and the account was previously isolated, removes only `Library/Preferences/com.apple.security.plist`. The per-account `login.keychain-db` and the unlock entry in the real login keychain are preserved. Re-enabling `--keychain isolated` later reuses both — prior tokens return without re-authentication. |
+| `altergo.py:~2955` (`do_delete_account`) | `_delete_account_keychain` | Unconditionally tears down keychain artifacts based on file-presence: deletes the per-account keychain and unlock entry before removing the account home. On `KeychainError`, warns and continues — rmtree proceeds regardless. |
 | `altergo.py:~5423` (`_build_alt_env`) | `_unlock_account_keychain` | Called before returning the env dict. Reads unlock password from login keychain (silent), unlocks per-account keychain. On `KeychainError`, exits 1. |
 
 ### Error paths
@@ -604,8 +604,8 @@ Type annotations are used selectively in the source — newer functions carry re
 
 | Call site | On `KeychainError` |
 |---|---|
-| `do_config` (create) | Downgrades account to `shared`, prints warning, continues |
-| `do_config` (downgrade cleanup) | Prints warning, continues — account is already set to `shared` |
+| `do_config` (create) | Downgrades account to `system`, prints warning, continues |
+| `do_config` (downgrade cleanup) | Prints warning, continues — account is already set to `system` |
 | `do_delete_account` | Prints warning, continues — rmtree removes remaining files |
 | `_build_alt_env` | Exits 1 — cannot activate isolated account without unlocking its keychain |
 

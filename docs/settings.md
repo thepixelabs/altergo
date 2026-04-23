@@ -130,7 +130,7 @@ Toggle it via the CLI:
 
 ```bash
 altergo --config <account> --keychain isolated   # enable
-altergo --config <account> --keychain shared     # disable and clean up
+altergo --config <account> --keychain system     # disable (preserves keychain file; full cleanup on --delete-account)
 ```
 
 Or answer "y" to the keychain isolation prompt during interactive `altergo --config <account>`.

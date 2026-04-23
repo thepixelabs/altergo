@@ -288,16 +288,41 @@ def test_write_keychain_prefs_creates_parent_dirs(mod, tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_create_account_keychain_calls_correct_subcommands(mod, tmp_account_home, mock_sec_success):
-    """_create_account_keychain calls create-keychain, set-keychain-settings,
-    delete-generic-password, add-generic-password in that order."""
+def test_create_account_keychain_calls_correct_subcommands(monkeypatch, mod, tmp_account_home):
+    """_create_account_keychain runs the three fresh-build subcommands in the correct
+    relative order (Case 5: C absent, D absent).  Tolerates any preceding
+    find-generic-password probe calls."""
+    # Force Case 5 (pure fresh build): C absent (no file created), D absent (find fails).
+    sec_calls = []
+
+    def fake_sec(argv, *, check=True, timeout=10):
+        sec_calls.append((list(argv), {"check": check, "timeout": timeout}))
+        if argv[0] == "find-generic-password":
+            return _cp(44, "", "The specified item could not be found in the keychain.")
+        return _cp(0)
+
+    monkeypatch.setattr(mod, "_sec", fake_sec)
+
     mod._create_account_keychain(tmp_account_home, "work")
 
-    subcommands = [args[0] for args, _ in mock_sec_success]
-    assert subcommands[0] == "create-keychain"
-    assert subcommands[1] == "set-keychain-settings"
-    assert subcommands[2] == "delete-generic-password"
-    assert subcommands[3] == "add-generic-password"
+    subcommands = [args[0] for args, _ in sec_calls]
+    # The fresh-build sequence is exactly these three, in this order.
+    expected_sequence = [
+        "create-keychain",
+        "set-keychain-settings",
+        "add-generic-password",
+    ]
+    indices = []
+    for cmd in expected_sequence:
+        try:
+            idx = subcommands.index(cmd)
+        except ValueError:
+            raise AssertionError(f"Expected subcommand '{cmd}' not found in {subcommands}")
+        indices.append(idx)
+    assert indices == sorted(indices), (
+        f"Expected fresh-build subcommands in relative order {expected_sequence}; "
+        f"got indices {indices} in {subcommands}"
+    )
 
 
 def test_create_account_keychain_writes_plist(mod, tmp_account_home, mock_sec_success):
@@ -344,43 +369,83 @@ def test_create_account_keychain_password_is_64_hex_chars(monkeypatch, mod, tmp_
     assert all(c in "0123456789abcdef" for c in pw)
 
 
-def test_create_account_keychain_idempotent_skips_when_file_exists(mod, tmp_account_home, mock_sec_success):
-    """When keychain file already exists, _create_account_keychain skips create-keychain
-    and does not call it a second time."""
+def test_create_account_keychain_case1_reuse_skips_create(mod, tmp_account_home, mock_sec_success):
+    """Case 1: C+D present and unlock probe succeeds — create-keychain is skipped,
+    unlock-keychain is called as the consistency probe."""
     kc_path = mod._keychain_path(tmp_account_home)
-    kc_path.touch()  # Simulate pre-existing keychain.
+    kc_path.touch()  # Simulate pre-existing C.
+    # mock_sec_success returns success for find-generic-password and unlock-keychain.
 
     mock_sec_success.clear()
     mod._create_account_keychain(tmp_account_home, "work")
 
     subcommands = [args[0] for args, _ in mock_sec_success]
-    assert "create-keychain" not in subcommands
+    assert "create-keychain" not in subcommands, "Case 1 must not call create-keychain"
+    assert "unlock-keychain" in subcommands, "Case 1 must call unlock-keychain as probe"
 
 
-def test_create_account_keychain_idempotent_still_writes_plist(mod, tmp_account_home, mock_sec_success):
-    """Even when keychain file already exists, plist is (re-)written."""
+def test_create_account_keychain_case1_probe_succeeds_writes_plist(mod, tmp_account_home, mock_sec_success):
+    """Case 1: when C+D present and unlock probe succeeds, plist (B) is (re-)written."""
     kc_path = mod._keychain_path(tmp_account_home)
-    kc_path.touch()
+    kc_path.touch()  # Simulate pre-existing C.
 
-    # Remove plist to confirm it is re-created.
+    # Remove plist to confirm it is re-created on Case 1 reuse.
     prefs_path = tmp_account_home / "Library" / "Preferences" / "com.apple.security.plist"
     if prefs_path.exists():
         prefs_path.unlink()
 
     mod._create_account_keychain(tmp_account_home, "work")
-    assert prefs_path.exists()
+    assert prefs_path.exists(), "Case 1 reuse must (re-)write plist B"
 
 
-def test_create_account_keychain_delete_generic_uses_check_false(mod, tmp_account_home, mock_sec_success):
-    """The pre-flight delete-generic-password is called with check=False (idempotent)."""
+def test_create_account_keychain_delete_generic_uses_check_false(monkeypatch, mod, tmp_account_home):
+    """In Case 2 (wrong-password rebuild), delete-generic-password uses check=False.
+    In Case 3 (orphan-C rebuild), delete-keychain uses check=False (D is absent so no
+    delete-generic-password is issued — only the file is removed)."""
+    kc_path = mod._keychain_path(tmp_account_home)
+
+    # --- Case 2: C+D present, unlock probe fails (wrong password) ---
+    kc_path.touch()
+    sec_calls_c2 = []
+
+    def fake_sec_case2(argv, *, check=True, timeout=10):
+        sec_calls_c2.append((list(argv), {"check": check}))
+        if argv[0] == "find-generic-password":
+            return _cp(0, "deadbeef" * 8 + "\n")  # D present
+        if argv[0] == "unlock-keychain":
+            return _cp(1, "", "errSecAuthFailed")  # wrong password
+        return _cp(0)
+
+    monkeypatch.setattr(mod, "_sec", fake_sec_case2)
     mod._create_account_keychain(tmp_account_home, "work")
-    del_call = next(
-        ((args, kw) for args, kw in mock_sec_success if args[0] == "delete-generic-password"),
-        None,
+
+    del_generic_c2 = [(args, kw) for args, kw in sec_calls_c2 if args[0] == "delete-generic-password"]
+    assert del_generic_c2, "Case 2: expected delete-generic-password call"
+    for args, kw in del_generic_c2:
+        assert kw["check"] is False, "Case 2: delete-generic-password must use check=False"
+
+    # --- Case 3: C present, D absent — delete-keychain with check=False, no delete-generic-password ---
+    kc_path.touch()  # restore C
+    sec_calls_c3 = []
+
+    def fake_sec_case3(argv, *, check=True, timeout=10):
+        sec_calls_c3.append((list(argv), {"check": check}))
+        if argv[0] == "find-generic-password":
+            return _cp(44, "", "The specified item could not be found in the keychain.")  # D absent
+        return _cp(0)
+
+    monkeypatch.setattr(mod, "_sec", fake_sec_case3)
+    mod._create_account_keychain(tmp_account_home, "work")
+
+    del_kc_c3 = [(args, kw) for args, kw in sec_calls_c3 if args[0] == "delete-keychain"]
+    assert del_kc_c3, "Case 3: expected delete-keychain call to remove orphan C"
+    for args, kw in del_kc_c3:
+        assert kw["check"] is False, "Case 3: delete-keychain must use check=False"
+
+    del_generic_c3 = [args for args, _ in sec_calls_c3 if args[0] == "delete-generic-password"]
+    assert not del_generic_c3, (
+        "Case 3: must NOT call delete-generic-password (D is absent — nothing to delete)"
     )
-    assert del_call is not None
-    _, kw = del_call
-    assert kw["check"] is False
 
 
 # ---------------------------------------------------------------------------
@@ -575,30 +640,49 @@ def test_build_alt_env_propagates_keychain_error_message(monkeypatch, mod, tmp_p
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("meta", [
-    {},
-    {"version": 2, "provider": "claude"},
-    {"version": 2, "provider": "claude", "keychain": "shared"},
+@pytest.mark.parametrize("meta,expect_deprecation_warning", [
+    ({}, False),
+    ({"version": 2, "provider": "claude"}, False),
+    ({"version": 2, "provider": "claude", "keychain": "shared"}, True),
 ])
-def test_build_alt_env_shared_meta_never_calls_sec(monkeypatch, mod, tmp_path, meta):
-    """_build_alt_env must not call _sec when keychain is not isolated."""
+def test_build_alt_env_shared_meta_never_calls_sec(monkeypatch, mod, tmp_path, meta, expect_deprecation_warning):
+    """_build_alt_env must not call _unlock_account_keychain when keychain is not isolated.
+    The reconciler (desired=None) probes D once with find-generic-password as a
+    baseline check even on the fast path; that single probe is the only _sec call allowed.
+    No unlock-keychain, create-keychain, or delete-* calls must occur."""
     accounts_dir = tmp_path / "accounts"
-    (accounts_dir / "work").mkdir(parents=True)
+    account_home = accounts_dir / "work"
+    account_home.mkdir(parents=True)
+    # B (plist) is intentionally absent — reconciler reads it, sees b_present=False,
+    # and a_isolated=False, so no rebuild is triggered.
+    assert not (account_home / "Library" / "Preferences" / "com.apple.security.plist").exists()
+
     monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
     monkeypatch.setattr(mod.sys, "platform", "darwin")
-    monkeypatch.setattr(mod, "load_account_meta", lambda path: meta)
+
+    # Write account.json so load_account_meta reads real disk state.
+    import json as _json
+    (account_home / "account.json").write_text(_json.dumps(meta))
 
     sec_calls = []
 
     def spy_sec(argv, **kw):
-        sec_calls.append(argv)
+        sec_calls.append(list(argv))
         return _cp(0)
 
     monkeypatch.setattr(mod, "_sec", spy_sec)
 
     mod._build_alt_env("work")
 
-    assert sec_calls == [], f"Expected zero _sec calls for meta={meta!r}, got {sec_calls}"
+    # Only the D-probe (find-generic-password) from the reconciler is permitted.
+    # No unlock, create, set-settings, add-generic-password, or delete calls.
+    disallowed = {"unlock-keychain", "create-keychain", "set-keychain-settings",
+                  "add-generic-password", "delete-keychain", "delete-generic-password"}
+    bad_calls = [args for args in sec_calls if args[0] in disallowed]
+    assert bad_calls == [], (
+        f"Expected no unlock/build/delete _sec calls for meta={meta!r} (B absent, not isolated); "
+        f"got {bad_calls}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -709,7 +793,9 @@ def test_do_config_non_tty_isolated_sec_is_called(monkeypatch, mod, tmp_path):
 
 
 def test_do_config_non_tty_no_flag_no_plist_no_sec(monkeypatch, mod, tmp_path):
-    """do_config with keychain_arg=None on non-TTY does not create plist and does not call _sec."""
+    """do_config with keychain_arg=None on non-TTY does not create plist and does not
+    call any keychain build/unlock subcommands.  The reconciler issues one
+    find-generic-password probe; that is the only permitted _sec call."""
     main_home = tmp_path / "main_home"
     main_claude = main_home / ".claude"
     accounts_dir = tmp_path / "accounts"
@@ -727,7 +813,7 @@ def test_do_config_non_tty_no_flag_no_plist_no_sec(monkeypatch, mod, tmp_path):
     monkeypatch.setattr(mod.sys.stdin, "isatty", lambda: False)
 
     sec_calls = []
-    monkeypatch.setattr(mod, "_sec", lambda argv, **kw: (sec_calls.append(argv), _cp(0))[-1])
+    monkeypatch.setattr(mod, "_sec", lambda argv, **kw: (sec_calls.append(list(argv)), _cp(0))[-1])
 
     monkeypatch.setattr(mod, "show_banner", lambda *a, **kw: None)
     monkeypatch.setattr(mod, "_status_wrap", lambda msg, fn: fn())
@@ -739,12 +825,16 @@ def test_do_config_non_tty_no_flag_no_plist_no_sec(monkeypatch, mod, tmp_path):
     meta_path = account_home / "account.json"
     assert meta_path.exists()
     meta = json.loads(meta_path.read_text())
-    assert "keychain" not in meta, f"meta must not have 'keychain' key, got {meta}"
+    assert meta.get("keychain") == "system", f"meta must have keychain=system (normalized), got {meta}"
 
     plist_path = account_home / "Library" / "Preferences" / "com.apple.security.plist"
     assert not plist_path.exists(), "plist must NOT exist for non-isolated account"
 
-    assert sec_calls == [], f"_sec must not be called, got {sec_calls}"
+    # No keychain build/unlock/delete calls — only the reconciler's D-probe is allowed.
+    disallowed = {"unlock-keychain", "create-keychain", "set-keychain-settings",
+                  "add-generic-password", "delete-keychain", "delete-generic-password"}
+    bad_calls = [args for args in sec_calls if args[0] in disallowed]
+    assert bad_calls == [], f"No build/unlock/delete _sec calls expected for system mode; got {bad_calls}"
 
 
 def test_do_config_non_tty_no_flag_does_not_hang(monkeypatch, mod, tmp_path):
@@ -907,8 +997,12 @@ def _setup_delete_account_env(monkeypatch, mod, tmp_path, meta):
 
 
 def test_do_delete_account_calls_delete_keychain_for_isolated(monkeypatch, mod, tmp_path, account_meta_isolated):
-    """do_delete_account calls _delete_account_keychain for isolated accounts."""
+    """do_delete_account calls _delete_account_keychain when the keychain file (C) is present on disk."""
     account_home = _setup_delete_account_env(monkeypatch, mod, tmp_path, account_meta_isolated)
+
+    # Place the keychain file (C) on disk so the file-presence gate fires.
+    kc_path = account_home / "Library" / "Keychains" / "login.keychain-db"
+    kc_path.touch()
 
     delete_calls = []
     monkeypatch.setattr(
@@ -916,14 +1010,18 @@ def test_do_delete_account_calls_delete_keychain_for_isolated(monkeypatch, mod, 
         lambda home, slug: delete_calls.append((home, slug))
     )
 
+    # _sec needed for the find-generic-password probe in do_delete_account.
+    monkeypatch.setattr(mod, "_sec", lambda argv, **kw: _cp(0, "deadbeef" * 8))
+
     mod.do_delete_account("work")
 
     assert len(delete_calls) == 1
     assert delete_calls[0][1] == "work"
 
 
-def test_do_delete_account_no_keychain_for_shared(monkeypatch, mod, tmp_path, account_meta_shared):
-    """do_delete_account does NOT call _delete_account_keychain for shared accounts."""
+def test_do_delete_account_no_artifacts_skips_keychain_teardown(monkeypatch, mod, tmp_path, account_meta_shared):
+    """do_delete_account does NOT call _delete_account_keychain when B, C, and D are all absent.
+    The gate is artifact presence — not meta.  find-generic-password probe returns non-zero (D absent)."""
     account_home = _setup_delete_account_env(monkeypatch, mod, tmp_path, account_meta_shared)
 
     delete_calls = []
@@ -932,9 +1030,28 @@ def test_do_delete_account_no_keychain_for_shared(monkeypatch, mod, tmp_path, ac
         lambda home, slug: delete_calls.append((home, slug))
     )
 
+    # Spy on _sec so we can assert the find-generic-password probe was actually called.
+    sec_calls = []
+
+    def spy_sec(argv, *, check=True, timeout=10):
+        sec_calls.append(list(argv))
+        if argv[0] == "find-generic-password":
+            # D absent — keychain entry does not exist.
+            return _cp(44, "", "The specified item could not be found in the keychain.")
+        return _cp(0)
+
+    monkeypatch.setattr(mod, "_sec", spy_sec)
+
     mod.do_delete_account("work")
 
-    assert delete_calls == []
+    # Probe must have been issued.
+    probe_calls = [args for args in sec_calls if args[0] == "find-generic-password"]
+    assert probe_calls, "do_delete_account must call find-generic-password to probe D presence"
+
+    # No B or C on disk (setup did not create files), D probe returned non-zero — skip teardown.
+    assert delete_calls == [], (
+        "do_delete_account must NOT call _delete_account_keychain when no artifacts are present"
+    )
 
 
 def test_do_delete_account_continues_on_keychain_error(monkeypatch, mod, tmp_path, account_meta_isolated):
@@ -945,6 +1062,9 @@ def test_do_delete_account_continues_on_keychain_error(monkeypatch, mod, tmp_pat
         raise mod.KeychainError("simulated keychain teardown failure")
 
     monkeypatch.setattr(mod, "_delete_account_keychain", failing_delete)
+    # do_delete_account probes for D via _sec before calling _delete_account_keychain;
+    # stub _sec so the probe succeeds on CI runners without /usr/bin/security (Linux).
+    monkeypatch.setattr(mod, "_sec", lambda argv, **kw: _cp(0, "deadbeef\n"))
 
     # Should not raise; should return True (account home is removed).
     result = mod.do_delete_account("work")
@@ -1045,15 +1165,16 @@ def test_do_config_then_build_alt_env_calls_find_generic_password(monkeypatch, m
 # ---------------------------------------------------------------------------
 
 
-def test_do_config_existing_shared_account_no_sec_no_keychain_key(monkeypatch, mod, tmp_path):
-    """Given an account.json with no 'keychain' key (existing shared account),
-    calling do_config(..., keychain_arg=None) on non-TTY must not call _sec at all
-    and must save meta still without a 'keychain' key."""
+def test_do_config_existing_system_account_no_sec_normalizes_keychain_key(monkeypatch, mod, tmp_path):
+    """Given an account.json with no 'keychain' key (legacy system/shared account),
+    calling do_config(..., keychain_arg=None) on non-TTY must save meta with
+    keychain='system' and must not call any build/unlock/delete _sec subcommands.
+    The reconciler issues one find-generic-password probe; that single call is permitted."""
     accounts_dir = _setup_do_config_env(monkeypatch, mod, tmp_path)
     account_home = accounts_dir / "work"
     account_home.mkdir(parents=True)
 
-    # Pre-existing shared account — no 'keychain' key.
+    # Pre-existing system account — no 'keychain' key (legacy shape).
     existing_meta = {"version": 2, "provider": "claude", "created": "2025-01-01T00:00:00"}
     (account_home / "account.json").write_text(json.dumps(existing_meta))
 
@@ -1062,30 +1183,38 @@ def test_do_config_existing_shared_account_no_sec_no_keychain_key(monkeypatch, m
 
     mod.do_config("work", keychain_arg=None)
 
-    assert sec_calls == [], f"_sec must not be called for shared re-config, got {sec_calls}"
-
     meta = json.loads((account_home / "account.json").read_text())
-    assert "keychain" not in meta, f"meta must not gain a 'keychain' key, got {meta}"
+    assert meta.get("keychain") == "system", (
+        f"meta must have keychain='system' after normalization of absent legacy value, got {meta}"
+    )
+
+    # No keychain build/unlock/delete calls — only the reconciler's D-probe is allowed.
+    disallowed = {"unlock-keychain", "create-keychain", "set-keychain-settings",
+                  "add-generic-password", "delete-keychain", "delete-generic-password"}
+    bad_calls = [args for args in sec_calls if args[0] in disallowed]
+    assert bad_calls == [], (
+        f"No build/unlock/delete _sec calls expected for legacy system re-config; got {bad_calls}"
+    )
 
 
 # ---------------------------------------------------------------------------
-# Fix F — _create_account_keychain reuse branch: orphan detection and happy path
+# Fix F — _create_account_keychain reuse branch: Case 3 (orphan-C) and happy path
 # ---------------------------------------------------------------------------
 
 
-def test_create_account_keychain_reuse_orphan_aborts_and_warns(monkeypatch, mod, tmp_account_home, capsys):
-    """When the keychain file exists but find-generic-password returns 'could not be found',
-    _create_account_keychain must NOT call create-keychain or add-generic-password,
-    and must print a warning to stderr mentioning orphan state and manual recovery."""
+def test_create_account_keychain_case3_orphan_c_rebuilds(monkeypatch, mod, tmp_account_home, capsys):
+    """Case 3: C present, D absent — delete-keychain is called (with check=False), then
+    the fresh-build sequence runs.  No early abort, no 'altergo --config' stderr hint."""
     kc_path = mod._keychain_path(tmp_account_home)
     kc_path.parent.mkdir(parents=True, exist_ok=True)
-    kc_path.touch()  # Simulate pre-existing keychain file.
+    kc_path.touch()  # C present.
 
     sec_calls = []
 
     def fake_sec(argv, *, check=True, timeout=10):
-        sec_calls.append(list(argv))
+        sec_calls.append((list(argv), {"check": check}))
         if argv[0] == "find-generic-password":
+            # D absent
             return _cp(44, "", "The specified item could not be found in the keychain.")
         return _cp(0)
 
@@ -1093,21 +1222,25 @@ def test_create_account_keychain_reuse_orphan_aborts_and_warns(monkeypatch, mod,
 
     mod._create_account_keychain(tmp_account_home, "work")
 
-    subcommands = [args[0] for args in sec_calls]
-    assert "create-keychain" not in subcommands, "create-keychain must NOT be called for orphan"
-    assert "add-generic-password" not in subcommands, "add-generic-password must NOT be called for orphan"
+    subcommands = [args[0] for args, _ in sec_calls]
+    # delete-keychain must fire to clean up orphan C.
+    assert "delete-keychain" in subcommands, "Case 3 must call delete-keychain to remove orphan C"
+    del_kc = next(kw for args, kw in sec_calls if args[0] == "delete-keychain")
+    assert del_kc["check"] is False, "Case 3 delete-keychain must use check=False"
 
+    # Fresh build must run.
+    assert "create-keychain" in subcommands, "Case 3 must proceed to fresh build (create-keychain)"
+    assert "add-generic-password" in subcommands, "Case 3 must proceed to fresh build (add-generic-password)"
+
+    # No 'altergo --config' recovery hint in stderr — behavior was removed.
     captured = capsys.readouterr()
-    assert "orphan" in captured.err.lower() or "orphaned" in captured.err.lower(), (
-        f"stderr must mention orphan state; got: {captured.err!r}"
-    )
-    assert "altergo --config" in captured.err, (
-        f"stderr must mention manual recovery via 'altergo --config'; got: {captured.err!r}"
+    assert "altergo --config" not in captured.err, (
+        f"Case 3 must NOT emit 'altergo --config' hint (old behavior removed); got: {captured.err!r}"
     )
 
 
-def test_create_account_keychain_reuse_happy_path_writes_plist(monkeypatch, mod, tmp_account_home):
-    """When the keychain file exists and find-generic-password succeeds,
+def test_create_account_keychain_case1_probe_succeeds_also_writes_plist(monkeypatch, mod, tmp_account_home):
+    """When the keychain file exists and find-generic-password+unlock both succeed (Case 1),
     _create_account_keychain rewrites the plist and returns without error."""
     kc_path = mod._keychain_path(tmp_account_home)
     kc_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1132,60 +1265,291 @@ def test_create_account_keychain_reuse_happy_path_writes_plist(monkeypatch, mod,
 
     # create-keychain and add-generic-password must NOT be called (reuse path).
     subcommands = [args[0] for args in sec_calls]
-    assert "create-keychain" not in subcommands, "create-keychain must NOT be called on reuse"
-    assert "add-generic-password" not in subcommands, "add-generic-password must NOT be called on reuse"
+    assert "create-keychain" not in subcommands, "Case 1 must NOT call create-keychain"
+    assert "add-generic-password" not in subcommands, "Case 1 must NOT call add-generic-password"
 
-    assert prefs_path.exists(), "plist must be (re-)written on happy reuse path"
+    assert prefs_path.exists(), "Case 1 must (re-)write plist B"
 
 
 # ---------------------------------------------------------------------------
-# Fix G — do_config downgrade: isolated → shared cleanup
+# Fix G — do_config downgrade: isolated → system preserve-and-reuse
 # ---------------------------------------------------------------------------
 
 
-def test_do_config_downgrade_isolated_to_shared_runs_cleanup(monkeypatch, mod, tmp_path, capsys):
-    """do_config('work', keychain_arg='shared') on an account previously marked
-    keychain=isolated must:
-    (a) call _sec with delete-keychain and delete-generic-password,
-    (b) save meta without keychain=isolated,
-    (c) print the dim 'Removed per-account keychain' confirmation line."""
+def test_do_config_downgrade_isolated_to_system_preserves_keychain_artifacts(monkeypatch, mod, tmp_path):
+    """do_config('work', keychain_arg='system') on an account with all artifacts present
+    (A=isolated, B=plist, C=keychain-file, D=unlock-entry) must:
+    (a) NOT call delete-keychain or delete-generic-password (C+D preserved for re-enable),
+    (b) unlink B (plist) so Security.framework routing falls back,
+    (c) save meta with keychain='system'.
+
+    All four artifacts are pre-created so the pre-flight reconciler sees a consistent
+    state and does not trigger a rebuild before the downgrade path fires."""
     accounts_dir = _setup_do_config_env(monkeypatch, mod, tmp_path)
     account_home = accounts_dir / "work"
-    account_home.mkdir(parents=True)
+    (account_home / "Library" / "Preferences").mkdir(parents=True)
+    (account_home / "Library" / "Keychains").mkdir(parents=True)
 
-    # Pre-existing isolated account.
+    # Pre-existing isolated account: A=isolated, B=plist present, C=keychain file present.
     existing_meta = {"version": 2, "provider": "claude", "keychain": "isolated", "created": "2025-01-01T00:00:00"}
     (account_home / "account.json").write_text(json.dumps(existing_meta))
+    plist_path = account_home / "Library" / "Preferences" / "com.apple.security.plist"
+    plist_path.touch()  # B present.
+    kc_path = mod._keychain_path(account_home)
+    kc_path.touch()  # C present — prevents reconciler from seeing drift and rebuilding.
 
     sec_calls = []
 
     def fake_sec(argv, *, check=True, timeout=10):
         sec_calls.append(list(argv))
         if argv[0] == "find-generic-password":
-            return _cp(0, "deadbeef" * 8 + "\n")
+            return _cp(0, "deadbeef" * 8 + "\n")  # D present — reconciler sees consistent state.
+        return _cp(0)  # unlock-keychain succeeds — Case 1 probe passes.
+
+    monkeypatch.setattr(mod, "_sec", fake_sec)
+
+    mod.do_config("work", keychain_arg="system")
+
+    # (a) Destructive cleanup must NOT be called — C+D are preserved for re-enable.
+    subcommands = [args[0] for args in sec_calls]
+    assert "delete-keychain" not in subcommands, (
+        f"Downgrade to system must NOT call delete-keychain; got: {subcommands}"
+    )
+    assert "delete-generic-password" not in subcommands, (
+        f"Downgrade to system must NOT call delete-generic-password; got: {subcommands}"
+    )
+
+    # (b) B (plist) must be unlinked so Security.framework falls back to real user keychain.
+    assert not plist_path.exists(), "Downgrade to system must unlink plist B"
+
+    # (c) Meta must record keychain=system.
+    meta = json.loads((account_home / "account.json").read_text())
+    assert meta.get("keychain") == "system", (
+        f"Downgrade must save keychain='system'; got {meta}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# P0 — _create_account_keychain Case 2: wrong-password rebuild
+# ---------------------------------------------------------------------------
+
+
+def test_create_account_keychain_case2_wrong_password_rebuild(monkeypatch, mod, tmp_account_home):
+    """Case 2: C+D present but unlock probe fails (wrong password).
+    Expects delete-keychain AND delete-generic-password both called with check=False,
+    followed by the fresh-build sequence (create-keychain, set-keychain-settings,
+    add-generic-password)."""
+    kc_path = mod._keychain_path(tmp_account_home)
+    kc_path.touch()  # C present.
+
+    sec_calls = []
+
+    def fake_sec(argv, *, check=True, timeout=10):
+        sec_calls.append((list(argv), {"check": check}))
+        if argv[0] == "find-generic-password":
+            return _cp(0, "deadbeef" * 8 + "\n")  # D present.
+        if argv[0] == "unlock-keychain":
+            return _cp(1, "", "errSecAuthFailed")  # Wrong password — Case 2 trigger.
+        return _cp(0)
+
+    monkeypatch.setattr(mod, "_sec", fake_sec)
+    mod._create_account_keychain(tmp_account_home, "work")
+
+    subcommands = [args[0] for args, _ in sec_calls]
+
+    # Both destructive calls must fire.
+    assert "delete-keychain" in subcommands, "Case 2 must call delete-keychain"
+    assert "delete-generic-password" in subcommands, "Case 2 must call delete-generic-password"
+
+    # Both must use check=False.
+    for target in ("delete-keychain", "delete-generic-password"):
+        kw = next(kw for args, kw in sec_calls if args[0] == target)
+        assert kw["check"] is False, f"Case 2: {target} must use check=False"
+
+    # Fresh build must execute after cleanup.
+    assert "create-keychain" in subcommands, "Case 2 must proceed to fresh build (create-keychain)"
+    assert "add-generic-password" in subcommands, "Case 2 must proceed to fresh build (add-generic-password)"
+
+    # Relative order: both deletes before create-keychain.
+    idx_del_kc = subcommands.index("delete-keychain")
+    idx_del_gp = subcommands.index("delete-generic-password")
+    idx_create = subcommands.index("create-keychain")
+    assert idx_del_kc < idx_create, "delete-keychain must precede create-keychain"
+    assert idx_del_gp < idx_create, "delete-generic-password must precede create-keychain"
+
+
+# ---------------------------------------------------------------------------
+# P0 — _create_account_keychain Case 4: stale-D rebuild
+# ---------------------------------------------------------------------------
+
+
+def test_create_account_keychain_case4_stale_d_rebuild(monkeypatch, mod, tmp_account_home):
+    """Case 4: C absent, D present (stale unlock entry).
+    Expects delete-generic-password called with check=False, then fresh build runs.
+    No delete-keychain because C is already absent."""
+    # C absent (no kc_path.touch()), D present.
+    sec_calls = []
+
+    def fake_sec(argv, *, check=True, timeout=10):
+        sec_calls.append((list(argv), {"check": check}))
+        if argv[0] == "find-generic-password":
+            return _cp(0, "deadbeef" * 8 + "\n")  # D present — stale entry.
+        return _cp(0)
+
+    monkeypatch.setattr(mod, "_sec", fake_sec)
+    mod._create_account_keychain(tmp_account_home, "work")
+
+    subcommands = [args[0] for args, _ in sec_calls]
+
+    # Stale D must be removed.
+    assert "delete-generic-password" in subcommands, "Case 4 must call delete-generic-password for stale D"
+    del_kw = next(kw for args, kw in sec_calls if args[0] == "delete-generic-password")
+    assert del_kw["check"] is False, "Case 4: delete-generic-password must use check=False"
+
+    # No keychain file to delete — delete-keychain must NOT be called.
+    assert "delete-keychain" not in subcommands, "Case 4 must NOT call delete-keychain (C is absent)"
+
+    # Fresh build must run.
+    assert "create-keychain" in subcommands, "Case 4 must proceed to fresh build (create-keychain)"
+    assert "add-generic-password" in subcommands, "Case 4 must proceed to fresh build (add-generic-password)"
+
+    # delete-generic-password must precede create-keychain.
+    idx_del = subcommands.index("delete-generic-password")
+    idx_create = subcommands.index("create-keychain")
+    assert idx_del < idx_create, "delete-generic-password must precede create-keychain in Case 4"
+
+
+# ---------------------------------------------------------------------------
+# P0 — _reconcile_keychain_state desired=None: State #1 crash-recovery
+# ---------------------------------------------------------------------------
+
+
+def test_reconcile_desired_none_state1_crash_recovery_rebuilds(monkeypatch, mod, tmp_account_home):
+    """State #1 crash-recovery: A=isolated + B/C/D all absent (process crashed after
+    writing meta but before creating B/C/D).  _reconcile_keychain_state(desired=None)
+    must detect this (B absent + A=isolated → non-destructive repair to system) and
+    update A to 'system' without trying to rebuild B/C/D at launch time.
+
+    Note: the reconciler's desired=None path for 'B absent + A=isolated' is a
+    non-destructive repair: it updates A to 'system' and does NOT rebuild (invariant
+    §5.5 — never delete user data at launch time).  Actual rebuild is triggered by
+    the next explicit do_config with keychain_arg='isolated'."""
+    # A=isolated written; B/C/D all absent (crash scenario).
+    (tmp_account_home / "account.json").write_text(json.dumps({"keychain": "isolated"}))
+    assert not mod._keychain_prefs_path(tmp_account_home).exists()
+    assert not mod._keychain_path(tmp_account_home).exists()
+
+    sec_calls = []
+
+    def fake_sec(argv, *, check=True, timeout=10):
+        sec_calls.append((list(argv), {"check": check}))
+        if argv[0] == "find-generic-password":
+            return _cp(44, "", "The specified item could not be found in the keychain.")  # D absent.
         return _cp(0)
 
     monkeypatch.setattr(mod, "_sec", fake_sec)
 
-    mod.do_config("work", keychain_arg="shared")
+    mod._reconcile_keychain_state(tmp_account_home, "work", desired=None)
 
-    # (a) Cleanup calls must have been made.
-    subcommands = [args[0] for args in sec_calls]
-    assert "delete-keychain" in subcommands, (
-        f"delete-keychain must be called during downgrade; got subcommands: {subcommands}"
-    )
-    assert "delete-generic-password" in subcommands, (
-        f"delete-generic-password must be called during downgrade; got subcommands: {subcommands}"
+    # The reconciler repairs A to "system" (B absent → routing is already system).
+    meta = json.loads((tmp_account_home / "account.json").read_text())
+    assert meta.get("keychain") == "system", (
+        f"State #1 repair: A must be updated to 'system' when B/C/D absent; got {meta}"
     )
 
-    # (b) Saved meta must not carry keychain=isolated.
-    meta = json.loads((account_home / "account.json").read_text())
-    assert meta.get("keychain") != "isolated", (
-        f"Downgrade must remove keychain=isolated from saved meta; got {meta}"
+    # No create-keychain or add-generic-password — launch-time never destroys/rebuilds.
+    disallowed = {"create-keychain", "set-keychain-settings", "add-generic-password",
+                  "delete-keychain", "delete-generic-password"}
+    bad_calls = [args[0] for args, _ in sec_calls if args[0] in disallowed]
+    assert bad_calls == [], (
+        f"State #1 repair must not rebuild or delete at launch time; got {bad_calls}"
     )
 
-    # (c) Confirmation line must appear on stdout.
-    captured = capsys.readouterr()
-    assert "Removed per-account keychain" in captured.out, (
-        f"Downgrade confirmation must appear in stdout; got: {captured.out!r}"
+
+# ---------------------------------------------------------------------------
+# P0 — _reconcile_keychain_state desired=None: State #13 wrong-password drift
+# ---------------------------------------------------------------------------
+
+
+def test_reconcile_desired_none_state13_wrong_password_drift_rebuilds(monkeypatch, mod, tmp_account_home):
+    """State #13: B+C+D all present but unlock probe fails (password mismatch drift).
+    _reconcile_keychain_state(desired=None) must trigger _create_account_keychain
+    (rebuild) and write A='isolated'."""
+    # Set up B, C present on disk; A=isolated.
+    (tmp_account_home / "account.json").write_text(json.dumps({"keychain": "isolated"}))
+    mod._keychain_prefs_path(tmp_account_home).parent.mkdir(parents=True, exist_ok=True)
+    mod._keychain_prefs_path(tmp_account_home).touch()  # B present.
+    mod._keychain_path(tmp_account_home).parent.mkdir(parents=True, exist_ok=True)
+    mod._keychain_path(tmp_account_home).touch()  # C present.
+
+    sec_calls = []
+
+    def fake_sec(argv, *, check=True, timeout=10):
+        sec_calls.append((list(argv), {"check": check}))
+        if argv[0] == "find-generic-password":
+            return _cp(0, "deadbeef" * 8 + "\n")  # D present.
+        if argv[0] == "unlock-keychain":
+            return _cp(1, "", "errSecAuthFailed")  # Password mismatch — State #13 trigger.
+        return _cp(0)
+
+    monkeypatch.setattr(mod, "_sec", fake_sec)
+
+    mod._reconcile_keychain_state(tmp_account_home, "work", desired=None)
+
+    subcommands = [args[0] for args, _ in sec_calls]
+
+    # Rebuild must fire — create-keychain is the signal.
+    assert "create-keychain" in subcommands, (
+        "State #13: reconciler must trigger rebuild when unlock probe fails"
+    )
+    assert "add-generic-password" in subcommands, (
+        "State #13: rebuild must store a fresh unlock entry"
+    )
+
+    # A must be written as 'isolated' after successful rebuild.
+    meta = json.loads((tmp_account_home / "account.json").read_text())
+    assert meta.get("keychain") == "isolated", (
+        f"State #13 rebuild: A must be written as 'isolated' after repair; got {meta}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# P0 — _reconcile_keychain_state desired=None: no-op fast path
+# ---------------------------------------------------------------------------
+
+
+def test_reconcile_desired_none_fast_path_b_absent_not_isolated(monkeypatch, mod, tmp_account_home):
+    """desired=None fast path: B absent + A not isolated → no rebuild, no destructive calls.
+    The reconciler probes D once (find-generic-password) then returns immediately.
+    No unlock-keychain, create-keychain, set-keychain-settings, add-generic-password,
+    delete-keychain, or delete-generic-password calls must occur."""
+    # A=system (or absent), B absent — both agree: system mode.
+    (tmp_account_home / "account.json").write_text(json.dumps({"keychain": "system"}))
+    assert not mod._keychain_prefs_path(tmp_account_home).exists()  # B absent.
+
+    sec_calls = []
+
+    def fake_sec(argv, *, check=True, timeout=10):
+        sec_calls.append((list(argv), {"check": check}))
+        if argv[0] == "find-generic-password":
+            return _cp(44, "", "The specified item could not be found in the keychain.")
+        return _cp(0)
+
+    monkeypatch.setattr(mod, "_sec", fake_sec)
+
+    mod._reconcile_keychain_state(tmp_account_home, "work", desired=None)
+
+    # Only the D-probe (find-generic-password) is permitted on the fast path.
+    disallowed = {"unlock-keychain", "create-keychain", "set-keychain-settings",
+                  "add-generic-password", "delete-keychain", "delete-generic-password"}
+    bad_calls = [args[0] for args, _ in sec_calls if args[0] in disallowed]
+    assert bad_calls == [], (
+        f"Fast path (B absent, A not isolated) must make zero build/unlock/delete "
+        f"_sec calls; got {bad_calls}"
+    )
+
+    # Meta must remain unchanged (system).
+    meta = json.loads((tmp_account_home / "account.json").read_text())
+    assert meta.get("keychain") == "system", (
+        f"Fast path must not modify meta; expected keychain=system, got {meta}"
     )

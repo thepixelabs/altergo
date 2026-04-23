@@ -1,6 +1,6 @@
 # How altergo works
 
-**Applies to:** altergo v0.40.0+  
+**Applies to:** altergo v0.41.0+  
 **Audience:** Engineers who want to understand the design in depth — not just what altergo does, but why it does it that way.
 
 The [README](../README.md) covers installation and basic usage. This document covers the mechanics, the tradeoffs, and the reasoning behind every design decision. For the directory-layout reference, symlink tables, and internal function map, see [architecture.md](architecture.md).
@@ -329,9 +329,11 @@ The `DLDBSearchList` plist uses `~/Library/Keychains/login.keychain` (without `-
 
 `_create_account_keychain` checks whether the keychain file exists before creating it. Reuse if present, skip creation. If the file exists but the unlock entry is missing, it warns and aborts — it cannot recover a lost password. The recovery procedure is: `rm -rf <account_home>/Library/Keychains/login.keychain-db` followed by `altergo --config <account> --keychain isolated`.
 
-### Downgrade cleanup
+### Downgrade: isolated → system
 
-Flipping `--keychain shared` triggers full cleanup: `security delete-keychain`, `security delete-generic-password`, removal of the `Library/Keychains/` and `Library/Preferences/` directories from the account home.
+Flipping `--keychain system` (the new name for what was called `shared` — the old name is honoured as an alias for one minor version) removes only `Library/Preferences/com.apple.security.plist` from the account home. The per-account `login.keychain-db` file and the `com.altergo.account-unlock` entry in the real user's login keychain are left on disk. Re-enabling `--keychain isolated` later reuses both — prior tokens are restored without re-authentication.
+
+Full destructive cleanup (`security delete-keychain`, `security delete-generic-password`, directory removal) happens only on `altergo --delete-account <name>`, which acts unconditionally based on file-presence regardless of what the account's current keychain mode flag says. Preserved keychains from a previous downgrade are therefore caught and removed on account deletion — nothing leaks.
 
 ---
 

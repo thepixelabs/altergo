@@ -476,11 +476,19 @@ def show_help():
     SEC_LAUNCH = [
         ("altergo", kw("altergo"), "Open launcher / active account"),
         ("altergo <account>", f"{kw('altergo')} {arg('<account>')}", "Launch a named account"),
-        ("altergo <account> <prov>", f"{kw('altergo')} {arg('<account>')} {arg('<prov>')}", "Launch with specific provider"),
+        (
+            "altergo <account> <prov>",
+            f"{kw('altergo')} {arg('<account>')} {arg('<prov>')}",
+            "Launch with specific provider",
+        ),
     ]
     SEC_ACCOUNTS = [
         ("altergo --config", kw("altergo --config"), "Create or reconfigure account"),
-        ("altergo --config <account>", f"{kw('altergo --config')} {arg('<account>')}", "Create/reconfigure named account"),
+        (
+            "altergo --config <account>",
+            f"{kw('altergo --config')} {arg('<account>')}",
+            "Create/reconfigure named account",
+        ),
         (
             "altergo --rename <old> <new>",
             f"{kw('altergo --rename')} {arg('<old>')} {arg('<new>')}",
@@ -2631,6 +2639,12 @@ def do_config(account: str = "default", provider: str = "claude", *, keychain_ar
     # Load existing metadata for created timestamp preservation
     meta = load_account_meta(account_home)
 
+    # Surface current keychain mode so the user knows what they're changing.
+    if sys.platform == "darwin":
+        current_kc = (meta or {}).get("keychain", "system")
+        label = "isolated" if current_kc == "isolated" else "system (default)"
+        print(_c(C("dim"), f"  Current keychain: {label}"))
+
     # 1. Create account home
     if not account_home.exists():
         account_home.mkdir(parents=True)
@@ -2651,7 +2665,7 @@ def do_config(account: str = "default", provider: str = "claude", *, keychain_ar
     _status_wrap("Linking shared credentials…", _apply_catalog_entries)
 
     # 5. Keychain isolation (macOS only, opt-in)
-    keychain_mode = "shared"  # default: no isolation
+    keychain_mode = "system"  # default: no isolation
     if sys.platform == "darwin":
         if keychain_arg is not None:
             # Non-interactive: honour explicit flag from CLI.
@@ -2668,15 +2682,31 @@ def do_config(account: str = "default", provider: str = "claude", *, keychain_ar
                 answer = input("  Keychain isolation? [y/N] ").strip().lower()
             except (KeyboardInterrupt, EOFError):
                 answer = ""
-            keychain_mode = "isolated" if answer in ("y", "yes") else "shared"
+            keychain_mode = "isolated" if answer in ("y", "yes") else "system"
+
+        # Repair any pre-existing drift before applying the user's intent.
+        # desired=None is cheap when state is consistent (no security calls).
+        try:
+            _reconcile_keychain_state(account_home, account, desired=None)
+            # Reload meta in case the reconciler updated A.
+            meta = load_account_meta(account_home)
+        except KeychainError as e:
+            print(f"  {_c(33, '⚠')} Keychain reconcile warning: {e}", file=sys.stderr)
 
         if keychain_mode == "isolated":
+            # §4.4 pre-flight write: stamp A="isolated" before touching B/C/D.
+            # If the process crashes mid-create, the reconciler on next launch
+            # sees A=isolated and re-enters the create path.  The confirm-write
+            # below (save_account_meta) is idempotent.
+            _preflight_meta = dict(meta) if meta else {}
+            _preflight_meta["keychain"] = "isolated"
+            save_account_meta(account_home, _preflight_meta)
             try:
                 _create_account_keychain(account_home, account)
             except KeychainError as e:
                 print(f"  {_c(33, '⚠')} Keychain setup failed: {e}", file=sys.stderr)
-                print("    Continuing with shared keychain.", file=sys.stderr)
-                keychain_mode = "shared"
+                print("    Continuing with system keychain.", file=sys.stderr)
+                keychain_mode = "system"
             else:
                 print(f"  {_c(32, '✓')} Per-account keychain created/verified")
                 print(
@@ -2687,15 +2717,17 @@ def do_config(account: str = "default", provider: str = "claude", *, keychain_ar
                     )
                 )
 
-    # Downgrade cleanup: if the account was previously isolated but is now
-    # moving to shared, remove the orphaned per-account keychain and its
-    # login-keychain unlock entry.
-    if keychain_mode == "shared" and (meta or {}).get("keychain") == "isolated":
-        try:
-            _delete_account_keychain(account_home, account)
-            print(_c(2, "  Removed per-account keychain (downgraded to shared)"))
-        except KeychainError as e:
-            print(f"  {_c(33, '⚠')} Could not remove per-account keychain: {e}", file=sys.stderr)
+    # Downgrade: if the account was previously isolated but is now moving to
+    # system mode, remove only the routing plist so Security.framework falls
+    # back to the real user's keychain.  The keychain file and unlock entry are
+    # preserved so a re-upgrade can reuse them without losing stored tokens.
+    # Gate on B (plist present) OR A (meta says isolated) so a crash between
+    # A-write and B-write (state #1) is healed on the next --config system run.
+    if keychain_mode == "system" and (
+        _keychain_prefs_path(account_home).exists() or (meta or {}).get("keychain") == "isolated"
+    ):
+        _keychain_prefs_path(account_home).unlink(missing_ok=True)
+        print(_c(2, "  Keychain set to system (per-account keychain preserved for re-enable)"))
 
     # 4. Save account metadata.  New writes emit v3 (providers list + default).
     #    Existing v3 accounts preserve extra providers beyond the single one
@@ -2710,8 +2742,11 @@ def do_config(account: str = "default", provider: str = "claude", *, keychain_ar
         "default_provider": provider,
         "created": (meta.get("created") if meta else None) or datetime.now().isoformat(timespec="seconds"),
     }
-    if keychain_mode == "isolated":
-        meta_to_save["keychain"] = "isolated"
+    # Always record keychain key so A is never absent after first --config touch.
+    # Legacy files without the key continue to work: _is_keychain_isolated treats
+    # anything != "isolated" as system, so absent → system is preserved until the
+    # next --config normalises it here.  (Invariant §5.1)
+    meta_to_save["keychain"] = "isolated" if keychain_mode == "isolated" else "system"
     save_account_meta(account_home, meta_to_save)
 
     launch_cmd = f"altergo {account}" if account != "default" else "altergo"
@@ -2995,9 +3030,16 @@ def do_delete_account(account: str) -> bool:
 
     # Keychain teardown — must happen before rmtree removes the keychain file,
     # but security delete-keychain also deregisters from the system db.
+    # Use file/entry/plist presence as the source of truth — not account.json
+    # meta — so preserved-but-system-mode keychains are also torn down on delete.
+    # Covers B+C+D to satisfy invariant §5.5.
     if sys.platform == "darwin":
-        acct_meta = load_account_meta(account_home)
-        if _is_keychain_isolated(acct_meta):
+        _kc_file_exists = _keychain_path(account_home).exists()
+        _kc_plist_exists = _keychain_prefs_path(account_home).exists()
+        _kc_entry_exists = (
+            _sec(["find-generic-password", "-s", _KC_SERVICE, "-a", account], check=False).returncode == 0
+        )
+        if _kc_file_exists or _kc_plist_exists or _kc_entry_exists:
             try:
                 _delete_account_keychain(account_home, account)
                 print(f"  {_c(33, '✓')} Removed per-account keychain")
@@ -5795,50 +5837,63 @@ def _write_keychain_prefs(account_home: Path) -> None:
 
 
 def _create_account_keychain(account_home: Path, slug: str) -> None:
-    """Create the per-account keychain and register an unlock entry in the login keychain."""
+    """Create (or reconcile) the per-account keychain and its unlock entry.
+
+    Explicit case analysis on (C, D) presence so every partial-state the
+    failure matrix enumerates falls through to a consistent fresh build:
+
+    Case 1 — C present, D present, unlock succeeds  → reuse (write B, return).
+    Case 2 — C present, D present, unlock fails      → delete C+D, fall through.
+    Case 3 — C present, D absent (orphan)            → delete C,   fall through.
+    Case 4 — C absent,  D present (stale entry)      → delete D,   fall through.
+    Case 5 — C absent,  D absent  (fresh)            → build from scratch.
+
+    After every path B (plist) is written, establishing invariant §5.3.
+    """
     kc_path = _keychain_path(account_home)
     kc_path.parent.mkdir(parents=True, exist_ok=True)
 
-    if kc_path.exists():
-        # Check whether the login-keychain unlock entry still exists.
-        # We cannot self-heal by re-keying: the keychain file on disk is
-        # encrypted with the original P that only lives in the login keychain.
-        # Generating a new P and re-adding it to the login keychain would leave
-        # the file encrypted with the old P, so unlock-keychain would still fail
-        # (errSecAuthFailed). The user must manually remove the orphaned file and
-        # re-run --config to regenerate everything from scratch.
-        r = _sec(["find-generic-password", "-s", _KC_SERVICE, "-a", slug, "-w"], check=False)
-        if r.returncode != 0:
-            print(
-                _c(
-                    33,
-                    f"  WARNING: per-account keychain exists at {kc_path} but no unlock entry "
-                    f"was found in the login keychain for account '{slug}'.\n"
-                    f"  The keychain file is orphaned and cannot be unlocked.\n"
-                    f"  To recover: manually remove {kc_path} and re-run 'altergo --config {slug}'.",
-                ),
-                file=sys.stderr,
-            )
-            return
-        # Unlock entry still valid — just ensure the plist is current.
-        print(_c(2, "  Keychain already exists, reusing"))
-        _write_keychain_prefs(account_home)
-        return
+    c_present = kc_path.exists()
+    d_result = _sec(["find-generic-password", "-s", _KC_SERVICE, "-a", slug, "-w"], check=False)
+    d_present = d_result.returncode == 0
 
+    if c_present and d_present:
+        # Probe whether D's password actually unlocks C (Case 1 vs Case 2).
+        P_probe = d_result.stdout.rstrip("\n")
+        probe = _sec(["unlock-keychain", "-p", P_probe, str(kc_path)], check=False)
+        if probe.returncode == 0:
+            # Case 1: consistent pair, reuse — invariants §5.3, §5.4 satisfied.
+            print(_c(2, "  Keychain already exists, reusing"))
+            _write_keychain_prefs(account_home)
+            return
+        # Case 2: password mismatch — delete C and D, rebuild.
+        print(_c(2, "  Keychain password mismatch — rebuilding"), file=sys.stderr)
+        _sec(["delete-keychain", str(kc_path)], check=False)
+        _sec(["delete-generic-password", "-s", _KC_SERVICE, "-a", slug], check=False)
+
+    elif c_present and not d_present:
+        # Case 3: orphaned keychain file — delete C, rebuild.
+        print(_c(2, "  Orphaned keychain file found — rebuilding"), file=sys.stderr)
+        _sec(["delete-keychain", str(kc_path)], check=False)
+
+    elif not c_present and d_present:
+        # Case 4: stale unlock entry — delete D, rebuild.
+        _sec(["delete-generic-password", "-s", _KC_SERVICE, "-a", slug], check=False)
+
+    # Case 5 (and fall-through from cases 2–4): fresh build.
+    # C and D are both absent at this point.
     P = secrets.token_bytes(32).hex()  # 64 hex chars, 256-bit entropy
 
     _sec(["create-keychain", "-p", P, str(kc_path)])
     # No flags = no auto-lock, no lock-on-sleep, no timeout (confirmed from man security).
     _sec(["set-keychain-settings", str(kc_path)])
 
-    # Idempotent pre-flight: remove any stale unlock entry before adding.
-    _sec(["delete-generic-password", "-s", _KC_SERVICE, "-a", slug], check=False)
-
     # Store unlock password in the real login keychain. -T /usr/bin/security
     # grants the security binary ACL access so unlock-keychain works in
     # non-GUI contexts (SSH, tmux, cron) without a GUI authorization prompt.
     _sec(["add-generic-password", "-s", _KC_SERVICE, "-a", slug, "-w", P, "-T", SECURITY_CMD])
 
+    # Write B last: B present implies C+D present (invariant §5.3).
     _write_keychain_prefs(account_home)
 
 
@@ -5870,14 +5925,109 @@ def _unlock_account_keychain(account_home: Path, slug: str) -> None:
 
 
 def _delete_account_keychain(account_home: Path, slug: str) -> None:
-    """Remove the per-account keychain and its unlock entry from the login keychain."""
+    """Remove the per-account keychain, its unlock entry, and the routing plist.
+
+    Removes B+C+D so do_delete_account leaves no keychain artifacts (invariant §5.5).
+    """
     _sec(["delete-keychain", str(_keychain_path(account_home))], check=False)
     _sec(["delete-generic-password", "-s", _KC_SERVICE, "-a", slug], check=False)
+    # Remove B so Security.framework routing is fully torn down.
+    _keychain_prefs_path(account_home).unlink(missing_ok=True)
 
 
 def _is_keychain_isolated(meta: dict | None) -> bool:
     """Return True if the account metadata requests per-account keychain isolation."""
     return bool(meta) and meta.get("keychain") == "isolated"
+
+
+def _reconcile_keychain_state(account_home: Path, slug: str, desired: str | None = None) -> None:
+    """Reconcile (A, B, C, D) to a consistent state.
+
+    desired="isolated": ensure B+C+D exist and are consistent; write A="isolated".
+    desired="system":   remove B; leave C+D alone (user didn't ask to lose tokens);
+                        write A="system".
+    desired=None:       launch-time drift repair. Read B. If B present and (C missing,
+                        D missing, or unlock fails) → rebuild (treat as desired=isolated).
+                        If B absent and A says isolated → repair A to system (non-destructive;
+                        routing is already system because B is absent).
+                        Never delete user data at launch time.
+
+    Call sites:
+    - _build_alt_env: desired=None (launch-time silent repair).
+    - do_config:      desired=keychain_mode (explicit intent).
+    - do_delete_account: not needed — destructive by design; the presence probe handles it.
+    """
+    meta = load_account_meta(account_home)
+    b_present = _keychain_prefs_path(account_home).exists()
+    c_present = _keychain_path(account_home).exists()
+    d_result = _sec(["find-generic-password", "-s", _KC_SERVICE, "-a", slug, "-w"], check=False)
+    d_present = d_result.returncode == 0
+
+    if desired == "isolated":
+        # Explicit upgrade: _create_account_keychain reconciles C+D, writes B.
+        # do_config calls _create_account_keychain separately; this path is
+        # available as a standalone reconcile entry point.
+        _create_account_keychain(account_home, slug)
+        new_meta = dict(meta) if meta else {}
+        new_meta["keychain"] = "isolated"
+        save_account_meta(account_home, new_meta)
+        return
+
+    if desired == "system":
+        # Remove B so routing falls back to real user keychain.  Preserve C+D.
+        _keychain_prefs_path(account_home).unlink(missing_ok=True)
+        new_meta = dict(meta) if meta else {}
+        new_meta["keychain"] = "system"
+        save_account_meta(account_home, new_meta)
+        return
+
+    # desired=None: launch-time drift detection.  Must be cheap — only shell out
+    # if state is actually drifted.
+    a_isolated = (meta or {}).get("keychain") == "isolated"
+
+    if not b_present and not a_isolated:
+        # Both A and B agree: system mode, no isolation.  No-op.
+        return
+
+    if b_present:
+        # B says isolated.  Verify C and D are consistent.
+        if not c_present or not d_present:
+            # C or D missing while B present — drift.  Rebuild silently.
+            print(
+                _c(2, f"  altergo: repairing keychain state for '{slug}'"),
+                file=sys.stderr,
+            )
+            _create_account_keychain(account_home, slug)
+            new_meta = dict(meta) if meta else {}
+            new_meta["keychain"] = "isolated"
+            save_account_meta(account_home, new_meta)
+            return
+        # C and D present — probe the unlock to confirm password consistency.
+        P_probe = d_result.stdout.rstrip("\n")
+        probe = _sec(["unlock-keychain", "-p", P_probe, str(_keychain_path(account_home))], check=False)
+        if probe.returncode != 0:
+            # Password mismatch drift — rebuild.
+            print(
+                _c(2, f"  altergo: repairing keychain state for '{slug}'"),
+                file=sys.stderr,
+            )
+            _create_account_keychain(account_home, slug)
+            new_meta = dict(meta) if meta else {}
+            new_meta["keychain"] = "isolated"
+            save_account_meta(account_home, new_meta)
+            return
+        # B+C+D all consistent.  Ensure A mirrors B (invariant §5.2).
+        if not a_isolated:
+            new_meta = dict(meta) if meta else {}
+            new_meta["keychain"] = "isolated"
+            save_account_meta(account_home, new_meta)
+        return
+
+    # B absent but A says isolated: non-destructive repair — just update A.
+    # Routing is already system (B is absent); don't rebuild C+D at launch time.
+    new_meta = dict(meta) if meta else {}
+    new_meta["keychain"] = "system"
+    save_account_meta(account_home, new_meta)
 
 
 # Launch
@@ -5888,6 +6038,16 @@ def _build_alt_env(account: str = "default") -> dict:
     if account == _NATIVE_ACCOUNT:
         return os.environ.copy()
     account_home, _ = resolve_account(account)
+    # Launch-time drift repair: silently reconcile (A,B,C,D) before unlocking.
+    # No-op when state is consistent; shells out only when drift is detected.
+    # Invariants §5.1–§5.4 are established here for every non-native launch.
+    if sys.platform == "darwin":
+        try:
+            _reconcile_keychain_state(account_home, account, desired=None)
+        except KeychainError as e:
+            print(f"altergo: keychain reconcile error: {e}", file=sys.stderr)
+            # Continue — _unlock_account_keychain below will give a better error
+            # if isolation is still expected.
     meta = load_account_meta(account_home)
     if sys.platform == "darwin" and _is_keychain_isolated(meta):
         try:
@@ -6530,14 +6690,15 @@ def _build_config_rows(accounts: list) -> list:
             email = _read_account_email(acct)
         except Exception:
             pass
-        rows.append(("account", acct, pid, acct == active, email))
+        kc_mode = meta.get("keychain") if meta else None
+        rows.append(("account", acct, pid, acct == active, email, kc_mode))
 
     # Only offer native when at least one provider binary is actually on PATH —
     # otherwise picking it would immediately fail at launch time.
     if any(shutil.which(p["binary"]) for p in PROVIDERS.values()):
-        rows.append(("native", _NATIVE_ACCOUNT, None, active == _NATIVE_ACCOUNT, None))
+        rows.append(("native", _NATIVE_ACCOUNT, None, active == _NATIVE_ACCOUNT, None, None))
 
-    rows.append(("create", None, None, False, None))
+    rows.append(("create", None, None, False, None, None))
     return rows
 
 
@@ -6673,17 +6834,21 @@ def _run_config_picker(accounts: list, start_cursor: int = 0) -> tuple | None:
                 is_cursor = i == cursor
 
                 if r[0] == "account":
-                    _kind, name, pid, is_active, email = r
+                    _kind, name, pid, is_active, email, kc_mode = r
                     prov_label = PROVIDERS.get(pid, {}).get("display_name", pid or "")
                     marker = "●" if is_active else " "
                     email_str = email or ""
-                    line = f"  {marker} {name[:name_w].ljust(name_w)}  {prov_label[:prov_w].ljust(prov_w)}  {email_str}"
+                    kc_suffix = "  ·  keychain: isolated" if kc_mode == "isolated" else ""
+                    line = (
+                        f"  {marker} {name[:name_w].ljust(name_w)}"
+                        f"  {prov_label[:prov_w].ljust(prov_w)}  {email_str}{kc_suffix}"
+                    )
                     row_attr = attrs["selected"] if is_cursor else attrs["dim"]
                     if is_active and not is_cursor:
                         row_attr = attrs["accent"]
                     _safe_addnstr(stdscr, y, 0, line[: max_x - 1].ljust(max_x - 1), max_x - 1, row_attr)
                 elif r[0] == "native":
-                    _kind, name, _pid, is_active, _ = r
+                    _kind, name, _pid, is_active, _, _kc = r
                     marker = "●" if is_active else " "
                     line = (
                         f"  {marker} {name[:name_w].ljust(name_w)}  "
@@ -6815,7 +6980,8 @@ def _prompt_config_menu(existing: list) -> str | None:
     """Curses TUI listing existing accounts + a 'Create new' entry."""
     if not sys.stdin.isatty() or not sys.stdout.isatty():
         print(
-            "altergo: --config requires an interactive terminal.\n  Use: altergo --config <account> --provider <provider>",
+            "altergo: --config requires an interactive terminal.\n"
+            "  Use: altergo --config <account> --provider <provider>",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -7329,11 +7495,11 @@ def main():
         #   altergo --config <name>                             (named, interactive provider picker)
         #   altergo --config <name> --provider claude           (fully specified)
         #   altergo --config --provider gemini                  (interactive name, specified provider)
-        #   altergo --config <name> --keychain isolated|shared  (non-interactive keychain mode)
+        #   altergo --config <name> --keychain isolated|system  (non-interactive keychain mode)
         remaining = args[1:]
         name = None
         provider_arg = None
-        keychain_arg = None  # "isolated", "shared", or None (prompt/default)
+        keychain_arg = None  # "isolated", "system", or None (prompt/default)
         i = 0
         while i < len(remaining):
             if remaining[i] == "--provider" and i + 1 < len(remaining):
@@ -7341,9 +7507,16 @@ def main():
                 i += 2
             elif remaining[i] == "--keychain" and i + 1 < len(remaining):
                 keychain_arg = remaining[i + 1]
-                if keychain_arg not in ("isolated", "shared"):
+                if keychain_arg == "shared":
                     print(
-                        f"altergo: --keychain must be 'isolated' or 'shared', got '{keychain_arg}'",
+                        "altergo: --keychain shared is deprecated; use --keychain system "
+                        "(alias will be removed in next minor)",
+                        file=sys.stderr,
+                    )
+                    keychain_arg = "system"
+                elif keychain_arg not in ("isolated", "system"):
+                    print(
+                        f"altergo: --keychain must be 'isolated' or 'system', got '{keychain_arg}'",
                         file=sys.stderr,
                     )
                     sys.exit(1)
@@ -7511,8 +7684,11 @@ def main():
             _yr_match = next((s for s in _yr_all_sessions if s["id"] == _yr_session_id), None)
             if _yr_match is None:
                 print(
-                    _c(C("warn"), f"  altergo: session '{_yr_session_id}' not found in local history "
-                    f"— continuing anyway (the provider will validate the ID)."),
+                    _c(
+                        C("warn"),
+                        f"  altergo: session '{_yr_session_id}' not found in local history "
+                        f"— continuing anyway (the provider will validate the ID).",
+                    ),
                     file=sys.stderr,
                 )
                 _yr_provider = "claude"

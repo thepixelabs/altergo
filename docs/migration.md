@@ -8,7 +8,7 @@ This page covers syntax changes and one-time migrations that apply when you upgr
 
 **Applies to:** macOS users upgrading to v0.41.0+.
 
-The default is `shared` — no behavior change on upgrade. Existing accounts continue to work exactly as before.
+The default is `system` — no behavior change on upgrade. Existing accounts continue to work exactly as before.
 
 To opt in for an account:
 
@@ -19,10 +19,10 @@ altergo --config <account> --keychain isolated
 To revert:
 
 ```bash
-altergo --config <account> --keychain shared
+altergo --config <account> --keychain system
 ```
 
-Reverting triggers automatic cleanup — altergo deletes the per-account `login.keychain-db` and the `com.altergo.account-unlock` entry from your login keychain. No manual steps required.
+Reverting preserves the keychain file and the login-keychain unlock entry. Only `com.apple.security.plist` is removed. Full cleanup (keychain file + unlock entry) happens on `altergo --delete-account`.
 
 See [docs/keychain-isolation.md](keychain-isolation.md) for the full guide.
 

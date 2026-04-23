@@ -4,6 +4,11 @@ on:
   push:
     branches: [main]
     paths: ["docs/**"]
+  workflow_dispatch: {}
+  # Refresh the injected PyPI download count once per day even if docs/ hasn't
+  # changed.  Keeps the badge current without burning client-side API quota.
+  schedule:
+    - cron: "0 6 * * *"
 
 # Deny all permissions by default; the deploy job grants only what it needs.
 permissions: {}
@@ -25,6 +30,73 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Inject PyPI download count into docs/index.html
+        # Runs from the runner IP (not the visitor's), so a single fetch per
+        # deploy replaces thousands of client fetches.  Failure is non-fatal —
+        # the committed fallback value stays in place.
+        run: |
+          python3 - <<'PYEOF'
+          import json, pathlib, re, sys, urllib.request
+
+          UA = {"User-Agent": "altergo-pages-build (+https://altergo.pixelabs.net)"}
+
+          def get(url, timeout=10):
+              req = urllib.request.Request(url, headers=UA)
+              with urllib.request.urlopen(req, timeout=timeout) as r:
+                  return r.read().decode("utf-8")
+
+          def fmt(n):
+              if n >= 1_000_000:
+                  return f"{n/1_000_000:.1f}".rstrip("0").rstrip(".") + "M"
+              if n >= 1_000:
+                  return f"{n/1_000:.1f}".rstrip("0").rstrip(".") + "k"
+              return str(n)
+
+          value = None
+
+          # Primary: pypistats.org (most accurate, exact last_month number)
+          try:
+              data = json.loads(get("https://pypistats.org/api/packages/altergo/recent"))
+              n = data.get("data", {}).get("last_month")
+              if isinstance(n, int) and n > 0:
+                  value = fmt(n)
+                  print(f"[pypistats.org] last_month={n} -> {value}", flush=True)
+          except Exception as exc:
+              print(f"[pypistats.org] failed: {exc}", file=sys.stderr, flush=True)
+
+          # Fallback: shields.io's DM badge JSON
+          if value is None:
+              try:
+                  data = json.loads(get("https://img.shields.io/pypi/dm/altergo.json"))
+                  msg = (data.get("message") or "").strip()
+                  if msg and re.fullmatch(r"[\d.,]+[kKmMbB]?(/month)?", msg):
+                      value = msg
+                      print(f"[shields.io] message={msg!r}", flush=True)
+                  else:
+                      print(f"[shields.io] unusable message={msg!r}", file=sys.stderr, flush=True)
+              except Exception as exc:
+                  print(f"[shields.io] failed: {exc}", file=sys.stderr, flush=True)
+
+          if value is None:
+              print("No upstream gave a usable count; keeping committed fallback.", flush=True)
+              sys.exit(0)
+
+          path = pathlib.Path("docs/index.html")
+          src = path.read_text(encoding="utf-8")
+          new = re.sub(
+              r'(<span id="pypi-dl-count"[^>]*>)[^<]*(</span>)',
+              lambda m: m.group(1) + value + m.group(2),
+              src,
+              count=1,
+          )
+          if new == src:
+              print("WARNING: could not find <span id=\"pypi-dl-count\"> marker", file=sys.stderr)
+              sys.exit(0)
+          path.write_text(new, encoding="utf-8")
+          print(f"Injected '{value}' into docs/index.html", flush=True)
+          PYEOF
+
       - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:

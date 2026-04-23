@@ -7657,6 +7657,15 @@ def main():
             print("altergo: no accounts found. Run 'altergo --config' first.", file=sys.stderr)
             sys.exit(1)
 
+        # Honor a leading explicit account token (e.g. `altergo native --yolo-resume <id>`
+        # or `altergo work --yolo-resume <id>`) so it isn't silently dropped.
+        _yr_explicit_account: str | None = None
+        if _yr_rest and _looks_like_account(_yr_rest[0]):
+            _cand = _yr_rest[0]
+            if _cand == _NATIVE_ACCOUNT or (ACCOUNTS_DIR / _cand).is_dir():
+                _yr_explicit_account = _cand
+                _yr_rest = _yr_rest[1:]
+
         if _yr_session_id is None:
             # Case 1: no ID — open the interactive picker, then launch with yolo.
             show_banner()
@@ -7667,7 +7676,10 @@ def main():
                 sys.exit(0)
             _yr_provider = _yr_selected.get("provider", "claude")
             _yr_skip = list(PROVIDERS.get(_yr_provider, {}).get("flags", {}).get("skip_perms", []))
-            _yr_account = _account_for_provider(_yr_provider)
+            if _yr_explicit_account is not None:
+                _yr_account = _yr_explicit_account
+            else:
+                _yr_account = _account_for_provider(_yr_provider)
             if _yr_account is None:
                 print(
                     f"altergo: no account configured for provider '{_yr_provider}'.\n"
@@ -7676,7 +7688,7 @@ def main():
                 )
                 sys.exit(1)
             _yr_cwd = _yr_selected.get("cwd") or decode_project_path(_yr_selected.get("project", ""))
-            launch_claude(_yr_account, ["--resume", _yr_selected["id"]] + _yr_skip, cwd=_yr_cwd or None)
+            launch_claude(_yr_account, ["--resume", _yr_selected["id"]] + _yr_skip + _yr_rest, cwd=_yr_cwd or None)
             sys.exit(0)
         else:
             # Case 2: ID given — find session metadata, pick account, launch.
@@ -7699,42 +7711,46 @@ def main():
 
             _yr_skip = list(PROVIDERS.get(_yr_provider, {}).get("flags", {}).get("skip_perms", []))
 
-            # Determine which accounts support this provider.
-            def _yr_has_provider(acct_name: str) -> bool:
-                _m = load_account_meta(ACCOUNTS_DIR / acct_name)
-                if _m is None:
-                    return _yr_provider == "claude"
-                return _yr_provider in _m["providers"]
-
-            _yr_eligible = [a for a in list_accounts() if _yr_has_provider(a)]
-
-            if not _yr_eligible:
-                print(
-                    f"altergo: no account configured for provider '{_yr_provider}'.\n"
-                    f"  Create one with: altergo --config <account> --provider {_yr_provider}",
-                    file=sys.stderr,
-                )
-                sys.exit(1)
-            elif len(_yr_eligible) == 1:
-                _yr_account = _yr_eligible[0]
+            if _yr_explicit_account is not None:
+                # User specified an explicit account — honor it, skip the picker.
+                _yr_account = _yr_explicit_account
             else:
-                # Multiple eligible accounts — prompt the user to pick one.
-                print(f"\n  Multiple accounts support '{_yr_provider}'. Pick one:\n")
-                for _yi, _ya in enumerate(_yr_eligible, 1):
-                    print(f"  [{_yi}] {_c(C('command'), _ya)}")
-                print()
-                while True:
-                    try:
-                        _yr_raw = input(f"  Account [1-{len(_yr_eligible)}]: ").strip()
-                    except (KeyboardInterrupt, EOFError):
-                        print("\nCancelled.")
-                        sys.exit(0)
-                    if _yr_raw.isdigit() and 1 <= int(_yr_raw) <= len(_yr_eligible):
-                        _yr_account = _yr_eligible[int(_yr_raw) - 1]
-                        break
-                    print(f"  Please enter a number between 1 and {len(_yr_eligible)}.")
+                # Determine which accounts support this provider.
+                def _yr_has_provider(acct_name: str) -> bool:
+                    _m = load_account_meta(ACCOUNTS_DIR / acct_name)
+                    if _m is None:
+                        return _yr_provider == "claude"
+                    return _yr_provider in _m["providers"]
 
-            launch_claude(_yr_account, ["--resume", _yr_session_id] + _yr_skip, cwd=_yr_cwd or None)
+                _yr_eligible = [a for a in list_accounts() if _yr_has_provider(a)]
+
+                if not _yr_eligible:
+                    print(
+                        f"altergo: no account configured for provider '{_yr_provider}'.\n"
+                        f"  Create one with: altergo --config <account> --provider {_yr_provider}",
+                        file=sys.stderr,
+                    )
+                    sys.exit(1)
+                elif len(_yr_eligible) == 1:
+                    _yr_account = _yr_eligible[0]
+                else:
+                    # Multiple eligible accounts — prompt the user to pick one.
+                    print(f"\n  Multiple accounts support '{_yr_provider}'. Pick one:\n")
+                    for _yi, _ya in enumerate(_yr_eligible, 1):
+                        print(f"  [{_yi}] {_c(C('command'), _ya)}")
+                    print()
+                    while True:
+                        try:
+                            _yr_raw = input(f"  Account [1-{len(_yr_eligible)}]: ").strip()
+                        except (KeyboardInterrupt, EOFError):
+                            print("\nCancelled.")
+                            sys.exit(0)
+                        if _yr_raw.isdigit() and 1 <= int(_yr_raw) <= len(_yr_eligible):
+                            _yr_account = _yr_eligible[int(_yr_raw) - 1]
+                            break
+                        print(f"  Please enter a number between 1 and {len(_yr_eligible)}.")
+
+            launch_claude(_yr_account, ["--resume", _yr_session_id] + _yr_skip + _yr_rest, cwd=_yr_cwd or None)
             sys.exit(0)
 
     if args and args[0] == "--use":

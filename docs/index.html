@@ -2108,6 +2108,10 @@
       position: relative;
       overflow: hidden;
     }
+    /* Anchor the ghost to the 1160px content column, not the full-width
+       section, so it stays next to the copy on ultrawide/4K viewports
+       instead of sliding out to the viewport's right edge. */
+    #persistent > .container { position: relative; }
     .persistent-layout {
       display: grid;
       grid-template-columns: 1fr;
@@ -2431,43 +2435,6 @@
       border-top: 1px solid rgba(99, 102, 241, 0.06);
     }
 
-    /* ============================================================
-       FIXED GHOST BACKGROUND, cross-browser mobile fix
-       iOS Safari doesn't support background-attachment: fixed on
-       body/sections, so we use a separate fixed div behind content.
-    ============================================================ */
-    #ghost-bg-fixed {
-      position: fixed;
-      inset: 0;
-      z-index: 0;
-      pointer-events: none;
-      background-image: url('images/gits/ghost_circle.png');
-      background-size: 70vmin;
-      background-repeat: no-repeat;
-      background-position: center center;
-      opacity: 0.06;
-      mix-blend-mode: screen;
-      /* Promote to own compositing layer */
-      will-change: transform;
-    }
-    /* On desktop the hero already has its own rich background layers,
-       so we only show this fixed ghost prominently on mobile */
-    @media (min-width: 769px) {
-      #ghost-bg-fixed {
-        opacity: 0.04;
-        background-size: 55vmin;
-      }
-    }
-    @media (max-width: 480px) {
-      #ghost-bg-fixed {
-        opacity: 0.07;
-        background-size: 85vmin;
-      }
-    }
-    [data-theme="light"] #ghost-bg-fixed {
-      opacity: 0.04;
-      filter: invert(1) hue-rotate(185deg) saturate(0.4) brightness(1.1);
-    }
 
     /* ============================================================
        MOBILE OVERFLOW, root-cause fixes
@@ -2580,10 +2547,6 @@
   <!-- Canvas background -->
   <canvas id="canvas-bg" aria-hidden="true" role="presentation"></canvas>
 
-  <!-- Fixed ghost background, visible on all screen sizes including mobile.
-       Uses a separate fixed div because iOS Safari doesn't support
-       background-attachment: fixed on body/section elements. -->
-  <div id="ghost-bg-fixed" aria-hidden="true" role="presentation"></div>
 
   <!-- ============================================================
        NAV

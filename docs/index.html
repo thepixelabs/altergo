@@ -8,6 +8,7 @@
   <meta name="keywords" content="altergo, claude code accounts, gemini cli switch, AI account manager, codex credentials, copilot accounts, multi-account AI, session manager, pip install altergo" />
   <meta name="robots" content="index, follow" />
   <link rel="canonical" href="https://altergo.pixelabs.net/" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%E2%9A%A1%3C/text%3E%3C/svg%3E" />
 
   <!-- Open Graph -->
   <meta property="og:type" content="website" />
@@ -1156,14 +1157,22 @@
     }
 
     .why-icon {
+      float: left;
       width: 48px;
       height: 48px;
       border-radius: var(--radius-sm);
       display: flex;
       align-items: center;
       justify-content: center;
-      margin-bottom: 20px;
+      margin: 0 14px 0 0;
+      shape-outside: border-box;
       font-size: 1.4rem;
+      flex-shrink: 0;
+    }
+    .why-card::after {
+      content: '';
+      display: block;
+      clear: both;
     }
     .why-icon-indigo { background: var(--indigo-glow); border: 1px solid rgba(99, 102, 241, 0.2); }
     .why-icon-cyan   { background: var(--cyan-dim);    border: 1px solid rgba(0, 229, 255, 0.2); }
@@ -1171,15 +1180,40 @@
 
     .why-card h3 {
       font-family: var(--font-display);
-      font-size: 1.15rem;
+      font-size: 1.1rem;
       font-weight: 700;
       color: var(--text-0);
-      margin-bottom: 10px;
+      display: inline;
+      margin: 0;
+      line-height: 1.55;
+    }
+    .why-card h3::after {
+      content: "  ";
+      white-space: pre;
     }
     .why-card p {
       font-size: 0.95rem;
       color: var(--text-1);
       line-height: 1.7;
+      display: inline;
+      margin: 0;
+    }
+
+    @media (max-width: 600px) {
+      .why-card {
+        padding: 18px 16px;
+      }
+      .why-icon {
+        width: 40px;
+        height: 40px;
+        margin: 2px 12px 0 0;
+      }
+      .why-card h3 {
+        font-size: 1rem;
+      }
+      .why-card p {
+        font-size: 0.9rem;
+      }
     }
 
     /* ============================================================
@@ -1649,9 +1683,19 @@
       cursor: pointer;
       user-select: none;
       white-space: nowrap;
-      flex-shrink: 0;
+      flex-shrink: 1;
+      min-width: 0;
+      max-width: 180px;
+      overflow: hidden;
+      text-overflow: ellipsis;
       margin-left: auto;
       text-decoration: none;
+    }
+    .pypi-stat #pypi-dl-count {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 120px;
+      display: inline-block;
     }
     .pypi-stat:hover { opacity: 1; color: var(--cyan); text-shadow: 0 0 8px var(--cyan), 0 0 20px rgba(0,229,255,0.4); }
     .pypi-stat.loading { opacity: 0.5; cursor: default; }
@@ -2743,7 +2787,7 @@
                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                   <path d="M12 4v16m-7-7 7 7 7-7"/>
                 </svg>
-                <span id="pypi-dl-count">···</span>
+                <span id="pypi-dl-count">6.3k</span>
                 <span class="pypi-stat-label"> pulls/mo</span>
               </a>
             </div>
@@ -4143,51 +4187,18 @@
         run();
       }, 900);
 
-      // PyPI download count
+      // PyPI download count is injected at build time by .github/workflows/pages.yml
+      // into the <span id="pypi-dl-count"> text below. No runtime fetch, no 429.
       (function () {
         const el = document.getElementById('pypi-downloads');
         const countEl = document.getElementById('pypi-dl-count');
-        if (!el || !countEl) return;
-
-        function fmt(n) {
-          if (n >= 1000000) return (n / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
-          if (n >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
-          return n.toLocaleString();
-        }
-
-        function setCount(text, tooltip) {
-          countEl.textContent = text;
+        if (el && countEl) {
           el.classList.remove('loading');
-          el.setAttribute('title', (tooltip || text) + ' — view on PyPI');
+          const v = countEl.textContent.trim();
+          el.setAttribute('title', (v === '···' ? 'View on PyPI' : v + ' pulls this month — view on PyPI'));
         }
-
-        function load() {
-          el.classList.add('loading');
-          countEl.textContent = '···';
-          // shields.io endpoint — reliable CORS, works for new/low-traffic packages
-          fetch('https://img.shields.io/pypi/dm/altergo.json', { cache: 'no-cache' })
-            .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
-            .then(data => {
-              if (!data || !data.message) throw new Error('no data');
-              setCount(data.message, data.message + ' this month');
-            })
-            .catch(() =>
-              // Fallback: pypistats.org
-              fetch('https://pypistats.org/api/packages/altergo/recent', { cache: 'no-cache' })
-                .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
-                .then(({ data }) => {
-                  if (typeof data.last_month !== 'number') throw new Error('no data');
-                  setCount(fmt(data.last_month), data.last_month.toLocaleString() + ' this month');
-                })
-                .catch(() => {
-                  el.classList.remove('loading');
-                  countEl.textContent = '—';
-                  el.setAttribute('title', 'View on PyPI');
-                })
-            );
-        }
-
-        load();
+        // Clear any poisoned localStorage from earlier builds.
+        try { localStorage.removeItem('altergo_dl'); localStorage.removeItem('altergo_dl_ts'); } catch (e) {}
       })();
 
       // Pause / resume when tab visibility changes

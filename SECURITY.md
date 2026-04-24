@@ -60,7 +60,7 @@ altergo's core isolation unit is the per-account `HOME`. Credentials live inside
 
 These are **real files** — never symlinked, never shared. Each account is a separate OAuth identity from the provider's point of view.
 
-On macOS, Claude Code stores refresh tokens in the system Keychain under a service name that includes the active `HOME`. Because altergo runs each account under a distinct `HOME`, Keychain entries are keyed distinctly per account — credentials do not cross-contaminate. The `.credentials.json` file on disk in that case is a small bootstrap/session cache; the authoritative secret lives in Keychain.
+On macOS, by default altergo blocks each account from writing to the macOS keychain (`isolated` mode, the default since v0.44.0). A per-account `login.keychain-db` is created but kept permanently locked. Security.framework routes provider keychain writes to it and they fail; providers fall back to flat-file credentials. **Nothing lands in your real login keychain by default.** If you opt into `dedicated` mode (`--keychain dedicated`), altergo creates a per-account keychain, stores its unlock password in your real login keychain, and unlocks it at each session start. In that mode, Claude Code stores refresh tokens in the per-account keychain — credentials are keyed to that account's HOME and do not cross-contaminate other altergo accounts.
 
 altergo never reads, copies, or moves `.credentials.json`. `do_teardown` explicitly refuses to remove it.
 

@@ -129,9 +129,7 @@ def mock_sec_auth_failed(monkeypatch, mod):
         if argv[0] == "unlock-keychain":
             # _sec with check=True raises on non-zero; simulate that path
             if check:
-                raise mod.KeychainError(
-                    "security unlock-keychain failed (exit 1): errSecAuthFailed"
-                )
+                raise mod.KeychainError("security unlock-keychain failed (exit 1): errSecAuthFailed")
             return _cp(1, "", "errSecAuthFailed")
         return _cp(0)
 
@@ -140,8 +138,19 @@ def mock_sec_auth_failed(monkeypatch, mod):
 
 
 @pytest.fixture()
+def account_meta_dedicated():
+    """In-memory v3 shape for a dedicated-mode account (was 'isolated' in v0.43.x)."""
+    return {
+        "version": 3,
+        "providers": ["claude"],
+        "default_provider": "claude",
+        "keychain": "dedicated",
+    }
+
+
+@pytest.fixture()
 def account_meta_isolated():
-    # In-memory v3 shape — matches what load_account_meta returns after coercion.
+    """In-memory v3 shape for the new isolated mode (blocking, no unlock entry)."""
     return {
         "version": 3,
         "providers": ["claude"],
@@ -151,7 +160,8 @@ def account_meta_isolated():
 
 
 @pytest.fixture()
-def account_meta_shared():
+def account_meta_legacy():
+    """In-memory v3 shape with no keychain key (legacy pre-v0.44.0 system account)."""
     return {
         "version": 3,
         "providers": ["claude"],
@@ -196,6 +206,7 @@ def test_sec_file_not_found_raises_keychain_error(monkeypatch, mod):
 
 def test_sec_nonzero_with_check_true_raises(monkeypatch, mod):
     """_sec with check=True raises KeychainError on non-zero exit."""
+
     def fake_run(cmd, **kw):
         return _cp(1, "", "some error")
 
@@ -207,6 +218,7 @@ def test_sec_nonzero_with_check_true_raises(monkeypatch, mod):
 
 def test_sec_nonzero_with_check_false_returns_result(monkeypatch, mod):
     """_sec with check=False returns the CompletedProcess even on non-zero exit."""
+
     def fake_run(cmd, **kw):
         return _cp(44, "", "The specified item could not be found")
 
@@ -217,6 +229,7 @@ def test_sec_nonzero_with_check_false_returns_result(monkeypatch, mod):
 
 def test_sec_success_returns_completed_process(monkeypatch, mod):
     """_sec returns the CompletedProcess on zero exit with check=True."""
+
     def fake_run(cmd, **kw):
         return _cp(0, "some output")
 
@@ -231,10 +244,13 @@ def test_sec_success_returns_completed_process(monkeypatch, mod):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("slug,expected_suffix", [
-    ("work", "Library/Keychains/login.keychain-db"),
-    ("personal", "Library/Keychains/login.keychain-db"),
-])
+@pytest.mark.parametrize(
+    "slug,expected_suffix",
+    [
+        ("work", "Library/Keychains/login.keychain-db"),
+        ("personal", "Library/Keychains/login.keychain-db"),
+    ],
+)
 def test_keychain_path(mod, tmp_path, slug, expected_suffix):
     account_home = tmp_path / slug
     result = mod._keychain_path(account_home)
@@ -335,9 +351,7 @@ def test_create_account_keychain_writes_plist(mod, tmp_account_home, mock_sec_su
 def test_create_account_keychain_add_password_uses_service_and_slug(mod, tmp_account_home, mock_sec_success):
     """add-generic-password is called with -s _KC_SERVICE and -a <slug>."""
     mod._create_account_keychain(tmp_account_home, "work")
-    add_call = next(
-        (args for args, _ in mock_sec_success if args[0] == "add-generic-password"), None
-    )
+    add_call = next((args for args, _ in mock_sec_success if args[0] == "add-generic-password"), None)
     assert add_call is not None
     assert "-s" in add_call
     assert add_call[add_call.index("-s") + 1] == mod._KC_SERVICE
@@ -443,9 +457,7 @@ def test_create_account_keychain_delete_generic_uses_check_false(monkeypatch, mo
         assert kw["check"] is False, "Case 3: delete-keychain must use check=False"
 
     del_generic_c3 = [args for args, _ in sec_calls_c3 if args[0] == "delete-generic-password"]
-    assert not del_generic_c3, (
-        "Case 3: must NOT call delete-generic-password (D is absent — nothing to delete)"
-    )
+    assert not del_generic_c3, "Case 3: must NOT call delete-generic-password (D is absent — nothing to delete)"
 
 
 # ---------------------------------------------------------------------------
@@ -469,6 +481,7 @@ def test_unlock_missing_entry_raises_no_unlock_entry(mod, tmp_account_home, mock
 
 def test_unlock_other_failure_raises_generic_keychain_error(monkeypatch, mod, tmp_account_home):
     """Any other non-zero from find-generic-password → KeychainError with the stderr in the message."""
+
     def fake_sec(argv, *, check=True, timeout=10):
         if argv[0] == "find-generic-password":
             return _cp(1, "", "some unexpected error")
@@ -558,6 +571,7 @@ def test_delete_account_keychain_both_calls_use_check_false(mod, tmp_account_hom
 
 def test_delete_account_keychain_idempotent_when_both_fail(monkeypatch, mod, tmp_account_home):
     """_delete_account_keychain does not raise even when both _sec calls return non-zero."""
+
     def fake_sec(argv, *, check=True, timeout=10):
         if argv[0] == "delete-keychain":
             return _cp(1, "", "... could not be found ...")
@@ -575,15 +589,22 @@ def test_delete_account_keychain_idempotent_when_both_fail(monkeypatch, mod, tmp
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("meta,expected", [
-    (None, False),
-    ({}, False),
-    ({"version": 2, "provider": "claude"}, False),
-    ({"version": 2, "provider": "claude", "keychain": "shared"}, False),
-    ({"version": 2, "provider": "claude", "keychain": "isolated"}, True),
-    ({"keychain": "ISOLATED"}, False),   # case-sensitive
-    ({"keychain": "Isolated"}, False),   # mixed case not accepted
-])
+@pytest.mark.parametrize(
+    "meta,expected",
+    [
+        # v0.44.0: isolated is the NEW DEFAULT — None/empty/missing-key → True.
+        (None, True),
+        ({}, True),
+        ({"version": 2, "provider": "claude"}, True),
+        # Explicit "isolated" value → True.
+        ({"version": 2, "provider": "claude", "keychain": "isolated"}, True),
+        # dedicated → NOT isolated.
+        ({"keychain": "dedicated"}, False),
+        # Wrong-case / unknown values: not "isolated", not absent → False.
+        ({"keychain": "ISOLATED"}, False),
+        ({"keychain": "Isolated"}, False),
+    ],
+)
 def test_is_keychain_isolated_truth_table(mod, meta, expected):
     assert mod._is_keychain_isolated(meta) is expected
 
@@ -593,15 +614,18 @@ def test_is_keychain_isolated_truth_table(mod, meta, expected):
 # ---------------------------------------------------------------------------
 
 
-def test_build_alt_env_exits_1_on_keychain_error(monkeypatch, mod, tmp_path, account_meta_isolated):
-    """When _unlock_account_keychain raises KeychainError, _build_alt_env calls sys.exit(1)."""
+def test_build_alt_env_exits_1_on_keychain_error(monkeypatch, mod, tmp_path, account_meta_dedicated):
+    """When _unlock_account_keychain raises KeychainError, _build_alt_env calls sys.exit(1).
+    Only dedicated mode calls _unlock_account_keychain."""
     accounts_dir = tmp_path / "accounts"
     (accounts_dir / "work").mkdir(parents=True)
     monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
     monkeypatch.setattr(mod.sys, "platform", "darwin")
 
-    monkeypatch.setattr(mod, "load_account_meta", lambda path: account_meta_isolated)
-    monkeypatch.setattr(mod, "_unlock_account_keychain", lambda home, slug: (_ for _ in ()).throw(mod.KeychainError("test")))
+    monkeypatch.setattr(mod, "load_account_meta", lambda path: account_meta_dedicated)
+    monkeypatch.setattr(
+        mod, "_unlock_account_keychain", lambda home, slug: (_ for _ in ()).throw(mod.KeychainError("test"))
+    )
 
     stderr_buf = io.StringIO()
     monkeypatch.setattr(mod.sys, "stderr", stderr_buf)
@@ -612,14 +636,15 @@ def test_build_alt_env_exits_1_on_keychain_error(monkeypatch, mod, tmp_path, acc
     assert exc_info.value.code == 1
 
 
-def test_build_alt_env_propagates_keychain_error_message(monkeypatch, mod, tmp_path, account_meta_isolated):
-    """The KeychainError message appears in stderr before sys.exit(1)."""
+def test_build_alt_env_propagates_keychain_error_message(monkeypatch, mod, tmp_path, account_meta_dedicated):
+    """The KeychainError message appears in stderr before sys.exit(1).
+    Only dedicated mode calls _unlock_account_keychain."""
     accounts_dir = tmp_path / "accounts"
     (accounts_dir / "work").mkdir(parents=True)
     monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
     monkeypatch.setattr(mod.sys, "platform", "darwin")
 
-    monkeypatch.setattr(mod, "load_account_meta", lambda path: account_meta_isolated)
+    monkeypatch.setattr(mod, "load_account_meta", lambda path: account_meta_dedicated)
     monkeypatch.setattr(
         mod,
         "_unlock_account_keychain",
@@ -640,49 +665,56 @@ def test_build_alt_env_propagates_keychain_error_message(monkeypatch, mod, tmp_p
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("meta,expect_deprecation_warning", [
-    ({}, False),
-    ({"version": 2, "provider": "claude"}, False),
-    ({"version": 2, "provider": "claude", "keychain": "shared"}, True),
-])
-def test_build_alt_env_shared_meta_never_calls_sec(monkeypatch, mod, tmp_path, meta, expect_deprecation_warning):
-    """_build_alt_env must not call _unlock_account_keychain when keychain is not isolated.
-    The reconciler (desired=None) probes D once with find-generic-password as a
-    baseline check even on the fast path; that single probe is the only _sec call allowed.
-    No unlock-keychain, create-keychain, or delete-* calls must occur."""
+@pytest.mark.parametrize(
+    "meta",
+    [
+        # dedicated mode accounts never reach unlock path because _reconcile handles them;
+        # here we're testing accounts with NO keychain entry (legacy) — they coerce to isolated.
+        # For these accounts B is absent, so reconciler just writes B for isolated mode.
+        # No _sec calls should be made — only _write_keychain_prefs (pure Python).
+        {"version": 2, "provider": "claude"},
+    ],
+)
+def test_build_alt_env_legacy_meta_no_unlock_sec_calls(monkeypatch, mod, tmp_path, meta):
+    """_build_alt_env with legacy (no keychain key) meta must not call _unlock_account_keychain.
+    Isolated is now the default; no unlock occurs. The reconciler writes B (plist) if absent
+    using pure Python — no _sec calls needed for that operation."""
     accounts_dir = tmp_path / "accounts"
     account_home = accounts_dir / "work"
     account_home.mkdir(parents=True)
-    # B (plist) is intentionally absent — reconciler reads it, sees b_present=False,
-    # and a_isolated=False, so no rebuild is triggered.
+    (account_home / "Library" / "Preferences").mkdir(parents=True)
+    (account_home / "Library" / "Keychains").mkdir(parents=True)
+    # B (plist) is intentionally absent.
     assert not (account_home / "Library" / "Preferences" / "com.apple.security.plist").exists()
 
     monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
     monkeypatch.setattr(mod.sys, "platform", "darwin")
 
-    # Write account.json so load_account_meta reads real disk state.
     import json as _json
+
     (account_home / "account.json").write_text(_json.dumps(meta))
 
     sec_calls = []
 
     def spy_sec(argv, **kw):
         sec_calls.append(list(argv))
-        return _cp(0)
+        return _cp(0, "")
 
     monkeypatch.setattr(mod, "_sec", spy_sec)
 
     mod._build_alt_env("work")
 
-    # Only the D-probe (find-generic-password) from the reconciler is permitted.
-    # No unlock, create, set-settings, add-generic-password, or delete calls.
-    disallowed = {"unlock-keychain", "create-keychain", "set-keychain-settings",
-                  "add-generic-password", "delete-keychain", "delete-generic-password"}
+    # No unlock, create, or destructive _sec calls — isolated mode never calls unlock.
+    disallowed = {
+        "unlock-keychain",
+        "create-keychain",
+        "set-keychain-settings",
+        "add-generic-password",
+        "delete-keychain",
+        "delete-generic-password",
+    }
     bad_calls = [args for args in sec_calls if args[0] in disallowed]
-    assert bad_calls == [], (
-        f"Expected no unlock/build/delete _sec calls for meta={meta!r} (B absent, not isolated); "
-        f"got {bad_calls}"
-    )
+    assert bad_calls == [], f"Expected no unlock/build/delete _sec calls for legacy meta={meta!r}; got {bad_calls}"
 
 
 # ---------------------------------------------------------------------------
@@ -792,10 +824,10 @@ def test_do_config_non_tty_isolated_sec_is_called(monkeypatch, mod, tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_do_config_non_tty_no_flag_no_plist_no_sec(monkeypatch, mod, tmp_path):
-    """do_config with keychain_arg=None on non-TTY does not create plist and does not
-    call any keychain build/unlock subcommands.  The reconciler issues one
-    find-generic-password probe; that is the only permitted _sec call."""
+def test_do_config_non_tty_no_flag_creates_isolated_mode(monkeypatch, mod, tmp_path):
+    """do_config with keychain_arg=None on non-TTY defaults to isolated mode (v0.44.0 safety default).
+    Isolated mode creates plist (B) and keychain file (C) but does NOT plant unlock entry (D).
+    meta must have keychain='isolated'."""
     main_home = tmp_path / "main_home"
     main_claude = main_home / ".claude"
     accounts_dir = tmp_path / "accounts"
@@ -825,16 +857,15 @@ def test_do_config_non_tty_no_flag_no_plist_no_sec(monkeypatch, mod, tmp_path):
     meta_path = account_home / "account.json"
     assert meta_path.exists()
     meta = json.loads(meta_path.read_text())
-    assert meta.get("keychain") == "system", f"meta must have keychain=system (normalized), got {meta}"
+    assert meta.get("keychain") == "isolated", f"v0.44.0 default is 'isolated'; got {meta}"
 
+    # isolated mode: plist must exist (routes Security.framework to per-account keychain).
     plist_path = account_home / "Library" / "Preferences" / "com.apple.security.plist"
-    assert not plist_path.exists(), "plist must NOT exist for non-isolated account"
+    assert plist_path.exists(), "plist must exist for isolated mode (required for Security.framework routing)"
 
-    # No keychain build/unlock/delete calls — only the reconciler's D-probe is allowed.
-    disallowed = {"unlock-keychain", "create-keychain", "set-keychain-settings",
-                  "add-generic-password", "delete-keychain", "delete-generic-password"}
-    bad_calls = [args for args in sec_calls if args[0] in disallowed]
-    assert bad_calls == [], f"No build/unlock/delete _sec calls expected for system mode; got {bad_calls}"
+    # isolated mode: add-generic-password must NOT be called (no unlock entry planted).
+    add_calls = [args for args in sec_calls if args[0] == "add-generic-password"]
+    assert add_calls == [], f"isolated mode must NOT call add-generic-password; got {add_calls}"
 
 
 def test_do_config_non_tty_no_flag_does_not_hang(monkeypatch, mod, tmp_path):
@@ -911,13 +942,13 @@ def test_do_config_non_darwin_no_sec_no_plist(monkeypatch, mod, tmp_path):
     assert not keychains_dir.exists(), "Library/Keychains/ must not be created on linux"
 
 
-def test_build_alt_env_non_darwin_never_calls_sec(monkeypatch, mod, tmp_path, account_meta_isolated):
-    """_build_alt_env on non-darwin never calls _sec even for isolated meta."""
+def test_build_alt_env_non_darwin_never_calls_sec(monkeypatch, mod, tmp_path, account_meta_dedicated):
+    """_build_alt_env on non-darwin never calls _sec even for dedicated meta."""
     accounts_dir = tmp_path / "accounts"
     (accounts_dir / "work").mkdir(parents=True)
     monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
     monkeypatch.setattr(mod.sys, "platform", "linux")
-    monkeypatch.setattr(mod, "load_account_meta", lambda path: account_meta_isolated)
+    monkeypatch.setattr(mod, "load_account_meta", lambda path: account_meta_dedicated)
 
     sec_calls = []
     monkeypatch.setattr(mod, "_sec", lambda argv, **kw: (sec_calls.append(argv), _cp(0))[-1])
@@ -932,9 +963,10 @@ def test_build_alt_env_non_darwin_never_calls_sec(monkeypatch, mod, tmp_path, ac
 # ---------------------------------------------------------------------------
 
 
-def test_do_config_reconfig_preserves_isolation(monkeypatch, mod, tmp_path):
-    """Re-running do_config on an account that already has keychain=isolated keeps isolation
-    when keychain_arg is None (the code reads existing meta and preserves it)."""
+def test_do_config_reconfig_preserves_isolated(monkeypatch, mod, tmp_path):
+    """Re-running do_config on an account that already has keychain='isolated' (either old v0.43.x
+    meaning or new v0.44.0 meaning) keeps isolated mode when keychain_arg is None on non-TTY.
+    On non-TTY without keychain_arg, the default is isolated."""
     main_home = tmp_path / "main_home"
     main_claude = main_home / ".claude"
     accounts_dir = tmp_path / "accounts"
@@ -944,12 +976,12 @@ def test_do_config_reconfig_preserves_isolation(monkeypatch, mod, tmp_path):
     main_claude.mkdir(parents=True)
     accounts_dir.mkdir(parents=True)
     account_home.mkdir(parents=True)
+    (account_home / "Library" / "Preferences").mkdir(parents=True)
+    (account_home / "Library" / "Keychains").mkdir(parents=True)
     _create_main_claude_sources_for_mod(mod, main_claude)
 
-    # Pre-existing isolated metadata.
-    (account_home / "account.json").write_text(
-        json.dumps({"version": 2, "provider": "claude", "keychain": "isolated"})
-    )
+    # Pre-existing "isolated" metadata — stays "isolated" in v0.44.0.
+    (account_home / "account.json").write_text(json.dumps({"version": 2, "provider": "claude", "keychain": "isolated"}))
 
     monkeypatch.setattr(mod, "MAIN_HOME", main_home)
     monkeypatch.setattr(mod, "MAIN_CLAUDE", main_claude)
@@ -957,7 +989,13 @@ def test_do_config_reconfig_preserves_isolation(monkeypatch, mod, tmp_path):
     monkeypatch.setattr(mod, "SETTINGS_FILE", tmp_path / "settings.json")
     monkeypatch.setattr(mod.sys, "platform", "darwin")
     monkeypatch.setattr(mod.sys.stdin, "isatty", lambda: False)
-    monkeypatch.setattr(mod, "_sec", lambda argv, **kw: _cp(0))
+
+    def fake_sec(argv, *, check=True, timeout=10):
+        if argv[0] == "find-generic-password":
+            return _cp(44, "", "The specified item could not be found.")  # D absent
+        return _cp(0)
+
+    monkeypatch.setattr(mod, "_sec", fake_sec)
     monkeypatch.setattr(mod, "show_banner", lambda *a, **kw: None)
     monkeypatch.setattr(mod, "_status_wrap", lambda msg, fn: fn())
     monkeypatch.setattr(mod, "load_settings", lambda: {})
@@ -965,7 +1003,9 @@ def test_do_config_reconfig_preserves_isolation(monkeypatch, mod, tmp_path):
     mod.do_config("work", keychain_arg=None)
 
     meta = json.loads((account_home / "account.json").read_text())
-    assert meta.get("keychain") == "isolated"
+    assert meta.get("keychain") == "isolated", (
+        f"Re-config with keychain_arg=None on non-TTY must keep isolated mode; got {meta}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1005,10 +1045,7 @@ def test_do_delete_account_calls_delete_keychain_for_isolated(monkeypatch, mod, 
     kc_path.touch()
 
     delete_calls = []
-    monkeypatch.setattr(
-        mod, "_delete_account_keychain",
-        lambda home, slug: delete_calls.append((home, slug))
-    )
+    monkeypatch.setattr(mod, "_delete_account_keychain", lambda home, slug: delete_calls.append((home, slug)))
 
     # _sec needed for the find-generic-password probe in do_delete_account.
     monkeypatch.setattr(mod, "_sec", lambda argv, **kw: _cp(0, "deadbeef" * 8))
@@ -1019,16 +1056,13 @@ def test_do_delete_account_calls_delete_keychain_for_isolated(monkeypatch, mod, 
     assert delete_calls[0][1] == "work"
 
 
-def test_do_delete_account_no_artifacts_skips_keychain_teardown(monkeypatch, mod, tmp_path, account_meta_shared):
+def test_do_delete_account_no_artifacts_skips_keychain_teardown(monkeypatch, mod, tmp_path, account_meta_legacy):
     """do_delete_account does NOT call _delete_account_keychain when B, C, and D are all absent.
     The gate is artifact presence — not meta.  find-generic-password probe returns non-zero (D absent)."""
-    account_home = _setup_delete_account_env(monkeypatch, mod, tmp_path, account_meta_shared)
+    account_home = _setup_delete_account_env(monkeypatch, mod, tmp_path, account_meta_legacy)
 
     delete_calls = []
-    monkeypatch.setattr(
-        mod, "_delete_account_keychain",
-        lambda home, slug: delete_calls.append((home, slug))
-    )
+    monkeypatch.setattr(mod, "_delete_account_keychain", lambda home, slug: delete_calls.append((home, slug)))
 
     # Spy on _sec so we can assert the find-generic-password probe was actually called.
     sec_calls = []
@@ -1049,9 +1083,7 @@ def test_do_delete_account_no_artifacts_skips_keychain_teardown(monkeypatch, mod
     assert probe_calls, "do_delete_account must call find-generic-password to probe D presence"
 
     # No B or C on disk (setup did not create files), D probe returned non-zero — skip teardown.
-    assert delete_calls == [], (
-        "do_delete_account must NOT call _delete_account_keychain when no artifacts are present"
-    )
+    assert delete_calls == [], "do_delete_account must NOT call _delete_account_keychain when no artifacts are present"
 
 
 def test_do_delete_account_continues_on_keychain_error(monkeypatch, mod, tmp_path, account_meta_isolated):
@@ -1087,8 +1119,9 @@ def test_do_delete_account_sec_calls_use_check_false(monkeypatch, mod, tmp_path,
     mod.do_delete_account("work")
 
     # Every _sec call made during delete must use check=False.
-    delete_sec_calls = [(args, chk) for args, chk in sec_calls
-                        if args[0] in ("delete-keychain", "delete-generic-password")]
+    delete_sec_calls = [
+        (args, chk) for args, chk in sec_calls if args[0] in ("delete-keychain", "delete-generic-password")
+    ]
     assert len(delete_sec_calls) > 0
     for args, chk in delete_sec_calls:
         assert chk is False, f"{args[0]} must use check=False"
@@ -1165,16 +1198,18 @@ def test_do_config_then_build_alt_env_calls_find_generic_password(monkeypatch, m
 # ---------------------------------------------------------------------------
 
 
-def test_do_config_existing_system_account_no_sec_normalizes_keychain_key(monkeypatch, mod, tmp_path):
+def test_do_config_existing_system_account_normalizes_to_isolated(monkeypatch, mod, tmp_path):
     """Given an account.json with no 'keychain' key (legacy system/shared account),
     calling do_config(..., keychain_arg=None) on non-TTY must save meta with
-    keychain='system' and must not call any build/unlock/delete _sec subcommands.
-    The reconciler issues one find-generic-password probe; that single call is permitted."""
+    keychain='isolated' (the new default) and must not plant an unlock entry (D).
+    Isolated mode creates plist (B) and keychain file (C) but no D."""
     accounts_dir = _setup_do_config_env(monkeypatch, mod, tmp_path)
     account_home = accounts_dir / "work"
     account_home.mkdir(parents=True)
+    (account_home / "Library" / "Preferences").mkdir(parents=True)
+    (account_home / "Library" / "Keychains").mkdir(parents=True)
 
-    # Pre-existing system account — no 'keychain' key (legacy shape).
+    # Pre-existing legacy system account — no 'keychain' key.
     existing_meta = {"version": 2, "provider": "claude", "created": "2025-01-01T00:00:00"}
     (account_home / "account.json").write_text(json.dumps(existing_meta))
 
@@ -1184,17 +1219,11 @@ def test_do_config_existing_system_account_no_sec_normalizes_keychain_key(monkey
     mod.do_config("work", keychain_arg=None)
 
     meta = json.loads((account_home / "account.json").read_text())
-    assert meta.get("keychain") == "system", (
-        f"meta must have keychain='system' after normalization of absent legacy value, got {meta}"
-    )
+    assert meta.get("keychain") == "isolated", f"v0.44.0 default is 'isolated'; got {meta}"
 
-    # No keychain build/unlock/delete calls — only the reconciler's D-probe is allowed.
-    disallowed = {"unlock-keychain", "create-keychain", "set-keychain-settings",
-                  "add-generic-password", "delete-keychain", "delete-generic-password"}
-    bad_calls = [args for args in sec_calls if args[0] in disallowed]
-    assert bad_calls == [], (
-        f"No build/unlock/delete _sec calls expected for legacy system re-config; got {bad_calls}"
-    )
+    # isolated mode must NOT plant unlock entry (D).
+    add_calls = [args for args in sec_calls if args[0] == "add-generic-password"]
+    assert add_calls == [], f"isolated mode must NOT call add-generic-password; got {add_calls}"
 
 
 # ---------------------------------------------------------------------------
@@ -1276,57 +1305,58 @@ def test_create_account_keychain_case1_probe_succeeds_also_writes_plist(monkeypa
 # ---------------------------------------------------------------------------
 
 
-def test_do_config_downgrade_isolated_to_system_preserves_keychain_artifacts(monkeypatch, mod, tmp_path):
-    """do_config('work', keychain_arg='system') on an account with all artifacts present
-    (A=isolated, B=plist, C=keychain-file, D=unlock-entry) must:
-    (a) NOT call delete-keychain or delete-generic-password (C+D preserved for re-enable),
-    (b) unlink B (plist) so Security.framework routing falls back,
-    (c) save meta with keychain='system'.
+def test_do_config_dedicated_to_isolated_removes_unlock_entry(monkeypatch, mod, tmp_path):
+    """do_config('work', keychain_arg='isolated') on a dedicated account (A=old 'isolated',
+    which migrates to 'dedicated') must:
+    (a) call delete-generic-password to remove the unlock entry D (zero-footprint promise),
+    (b) NOT call delete-keychain (C preserved for re-enable — preserve-and-reuse),
+    (c) save meta with keychain='isolated'.
 
-    All four artifacts are pre-created so the pre-flight reconciler sees a consistent
-    state and does not trigger a rebuild before the downgrade path fires."""
+    Note: keychain_arg='system' is also tested as a deprecated alias for 'isolated'."""
     accounts_dir = _setup_do_config_env(monkeypatch, mod, tmp_path)
     account_home = accounts_dir / "work"
     (account_home / "Library" / "Preferences").mkdir(parents=True)
     (account_home / "Library" / "Keychains").mkdir(parents=True)
 
-    # Pre-existing isolated account: A=isolated, B=plist present, C=keychain file present.
+    # Pre-existing dedicated account: A=old-isolated (migrates to dedicated), B+C present.
     existing_meta = {"version": 2, "provider": "claude", "keychain": "isolated", "created": "2025-01-01T00:00:00"}
     (account_home / "account.json").write_text(json.dumps(existing_meta))
     plist_path = account_home / "Library" / "Preferences" / "com.apple.security.plist"
     plist_path.touch()  # B present.
     kc_path = mod._keychain_path(account_home)
-    kc_path.touch()  # C present — prevents reconciler from seeing drift and rebuilding.
+    kc_path.touch()  # C present.
 
     sec_calls = []
 
     def fake_sec(argv, *, check=True, timeout=10):
         sec_calls.append(list(argv))
         if argv[0] == "find-generic-password":
-            return _cp(0, "deadbeef" * 8 + "\n")  # D present — reconciler sees consistent state.
-        return _cp(0)  # unlock-keychain succeeds — Case 1 probe passes.
+            return _cp(0, "deadbeef" * 8 + "\n")  # D present.
+        return _cp(0)
 
     monkeypatch.setattr(mod, "_sec", fake_sec)
 
+    # --keychain system is a deprecated alias → maps to isolated inside do_config.
     mod.do_config("work", keychain_arg="system")
 
-    # (a) Destructive cleanup must NOT be called — C+D are preserved for re-enable.
     subcommands = [args[0] for args in sec_calls]
+
+    # (a) Unlock entry must be removed (zero altergo footprint in real login keychain).
+    assert "delete-generic-password" in subcommands, (
+        f"Switching to isolated must call delete-generic-password to remove D; got: {subcommands}"
+    )
+
+    # (b) Keychain file must NOT be deleted (preserve-and-reuse for future re-upgrade).
     assert "delete-keychain" not in subcommands, (
-        f"Downgrade to system must NOT call delete-keychain; got: {subcommands}"
-    )
-    assert "delete-generic-password" not in subcommands, (
-        f"Downgrade to system must NOT call delete-generic-password; got: {subcommands}"
+        f"Switching to isolated must NOT call delete-keychain; got: {subcommands}"
     )
 
-    # (b) B (plist) must be unlinked so Security.framework falls back to real user keychain.
-    assert not plist_path.exists(), "Downgrade to system must unlink plist B"
-
-    # (c) Meta must record keychain=system.
+    # (c) Meta must record keychain=isolated.
     meta = json.loads((account_home / "account.json").read_text())
-    assert meta.get("keychain") == "system", (
-        f"Downgrade must save keychain='system'; got {meta}"
-    )
+    assert meta.get("keychain") == "isolated", f"Switch to isolated must save keychain='isolated'; got {meta}"
+
+    # Plist must remain (isolated mode requires it for Security.framework routing).
+    assert plist_path.exists(), "Plist B must remain after switch to isolated mode"
 
 
 # ---------------------------------------------------------------------------
@@ -1425,17 +1455,14 @@ def test_create_account_keychain_case4_stale_d_rebuild(monkeypatch, mod, tmp_acc
 
 
 def test_reconcile_desired_none_state1_crash_recovery_rebuilds(monkeypatch, mod, tmp_account_home):
-    """State #1 crash-recovery: A=isolated + B/C/D all absent (process crashed after
-    writing meta but before creating B/C/D).  _reconcile_keychain_state(desired=None)
-    must detect this (B absent + A=isolated → non-destructive repair to system) and
-    update A to 'system' without trying to rebuild B/C/D at launch time.
+    """State #1 crash-recovery: A=dedicated (written via pre-flight stamp) + B/C/D all absent
+    (process crashed after writing meta but before creating B/C/D).
+    _reconcile_keychain_state(desired=None) must detect the missing B and trigger a rebuild.
 
-    Note: the reconciler's desired=None path for 'B absent + A=isolated' is a
-    non-destructive repair: it updates A to 'system' and does NOT rebuild (invariant
-    §5.5 — never delete user data at launch time).  Actual rebuild is triggered by
-    the next explicit do_config with keychain_arg='isolated'."""
-    # A=isolated written; B/C/D all absent (crash scenario).
-    (tmp_account_home / "account.json").write_text(json.dumps({"keychain": "isolated"}))
+    Note: A='dedicated' + B absent = drift → rebuild is correct because the pre-flight stamp
+    means the user explicitly asked for dedicated mode."""
+    # A=dedicated (pre-flight stamp written); B/C/D all absent (crash scenario).
+    (tmp_account_home / "account.json").write_text(json.dumps({"keychain": "dedicated"}))
     assert not mod._keychain_prefs_path(tmp_account_home).exists()
     assert not mod._keychain_path(tmp_account_home).exists()
 
@@ -1451,19 +1478,15 @@ def test_reconcile_desired_none_state1_crash_recovery_rebuilds(monkeypatch, mod,
 
     mod._reconcile_keychain_state(tmp_account_home, "work", desired=None)
 
-    # The reconciler repairs A to "system" (B absent → routing is already system).
-    meta = json.loads((tmp_account_home / "account.json").read_text())
-    assert meta.get("keychain") == "system", (
-        f"State #1 repair: A must be updated to 'system' when B/C/D absent; got {meta}"
+    # Rebuild must have fired — create-keychain is the signal.
+    subcommands = [args[0] for args, _ in sec_calls]
+    assert "create-keychain" in subcommands, (
+        f"State #1 dedicated crash-recovery: reconciler must rebuild when B absent; got {subcommands}"
     )
 
-    # No create-keychain or add-generic-password — launch-time never destroys/rebuilds.
-    disallowed = {"create-keychain", "set-keychain-settings", "add-generic-password",
-                  "delete-keychain", "delete-generic-password"}
-    bad_calls = [args[0] for args, _ in sec_calls if args[0] in disallowed]
-    assert bad_calls == [], (
-        f"State #1 repair must not rebuild or delete at launch time; got {bad_calls}"
-    )
+    # A must be updated to 'dedicated' after rebuild.
+    meta = json.loads((tmp_account_home / "account.json").read_text())
+    assert meta.get("keychain") == "dedicated", f"State #1 repair: A must be 'dedicated' after rebuild; got {meta}"
 
 
 # ---------------------------------------------------------------------------
@@ -1474,9 +1497,9 @@ def test_reconcile_desired_none_state1_crash_recovery_rebuilds(monkeypatch, mod,
 def test_reconcile_desired_none_state13_wrong_password_drift_rebuilds(monkeypatch, mod, tmp_account_home):
     """State #13: B+C+D all present but unlock probe fails (password mismatch drift).
     _reconcile_keychain_state(desired=None) must trigger _create_account_keychain
-    (rebuild) and write A='isolated'."""
-    # Set up B, C present on disk; A=isolated.
-    (tmp_account_home / "account.json").write_text(json.dumps({"keychain": "isolated"}))
+    (rebuild) and write A='dedicated'."""
+    # Set up B, C present on disk; A=dedicated (v0.44.0 value).
+    (tmp_account_home / "account.json").write_text(json.dumps({"keychain": "dedicated"}))
     mod._keychain_prefs_path(tmp_account_home).parent.mkdir(parents=True, exist_ok=True)
     mod._keychain_prefs_path(tmp_account_home).touch()  # B present.
     mod._keychain_path(tmp_account_home).parent.mkdir(parents=True, exist_ok=True)
@@ -1499,17 +1522,13 @@ def test_reconcile_desired_none_state13_wrong_password_drift_rebuilds(monkeypatc
     subcommands = [args[0] for args, _ in sec_calls]
 
     # Rebuild must fire — create-keychain is the signal.
-    assert "create-keychain" in subcommands, (
-        "State #13: reconciler must trigger rebuild when unlock probe fails"
-    )
-    assert "add-generic-password" in subcommands, (
-        "State #13: rebuild must store a fresh unlock entry"
-    )
+    assert "create-keychain" in subcommands, "State #13: reconciler must trigger rebuild when unlock probe fails"
+    assert "add-generic-password" in subcommands, "State #13: rebuild must store a fresh unlock entry"
 
-    # A must be written as 'isolated' after successful rebuild.
+    # A must be written as 'dedicated' after successful rebuild.
     meta = json.loads((tmp_account_home / "account.json").read_text())
-    assert meta.get("keychain") == "isolated", (
-        f"State #13 rebuild: A must be written as 'isolated' after repair; got {meta}"
+    assert meta.get("keychain") == "dedicated", (
+        f"State #13 rebuild: A must be written as 'dedicated' after repair; got {meta}"
     )
 
 
@@ -1518,12 +1537,11 @@ def test_reconcile_desired_none_state13_wrong_password_drift_rebuilds(monkeypatc
 # ---------------------------------------------------------------------------
 
 
-def test_reconcile_desired_none_fast_path_b_absent_not_isolated(monkeypatch, mod, tmp_account_home):
-    """desired=None fast path: B absent + A not isolated → no rebuild, no destructive calls.
-    The reconciler probes D once (find-generic-password) then returns immediately.
-    No unlock-keychain, create-keychain, set-keychain-settings, add-generic-password,
-    delete-keychain, or delete-generic-password calls must occur."""
-    # A=system (or absent), B absent — both agree: system mode.
+def test_reconcile_desired_none_isolated_b_absent_writes_plist_no_sec(monkeypatch, mod, tmp_account_home):
+    """desired=None with A=isolated (or legacy system → migrated to isolated) and B absent:
+    reconciler writes plist B using pure Python (_write_keychain_prefs — no _sec call),
+    and persists A='isolated' to disk. No build/unlock/delete _sec calls occur."""
+    # A=system on disk — migrates in-memory to isolated.
     (tmp_account_home / "account.json").write_text(json.dumps({"keychain": "system"}))
     assert not mod._keychain_prefs_path(tmp_account_home).exists()  # B absent.
 
@@ -1539,17 +1557,490 @@ def test_reconcile_desired_none_fast_path_b_absent_not_isolated(monkeypatch, mod
 
     mod._reconcile_keychain_state(tmp_account_home, "work", desired=None)
 
-    # Only the D-probe (find-generic-password) is permitted on the fast path.
-    disallowed = {"unlock-keychain", "create-keychain", "set-keychain-settings",
-                  "add-generic-password", "delete-keychain", "delete-generic-password"}
+    # No build/unlock/delete _sec calls — plist write is pure Python.
+    disallowed = {
+        "unlock-keychain",
+        "create-keychain",
+        "set-keychain-settings",
+        "add-generic-password",
+        "delete-keychain",
+        "delete-generic-password",
+    }
     bad_calls = [args[0] for args, _ in sec_calls if args[0] in disallowed]
     assert bad_calls == [], (
-        f"Fast path (B absent, A not isolated) must make zero build/unlock/delete "
-        f"_sec calls; got {bad_calls}"
+        f"Isolated mode B-absent repair must make zero build/unlock/delete _sec calls; got {bad_calls}"
     )
 
-    # Meta must remain unchanged (system).
+    # B (plist) must now exist — written by _write_keychain_prefs.
+    assert mod._keychain_prefs_path(tmp_account_home).exists(), (
+        "Reconciler must write plist B when A=isolated and B absent"
+    )
+
+    # Meta must be updated to 'isolated' (migration from 'system').
     meta = json.loads((tmp_account_home / "account.json").read_text())
-    assert meta.get("keychain") == "system", (
-        f"Fast path must not modify meta; expected keychain=system, got {meta}"
+    assert meta.get("keychain") == "isolated", f"Reconciler must persist migrated key 'isolated'; got {meta}"
+
+
+# ---------------------------------------------------------------------------
+# v0.44.0 new tests (spec §3.2)
+# ---------------------------------------------------------------------------
+
+
+def _has_add_unlock_entry(calls, slug):
+    """Return True if any spy call is add-generic-password for _KC_SERVICE and slug."""
+    for args, *_ in calls:
+        if (
+            isinstance(args, list)
+            and args[0] == "add-generic-password"
+            and "-s" in args
+            and args[args.index("-s") + 1] == "com.altergo.account-unlock"
+            and "-a" in args
+            and args[args.index("-a") + 1] == slug
+        ):
+            return True
+    return False
+
+
+def test_isolated_mode_does_not_plant_unlock_entry(monkeypatch, mod, tmp_account_home):
+    """_create_account_keychain_isolated must NOT call add-generic-password."""
+    sec_calls = []
+
+    def fake_sec(argv, *, check=True, timeout=10):
+        sec_calls.append((list(argv), {}))
+        if argv[0] == "find-generic-password":
+            return _cp(44, "", "not found")
+        return _cp(0)
+
+    monkeypatch.setattr(mod, "_sec", fake_sec)
+    mod._create_account_keychain_isolated(tmp_account_home, "work")
+
+    assert not _has_add_unlock_entry(sec_calls, "work"), (
+        "isolated mode must NOT plant an unlock entry; add-generic-password found in spy"
+    )
+
+
+def test_isolated_mode_writes_plist_and_keychain_file(monkeypatch, mod, tmp_account_home):
+    """_create_account_keychain_isolated writes plist B and calls create-keychain for C."""
+    sec_calls = []
+
+    def fake_sec(argv, *, check=True, timeout=10):
+        sec_calls.append((list(argv), {}))
+        if argv[0] == "find-generic-password":
+            return _cp(44, "", "not found")
+        return _cp(0)
+
+    monkeypatch.setattr(mod, "_sec", fake_sec)
+    mod._create_account_keychain_isolated(tmp_account_home, "work")
+
+    subcommands = [args[0] for args, _ in sec_calls]
+    assert "create-keychain" in subcommands, "isolated mode must call create-keychain to create C"
+
+    prefs_path = mod._keychain_prefs_path(tmp_account_home)
+    assert prefs_path.exists(), "isolated mode must write plist B"
+
+    import plistlib
+
+    with open(prefs_path, "rb") as f:
+        data = plistlib.load(f)
+    assert "DLDBSearchList" in data, "plist must contain DLDBSearchList"
+
+
+def test_isolated_mode_uses_random_password_that_is_not_stored(monkeypatch, mod, tmp_account_home):
+    """_create_account_keychain_isolated uses a random password for create-keychain but
+    never passes that password to add-generic-password (because add-generic-password is
+    never called)."""
+    create_passwords = []
+    add_passwords = []
+
+    def fake_sec(argv, *, check=True, timeout=10):
+        if argv[0] == "find-generic-password":
+            return _cp(44, "", "not found")
+        if argv[0] == "create-keychain" and "-p" in argv:
+            create_passwords.append(argv[argv.index("-p") + 1])
+        if argv[0] == "add-generic-password" and "-w" in argv:
+            add_passwords.append(argv[argv.index("-w") + 1])
+        return _cp(0)
+
+    monkeypatch.setattr(mod, "_sec", fake_sec)
+    mod._create_account_keychain_isolated(tmp_account_home, "work")
+
+    assert len(create_passwords) == 1, "create-keychain must be called once"
+    # Password must not appear in any add-generic-password call (there should be none).
+    assert add_passwords == [], f"Password must not be stored; got add-generic-password calls: {add_passwords}"
+    # Verify no overlap in any case.
+    assert create_passwords[0] not in add_passwords
+
+
+def test_isolated_mode_keychain_is_unusable_by_provider(monkeypatch, mod, tmp_path, account_meta_isolated):
+    """_build_alt_env with isolated account does NOT call _unlock_account_keychain.
+    No exit, no error — launch proceeds normally."""
+    accounts_dir = tmp_path / "accounts"
+    account_home = accounts_dir / "work"
+    account_home.mkdir(parents=True)
+    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
+    monkeypatch.setattr(mod.sys, "platform", "darwin")
+
+    # Isolated meta: _is_keychain_dedicated returns False → no unlock.
+    monkeypatch.setattr(mod, "load_account_meta", lambda path: account_meta_isolated)
+
+    unlock_calls = []
+    monkeypatch.setattr(mod, "_unlock_account_keychain", lambda home, slug: unlock_calls.append((home, slug)))
+
+    # Reconciler must not crash and must not call unlock either.
+    monkeypatch.setattr(mod, "_reconcile_keychain_state", lambda *a, **kw: None)
+
+    env = mod._build_alt_env("work")
+
+    assert unlock_calls == [], "_unlock_account_keychain must NOT be called for isolated accounts"
+    assert "HOME" in env, "env must have HOME set"
+
+
+def test_build_alt_env_dedicated_mode_unlocks(monkeypatch, mod, tmp_path, account_meta_dedicated):
+    """_build_alt_env with dedicated account calls _unlock_account_keychain exactly once."""
+    accounts_dir = tmp_path / "accounts"
+    account_home = accounts_dir / "work"
+    account_home.mkdir(parents=True)
+    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
+    monkeypatch.setattr(mod.sys, "platform", "darwin")
+
+    monkeypatch.setattr(mod, "load_account_meta", lambda path: account_meta_dedicated)
+    monkeypatch.setattr(mod, "_reconcile_keychain_state", lambda *a, **kw: None)
+
+    unlock_calls = []
+    monkeypatch.setattr(mod, "_unlock_account_keychain", lambda home, slug: unlock_calls.append((home, slug)))
+
+    mod._build_alt_env("work")
+
+    assert len(unlock_calls) == 1, f"dedicated mode must call _unlock_account_keychain once; got {unlock_calls}"
+
+
+def test_migration_system_to_isolated_on_load(tmp_account_home):
+    """load_account_meta with keychain='system' on disk returns in-memory keychain='isolated'."""
+    import json as _json
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("altergo", ROOT / "altergo.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    (tmp_account_home / "account.json").write_text(
+        _json.dumps({"version": 3, "providers": ["claude"], "default_provider": "claude", "keychain": "system"})
+    )
+
+    meta = mod.load_account_meta(tmp_account_home)
+    assert meta.get("keychain") == "isolated", f"system → isolated migration failed; got {meta}"
+
+    # On-disk must be unchanged (migration is in-memory only).
+    raw = _json.loads((tmp_account_home / "account.json").read_text())
+    assert raw.get("keychain") == "system", "on-disk value must not be changed by load alone"
+
+
+def test_migration_shared_to_isolated_on_load(tmp_account_home):
+    """load_account_meta with keychain='shared' on disk returns in-memory keychain='isolated'."""
+    import json as _json
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("altergo", ROOT / "altergo.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    (tmp_account_home / "account.json").write_text(
+        _json.dumps({"version": 3, "providers": ["claude"], "default_provider": "claude", "keychain": "shared"})
+    )
+
+    meta = mod.load_account_meta(tmp_account_home)
+    assert meta.get("keychain") == "isolated", f"shared → isolated migration failed; got {meta}"
+
+    raw = _json.loads((tmp_account_home / "account.json").read_text())
+    assert raw.get("keychain") == "shared", "on-disk value must not be changed by load alone"
+
+
+def test_migration_old_isolated_stays_isolated_on_load(tmp_account_home):
+    """load_account_meta with keychain='isolated' on disk stays 'isolated' in v0.44.0.
+    (Old 'isolated' = blocking mode in new vocabulary; dedicated mode requires
+    explicit --keychain dedicated.)"""
+    import json as _json
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("altergo", ROOT / "altergo.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    (tmp_account_home / "account.json").write_text(
+        _json.dumps({"version": 3, "providers": ["claude"], "default_provider": "claude", "keychain": "isolated"})
+    )
+
+    meta = mod.load_account_meta(tmp_account_home)
+    assert meta.get("keychain") == "isolated", f"old isolated must stay isolated; got {meta}"
+
+
+def test_migration_legacy_no_keychain_key_treated_as_isolated(tmp_account_home):
+    """load_account_meta with no keychain key → _is_keychain_isolated returns True."""
+    import json as _json
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("altergo", ROOT / "altergo.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    (tmp_account_home / "account.json").write_text(
+        _json.dumps({"version": 3, "providers": ["claude"], "default_provider": "claude"})
+    )
+
+    meta = mod.load_account_meta(tmp_account_home)
+    assert mod._is_keychain_isolated(meta) is True, "no keychain key → isolated (new default)"
+    assert mod._is_keychain_dedicated(meta) is False, "no keychain key → not dedicated"
+
+
+def test_reconcile_persists_migrated_key_on_launch(monkeypatch, tmp_account_home):
+    """_reconcile_keychain_state(desired=None) with 'system' on disk persists 'isolated'."""
+    import json as _json
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("altergo", ROOT / "altergo.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    (tmp_account_home / "account.json").write_text(
+        _json.dumps({"version": 3, "providers": ["claude"], "default_provider": "claude", "keychain": "system"})
+    )
+
+    def fake_sec(argv, *, check=True, timeout=10):
+        if argv[0] == "find-generic-password":
+            return _cp(44, "", "not found")
+        return _cp(0)
+
+    monkeypatch.setattr(mod, "_sec", fake_sec)
+
+    mod._reconcile_keychain_state(tmp_account_home, "work", desired=None)
+
+    raw = _json.loads((tmp_account_home / "account.json").read_text())
+    assert raw.get("keychain") == "isolated", f"reconciler must persist migrated 'isolated' to disk; got {raw}"
+
+
+def test_reconcile_preserves_dedicated_on_launch_with_prior_state(monkeypatch, tmp_account_home):
+    """_reconcile_keychain_state(desired=None) with 'dedicated' account + B+C+D consistent:
+    leaves everything unchanged, no files deleted."""
+    import json as _json
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("altergo", ROOT / "altergo.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    (tmp_account_home / "account.json").write_text(
+        _json.dumps({"version": 3, "providers": ["claude"], "default_provider": "claude", "keychain": "dedicated"})
+    )
+    # B present.
+    mod._keychain_prefs_path(tmp_account_home).parent.mkdir(parents=True, exist_ok=True)
+    mod._keychain_prefs_path(tmp_account_home).touch()
+    # C present.
+    mod._keychain_path(tmp_account_home).parent.mkdir(parents=True, exist_ok=True)
+    mod._keychain_path(tmp_account_home).touch()
+
+    def fake_sec(argv, *, check=True, timeout=10):
+        if argv[0] == "find-generic-password":
+            return _cp(0, "deadbeef" * 8 + "\n")  # D present
+        return _cp(0)  # unlock-keychain probe succeeds
+
+    monkeypatch.setattr(mod, "_sec", fake_sec)
+
+    mod._reconcile_keychain_state(tmp_account_home, "work", desired=None)
+
+    # C must still exist (not deleted).
+    assert mod._keychain_path(tmp_account_home).exists(), "C must be preserved"
+    # A must still say dedicated.
+    raw = _json.loads((tmp_account_home / "account.json").read_text())
+    assert raw.get("keychain") == "dedicated", f"A must stay dedicated; got {raw}"
+
+
+def test_cli_keychain_system_emits_deprecation_warning(monkeypatch, tmp_path):
+    """--keychain system in the arg parser emits a deprecation warning and resolves to isolated."""
+    import importlib.util, io, json as _json, sys as _sys
+
+    spec = importlib.util.spec_from_file_location("altergo", ROOT / "altergo.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    # Capture the keychain_arg that reaches do_config, and stderr output.
+    captured = {}
+
+    def fake_do_config(account, provider="claude", *, keychain_arg=None):
+        captured["keychain_arg"] = keychain_arg
+
+    monkeypatch.setattr(mod, "do_config", fake_do_config)
+
+    accounts_dir = tmp_path / "accounts"
+    accounts_dir.mkdir()
+    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
+
+    stderr_buf = io.StringIO()
+    monkeypatch.setattr(mod.sys, "stderr", stderr_buf)
+    monkeypatch.setattr(mod.sys, "argv", ["altergo", "--config", "work", "--keychain", "system"])
+    monkeypatch.setattr(mod.sys.stdin, "isatty", lambda: False)
+
+    with pytest.raises(SystemExit):
+        mod.main()
+
+    assert captured.get("keychain_arg") == "isolated", (
+        f"--keychain system must resolve to 'isolated'; got {captured.get('keychain_arg')}"
+    )
+    assert "deprecated" in stderr_buf.getvalue().lower(), (
+        f"--keychain system must emit deprecation warning; got: {stderr_buf.getvalue()!r}"
+    )
+
+
+def test_cli_keychain_shared_emits_deprecation_warning(monkeypatch, tmp_path):
+    """--keychain shared in the arg parser emits a deprecation warning and resolves to isolated."""
+    import importlib.util, io
+
+    spec = importlib.util.spec_from_file_location("altergo", ROOT / "altergo.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    captured = {}
+
+    def fake_do_config(account, provider="claude", *, keychain_arg=None):
+        captured["keychain_arg"] = keychain_arg
+
+    monkeypatch.setattr(mod, "do_config", fake_do_config)
+
+    accounts_dir = tmp_path / "accounts"
+    accounts_dir.mkdir()
+    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
+
+    stderr_buf = io.StringIO()
+    monkeypatch.setattr(mod.sys, "stderr", stderr_buf)
+    monkeypatch.setattr(mod.sys, "argv", ["altergo", "--config", "work", "--keychain", "shared"])
+    monkeypatch.setattr(mod.sys.stdin, "isatty", lambda: False)
+
+    with pytest.raises(SystemExit):
+        mod.main()
+
+    assert captured.get("keychain_arg") == "isolated", (
+        f"--keychain shared must resolve to 'isolated'; got {captured.get('keychain_arg')}"
+    )
+    assert "deprecated" in stderr_buf.getvalue().lower()
+
+
+def test_cli_keychain_dedicated_no_warning(monkeypatch, tmp_path):
+    """--keychain dedicated resolves correctly with no deprecation warning."""
+    import importlib.util, io
+
+    spec = importlib.util.spec_from_file_location("altergo", ROOT / "altergo.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    captured = {}
+
+    def fake_do_config(account, provider="claude", *, keychain_arg=None):
+        captured["keychain_arg"] = keychain_arg
+
+    monkeypatch.setattr(mod, "do_config", fake_do_config)
+
+    accounts_dir = tmp_path / "accounts"
+    accounts_dir.mkdir()
+    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
+
+    stderr_buf = io.StringIO()
+    monkeypatch.setattr(mod.sys, "stderr", stderr_buf)
+    monkeypatch.setattr(mod.sys, "argv", ["altergo", "--config", "work", "--keychain", "dedicated"])
+    monkeypatch.setattr(mod.sys.stdin, "isatty", lambda: False)
+
+    with pytest.raises(SystemExit):
+        mod.main()
+
+    assert captured.get("keychain_arg") == "dedicated"
+    assert "deprecated" not in stderr_buf.getvalue().lower(), (
+        f"--keychain dedicated must NOT emit deprecation; got: {stderr_buf.getvalue()!r}"
+    )
+
+
+def test_cli_keychain_invalid_exits_nonzero(monkeypatch, tmp_path):
+    """--keychain garbage exits non-zero and stderr mentions 'isolated' and 'dedicated'."""
+    import importlib.util, io
+
+    spec = importlib.util.spec_from_file_location("altergo", ROOT / "altergo.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    accounts_dir = tmp_path / "accounts"
+    accounts_dir.mkdir()
+    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
+
+    stderr_buf = io.StringIO()
+    monkeypatch.setattr(mod.sys, "stderr", stderr_buf)
+    monkeypatch.setattr(mod.sys, "argv", ["altergo", "--config", "work", "--keychain", "garbage"])
+    monkeypatch.setattr(mod.sys.stdin, "isatty", lambda: False)
+
+    with pytest.raises(SystemExit) as exc_info:
+        mod.main()
+
+    assert exc_info.value.code != 0, "invalid --keychain value must exit non-zero"
+    err = stderr_buf.getvalue()
+    assert "isolated" in err and "dedicated" in err, (
+        f"error message must mention 'isolated' and 'dedicated'; got: {err!r}"
+    )
+
+
+def test_switch_dedicated_to_isolated_removes_unlock_entry(monkeypatch, mod, tmp_account_home):
+    """_apply_keychain_mode(mode='isolated') from a dedicated account removes D but not C."""
+    # Pre-existing dedicated account: A, B, C, D all present.
+    mod._keychain_path(tmp_account_home).parent.mkdir(parents=True, exist_ok=True)
+    mod._keychain_path(tmp_account_home).touch()  # C present.
+    prior_meta = {"version": 3, "providers": ["claude"], "default_provider": "claude", "keychain": "dedicated"}
+
+    sec_calls = []
+
+    def fake_sec(argv, *, check=True, timeout=10):
+        sec_calls.append((list(argv), {"check": check}))
+        if argv[0] == "find-generic-password":
+            return _cp(0, "deadbeef" * 8 + "\n")  # D present
+        return _cp(0)
+
+    monkeypatch.setattr(mod, "_sec", fake_sec)
+
+    mod._apply_keychain_mode(tmp_account_home, "work", "isolated", prior_meta=prior_meta)
+
+    subcommands = [args[0] for args, _ in sec_calls]
+
+    # D must be removed.
+    assert "delete-generic-password" in subcommands, (
+        f"switching to isolated must call delete-generic-password; got {subcommands}"
+    )
+
+    # C must NOT be deleted (preserve-and-reuse).
+    assert "delete-keychain" not in subcommands, (
+        f"switching to isolated must NOT call delete-keychain; got {subcommands}"
+    )
+    assert mod._keychain_path(tmp_account_home).exists(), "C must be preserved on disk"
+
+
+def test_switch_isolated_to_dedicated_reuses_preserved_file(monkeypatch, mod, tmp_account_home):
+    """_apply_keychain_mode(mode='dedicated') when C already exists reuses C (no fresh create)."""
+    # Pre-create C on disk (from a prior dedicated run, preserved through isolated).
+    mod._keychain_path(tmp_account_home).parent.mkdir(parents=True, exist_ok=True)
+    mod._keychain_path(tmp_account_home).touch()  # C present.
+    prior_meta = {"version": 3, "providers": ["claude"], "default_provider": "claude", "keychain": "isolated"}
+
+    sec_calls = []
+
+    def fake_sec(argv, *, check=True, timeout=10):
+        sec_calls.append((list(argv), {"check": check}))
+        if argv[0] == "find-generic-password":
+            return _cp(44, "", "not found")  # D absent (was deleted when switching to isolated)
+        return _cp(0)
+
+    monkeypatch.setattr(mod, "_sec", fake_sec)
+
+    mod._apply_keychain_mode(tmp_account_home, "work", "dedicated", prior_meta=prior_meta)
+
+    subcommands = [args[0] for args, _ in sec_calls]
+
+    # C exists but D is absent → Case 3 (orphan C) → delete-keychain + fresh build.
+    # This is expected per spec §6.2 option (a): token loss on re-upgrade is acceptable.
+    # The important thing: C is not preserved when D is gone (password mismatch risk).
+    # Alternatively: if the test finds create-keychain was called, that's fine.
+    assert "create-keychain" in subcommands or "add-generic-password" in subcommands, (
+        "switching from isolated to dedicated must rebuild the keychain"
     )

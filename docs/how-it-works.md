@@ -301,23 +301,28 @@ altergo: account 'work' does not have provider 'gemini' installed.
 
 ---
 
-## Per-account keychain isolation (macOS, opt-in)
+## Keychain modes (macOS)
 
-On macOS, provider CLIs can store tokens in the system keychain. By default, all altergo accounts on the same macOS user share a single keychain. Keychain isolation gives each account its own `login.keychain-db`.
+On macOS, provider CLIs can write tokens to the macOS keychain. altergo controls this per account via two modes:
 
-### Activation model
+- **`isolated` (default):** A per-account `login.keychain-db` is created but never unlocked. `com.apple.security.plist` routes Security.framework writes from the provider process to this locked keychain, where they fail with `errSecAuthFailed`. Providers fall back to flat-file credentials. Nothing lands in the real login keychain.
+- **`dedicated` (opt-in):** A per-account `login.keychain-db` is created and unlocked at every `altergo <account>` launch. Tokens written to the keychain by the provider CLI land in the account's private keychain, not the system keychain shared by other accounts.
 
-When `keychain: isolated` is set in `account.json`, `_build_alt_env` calls `_unlock_account_keychain` before returning the environment dict:
+### Activation model (`dedicated` mode)
+
+When `keychain: dedicated` is set in `account.json`, `_build_alt_env` calls `_unlock_account_keychain` before returning the environment dict:
 
 1. Read the unlock password from the real user login keychain using `/usr/bin/security find-generic-password`. This is silent — the login keychain is already unlocked during your session.
 2. Unlock the per-account `login.keychain-db` with that password.
 3. Return the env dict. The provider process starts with the per-account keychain unlocked and `HOME` pointing at the account directory.
 
-`com.apple.security.plist` in the account's `Library/Preferences/` directs macOS's Security framework to use the per-account keychain for all processes running with `HOME` set to that account. This affects the provider CLI and any subprocesses it spawns.
+### Activation model (`isolated` mode)
+
+No unlock step. `_build_alt_env` returns the env dict immediately after the reconcile check. `com.apple.security.plist` routes Security.framework writes to the permanently locked per-account keychain → providers fall back to flat files.
 
 ### Why plain unlock entry, not Touch-ID ACL
 
-Touch ID gating would break SSH sessions and nightly automation. macOS's own login keychain unlocks at login and stays unlocked — no Touch ID on read, works fine over SSH. The per-account keychain mirrors that behavior exactly.
+Touch ID gating would break SSH sessions and nightly automation. macOS's own login keychain unlocks at login and stays unlocked — no Touch ID on read, works fine over SSH. The `dedicated` per-account keychain mirrors that behavior exactly.
 
 A Touch-ID-gated ACL, a launchd broker, and Secure-Enclave wrapping of the unlock password were all considered and rejected. The design principle: behave no worse than the native login keychain.
 
@@ -327,13 +332,13 @@ The `DLDBSearchList` plist uses `~/Library/Keychains/login.keychain` (without `-
 
 ### Idempotency behavior
 
-`_create_account_keychain` checks whether the keychain file exists before creating it. Reuse if present, skip creation. If the file exists but the unlock entry is missing, it warns and aborts — it cannot recover a lost password. The recovery procedure is: `rm -rf <account_home>/Library/Keychains/login.keychain-db` followed by `altergo --config <account> --keychain isolated`.
+`_create_account_keychain(plant_unlock_entry=True)` (dedicated) checks whether the keychain file and unlock entry are consistent (Case 1 probe). If consistent, reuse. For `isolated` mode, if C already exists it is left in place — the permanent lock is the desired state.
 
-### Downgrade: isolated → system
+### Mode switch: `dedicated` → `isolated`
 
-Flipping `--keychain system` (the new name for what was called `shared` — the old name is honoured as an alias for one minor version) removes only `Library/Preferences/com.apple.security.plist` from the account home. The per-account `login.keychain-db` file and the `com.altergo.account-unlock` entry in the real user's login keychain are left on disk. Re-enabling `--keychain isolated` later reuses both — prior tokens are restored without re-authentication.
+Removes the `com.altergo.account-unlock` entry from the real login keychain (zero-footprint promise). Preserves `login.keychain-db` on disk (preserve-and-reuse: tokens are gone but the file survives). Writes `com.apple.security.plist`. Re-upgrading to `dedicated` later creates a fresh keychain; providers re-authenticate into flat files.
 
-Full destructive cleanup (`security delete-keychain`, `security delete-generic-password`, directory removal) happens only on `altergo --delete-account <name>`, which acts unconditionally based on file-presence regardless of what the account's current keychain mode flag says. Preserved keychains from a previous downgrade are therefore caught and removed on account deletion — nothing leaks.
+Full destructive cleanup (`security delete-keychain`, `security delete-generic-password`, directory removal) happens only on `altergo --delete-account <name>`, which acts unconditionally based on file-presence regardless of what the account's current keychain mode flag says.
 
 ---
 

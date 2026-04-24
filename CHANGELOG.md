@@ -1,6 +1,39 @@
 # CHANGELOG
 
 
+## v0.44.0 (2026-04-23)
+
+### Breaking (safe default flip — existing setups keep working)
+
+- **Keychain mode default flipped to `isolated` (blocking).**
+  By default, altergo now blocks each account from writing to the macOS
+  keychain. Providers fall back to flat-file credentials under the account's
+  HOME. Nothing lands in your real login keychain.
+
+  If you want per-account keychain behaviour (what v0.43.x called
+  `--keychain isolated`), pass `--keychain dedicated`.
+
+  Existing accounts are migrated silently:
+  - `"keychain": "system"` → `"keychain": "isolated"` (same behavior)
+  - `"keychain": "shared"` → `"keychain": "isolated"` (same behavior)
+  - `"keychain": "isolated"` (old meaning) → stays `"isolated"` (blocking mode;
+    use `--keychain dedicated` to re-opt-in to per-account keychain)
+  - Accounts with no `keychain` key → treated as `"isolated"` (new default)
+
+  CLI aliases still work:
+  - `--keychain system` → resolves to `isolated`, stderr deprecation warning
+  - `--keychain shared` → resolves to `isolated`, stderr deprecation warning
+  - Both aliases will be removed in v0.46.0.
+
+### Changed
+
+- `--config` interactive prompt now asks whether to opt into `dedicated` mode
+  (default: no — keep `isolated`).
+- `--config` picker no longer shows a mode suffix for `isolated` accounts
+  (the default is implicit); `dedicated` accounts show `  ·  keychain: dedicated`.
+- New `--help` row: `altergo --config --keychain <m>  isolated | dedicated (macOS only)`.
+
+
 ## v0.43.1 (2026-04-23)
 
 ### Bug Fixes

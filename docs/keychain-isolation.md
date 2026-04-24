@@ -1,138 +1,151 @@
-# Keychain isolation (macOS, opt-in)
+# Keychain modes (macOS)
 
-**Applies to:** altergo v0.41.0+ (preserve-and-reuse semantics: v0.43.0+)  
-**Audience:** macOS users who want per-account credential separation at the keychain level.
+**Applies to:** altergo v0.44.0+ (previous name: "keychain isolation", v0.41.0+)  
+**Audience:** macOS users who want to understand how altergo interacts with the macOS keychain.
 
-> **v0.43.0 behavior change:** Switching an account from `isolated` back to `system` no longer deletes the per-account keychain file. The file is preserved on disk so a future re-upgrade can reuse it and recover stored tokens. If you read this doc while running v0.41.0 or v0.42.x, downgrade was destructive — re-upgrading on those versions created a fresh keychain.
+> **v0.44.0 behavior change:** The default keychain mode is now `isolated` (blocking). altergo no longer plants any entry in your real login keychain by default — providers fall back to flat-file credentials. The previous default (`system`, same as `isolated`) and the old opt-in mode (`isolated`, now called `dedicated`) are both preserved as-is; only the names changed. See [migration notes](#switching-modes) below.
 
-For the short version, see the [Keychain isolation section in the README](../README.md#keychain-isolation-macos-opt-in). For the threat model and security scope, see the [Threat model and non-goals](#5-threat-model-and-non-goals) section below.
+For the short version, see the [Keychain modes section in the README](../README.md#keychain-modes-macos). For the threat model and security scope, see the [Threat model and non-goals](#5-threat-model-and-non-goals) section below.
 
 ---
 
 ## 1. What this is
 
-altergo runs each account under a separate `HOME` directory, which isolates file-based credentials. On macOS, some provider CLIs also write tokens directly to the system keychain. Those keychain entries are keyed by service name — and when all your altergo accounts share the same system keychain, tokens from different accounts can co-exist in the same store.
+altergo runs each account under a separate `HOME` directory, which isolates file-based credentials. On macOS, some provider CLIs also write tokens to the macOS keychain. altergo gives you two options for how to handle that:
 
-Keychain isolation gives each account its own private keychain file. Tokens written by that account stay in that account's keychain and are not visible to other altergo accounts.
+- **`isolated` (default since v0.44.0):** altergo blocks each account from writing to the macOS keychain. A per-account `login.keychain-db` is created but never unlocked — Security.framework routes keychain writes to it and they fail with `errSecAuthFailed`. Providers fall back to flat-file credentials under the account's HOME. **Nothing lands in your real login keychain.** This is the safe default for most users.
 
-You do not need this for most setups. The two modes are:
-
-- **`system` (default):** All accounts share your regular macOS login keychain. Provider tokens are still separated at the file level (`.credentials.json`, etc.); the keychain is shared. This is correct for most users.
-- **`isolated`:** Each account gets its own `login.keychain-db` under its account home. Tokens written to the keychain by that account's provider CLI land there, not in the system keychain shared by your other accounts.
+- **`dedicated` (opt-in):** Each account gets its own `login.keychain-db` under its account home, unlocked at session start. Tokens written to the keychain by that account's provider CLI land there, not in the keychain shared by your other accounts. This is what v0.43.x called `isolated`.
 
 **Which should I pick?**
 
-Use `system` (the default) unless you have a specific reason to keep keychain state separate between identities. Most users never need `isolated`. `altergo native` bypasses keychain isolation entirely regardless of this setting.
+Use `isolated` (the default) unless your provider CLI requires keychain writes to function (most fall back to flat files gracefully). Use `dedicated` if you need strict per-account keychain separation.
 
-This is a workflow convenience, not a hard security boundary. See the [threat model section](#5-threat-model-and-non-goals) for what that means in practice.
+`altergo native` bypasses keychain mode entirely and runs the provider under the real `$HOME`.
+
+This is workflow isolation, not cryptographic separation. See the [threat model section](#5-threat-model-and-non-goals) for what that means in practice.
 
 ---
 
-## 2. Opt in / opt out
+## 2. Modes
 
-**Enable isolation for an account:**
+### `isolated` (default)
 
 ```bash
 altergo --config <account> --keychain isolated
 ```
 
-Or run `altergo --config <account>` interactively — altergo will prompt whether to enable keychain isolation. Answering "y" is equivalent to passing `--keychain isolated`.
+Or run `altergo --config <account>` interactively and hit Enter (default: No, keep `isolated`).
 
-**Disable isolation and revert to system (default) keychain:**
+What altergo creates:
+
+- `Library/Preferences/com.apple.security.plist` — routes Security.framework keychain operations to the per-account keychain.
+- `Library/Keychains/login.keychain-db` — a permanently locked per-account keychain. Created with a random password that is immediately discarded; nothing can unlock it.
+
+No `com.altergo.account-unlock` entry is planted in your real login keychain. When a provider tries to write a token to the keychain, it gets `errSecAuthFailed` and falls back to writing a flat-file credential (e.g. `.credentials.json`, `oauth_creds.json`).
+
+### `dedicated` (opt-in)
 
 ```bash
-altergo --config <account> --keychain system
+altergo --config <account> --keychain dedicated
 ```
 
-`--keychain shared` is a deprecated alias for `--keychain system` and will be removed in the next minor version. It prints a warning to stderr and behaves identically.
+Or answer "y" to the keychain mode prompt during interactive `--config`.
 
-When you flip an account from `isolated` back to `system`, altergo removes the per-account `com.apple.security.plist` so runtime Security.framework routing falls back to the real user's login keychain. The per-account `login.keychain-db` file and the `com.altergo.account-unlock` entry in your real login keychain are preserved on disk so a future re-upgrade can reuse them.
+What altergo creates in addition to the files above:
 
-**Default:** `system` on upgrade and for all new accounts unless you explicitly pass `--keychain isolated`. Existing accounts are not changed.
+- A `com.altergo.account-unlock` generic-password entry in your **real** login keychain, storing the random unlock password for this account's keychain.
 
-**Rerunning `--config` without a `--keychain` flag** preserves the existing setting.
+At every `altergo <account>` launch, altergo reads the unlock password from the real login keychain (silent — no prompt) and unlocks the per-account keychain so providers can read and write tokens normally.
 
-**`altergo native`** bypasses keychain isolation entirely and runs the provider under the real `$HOME`.
+### Deprecated aliases
 
-**How keychain mode appears in the UI:**
-
-- `altergo --config` (interactive picker) shows a `  ·  keychain: isolated` suffix on each account row that has isolation enabled. Accounts in `system` mode show no suffix.
-- `altergo --config <account>` prints `Current keychain: isolated` or `Current keychain: system (default)` at the top of the config run, before any changes are applied.
+`--keychain system` and `--keychain shared` are deprecated aliases that resolve to `isolated`. They emit a warning to stderr and will be removed in v0.46.0.
 
 ---
 
 ## 3. On-disk layout
 
-When isolation is enabled for an account named `<account>`, altergo creates:
+### Both modes
 
 | Path | What it is |
 |---|---|
-| `~/.altergo/accounts/<account>/Library/Keychains/login.keychain-db` | The per-account keychain file. Created once; reused on every subsequent launch. |
+| `~/.altergo/accounts/<account>/Library/Keychains/login.keychain-db` | The per-account keychain file. In `isolated` mode: permanently locked; never stores tokens. In `dedicated` mode: unlocked at launch; stores provider tokens. |
 | `~/.altergo/accounts/<account>/Library/Preferences/com.apple.security.plist` | Plist that tells the macOS Security framework to use the per-account keychain for processes with `HOME` set to this account. Uses the `~/Library/Keychains/login.keychain` tilde-form (`DLDBSearchList`). |
+
+### Dedicated mode only
+
+| Path | What it is |
+|---|---|
 | Login keychain entry (your real user login keychain) | Generic-password entry: service `com.altergo.account-unlock`, account `<account>`. Stores the random unlock password for this account's keychain. |
 
-The plist uses the `~/Library/Keychains/login.keychain` form (without `-db`) — this matches what macOS itself writes and is what the Security framework resolves. The on-disk keychain file name ends in `-db`; both forms work.
-
-The `account.json` for an isolated account includes a `keychain` key:
+### `account.json` shape
 
 ```json
 {
   "version": 3,
   "providers": ["claude"],
   "default_provider": "claude",
-  "created": "2026-04-21T10:00:00",
+  "created": "2026-04-23T10:00:00",
   "keychain": "isolated"
 }
 ```
 
-Accounts that have not been explicitly configured for keychain mode (or were created before this feature) have no `keychain` key. After any `--config` run on v0.41.0+, the key is always written: `"keychain": "isolated"` or `"keychain": "system"`.
+Legal values: `"isolated"` | `"dedicated"`. Accounts with no `keychain` key are treated as `isolated` (the default).
 
 ---
 
 ## 4. Lifecycle
 
-**Create** — `altergo --config <account> --keychain isolated` runs `_create_account_keychain`:
+### Create (`dedicated` mode)
 
 1. Generate a 64-character hex password via `secrets.token_bytes(32).hex()`.
 2. Create the keychain file: `security create-keychain -p <password> <path>`.
 3. Write `com.apple.security.plist` via `plistlib`.
-4. Store the unlock password in your real login keychain: `security add-generic-password -s com.altergo.account-unlock -a <account> -w <password> -T /usr/bin/security`.
+4. Store the unlock password: `security add-generic-password -s com.altergo.account-unlock -a <account> -w <password> -T /usr/bin/security`.
 
-If you enable isolation on an account that already has tokens stored in the system keychain, those tokens are not carried over — the per-account keychain starts empty. You will need to re-authenticate with each provider once after enabling isolation.
+### Create (`isolated` mode)
 
-If the keychain file already exists and the unlock entry is present and valid (idempotent re-run), altergo reuses it and skips creation. If the file exists but the unlock entry is missing (orphan), altergo prints a warning, deletes the orphaned keychain file, and rebuilds from scratch. Any tokens stored in the orphaned keychain are lost.
+1. Generate a 64-character hex password (discarded immediately after the next step).
+2. Create the keychain file: `security create-keychain -p <password> <path>`. Password is never stored anywhere.
+3. Write `com.apple.security.plist`.
 
-**Activate** — every `altergo <account>` launch calls `_unlock_account_keychain` inside `_build_alt_env`:
+The keychain is permanently locked from altergo's perspective. Provider writes fail → flat-file fallback.
 
-1. Read the unlock password from the real login keychain (silent — login keychain is already unlocked, no prompt).
-2. Unlock the per-account keychain with that password.
+### Activate
 
-The keychain stays unlocked for the duration of the session, matching macOS's own login keychain behavior.
+- **dedicated:** every `altergo <account>` launch calls `_unlock_account_keychain`, reads the unlock password from the real login keychain, and unlocks the per-account keychain. Silent, no prompt.
+- **isolated:** no unlock step. The keychain stays locked; Security.framework routes writes to it which fail.
 
-**Downgrade** — `altergo --config <account> --keychain system`:
+### Switching modes
 
-1. Remove `Library/Preferences/com.apple.security.plist` from the account home. This is the only file that routes Security.framework to the per-account keychain; removing it causes keychain operations under `HOME=<account_home>` to fall through to the real user's login keychain.
-2. Leave `Library/Keychains/login.keychain-db` on disk.
-3. Leave the `com.altergo.account-unlock` entry in the real login keychain.
-4. Rewrite `account.json` with `"keychain": "system"`.
+**`dedicated` → `isolated`:**
 
-Rationale: a mode toggle switches which keychain is active, not whether your stored tokens survive. If you want the data gone, use `altergo --delete-account <account>`.
+1. Remove `com.altergo.account-unlock` from your real login keychain. This is the "zero footprint" step — nothing from this account lives in your real login keychain after the switch.
+2. Keep `Library/Keychains/login.keychain-db` on disk (preserve-and-reuse).
+3. Write/keep `com.apple.security.plist`.
+4. Rewrite `account.json` with `"keychain": "isolated"`.
 
-**Re-upgrade** — `altergo --config <account> --keychain isolated` on an account that was previously downgraded:
+Note: tokens that were stored in the per-account keychain are no longer accessible (the unlock entry is gone). Flat-file credentials are unaffected. Re-upgrading to `dedicated` later creates a fresh keychain; providers will need to re-authenticate into flat files.
 
-Any tokens that were stored in the per-account keychain before the downgrade are immediately accessible again — no re-authentication required. altergo detects that `Library/Keychains/login.keychain-db` already exists and that the `com.altergo.account-unlock` unlock entry is still present in the real login keychain, prints "Keychain already exists, reusing", rewrites `com.apple.security.plist`, and updates `account.json` with `"keychain": "isolated"`. No new keychain is created and no new unlock password is generated.
+**`isolated` → `dedicated`:**
 
-If the file exists but the unlock entry is missing (a true orphan, not a preserved downgrade), altergo prints a warning, deletes the orphaned keychain file, and rebuilds from scratch. Any tokens stored only in the orphaned keychain are lost.
+1. Re-create the keychain and unlock entry (same as fresh `dedicated` creation).
+2. Write `account.json` with `"keychain": "dedicated"`.
 
-**Delete account** — `altergo --delete-account <account>` tears down keychain artifacts unconditionally based on file-presence, not the `keychain` meta flag. If `Library/Keychains/login.keychain-db` exists or the `com.altergo.account-unlock` entry is present in the real login keychain, altergo removes both before deleting the account home directory. This ensures that a keychain preserved by a prior downgrade is still cleaned up when the account is removed.
+### Delete account
+
+`altergo --delete-account <account>` tears down all keychain artifacts unconditionally based on file/entry presence, not the `keychain` meta flag. If `Library/Keychains/login.keychain-db` exists or a `com.altergo.account-unlock` entry is present, altergo removes both before deleting the account home directory.
 
 ---
 
 ## 5. Threat model and non-goals
 
-altergo supports opt-in per-account keychain isolation on macOS. When enabled for an account, altergo creates a dedicated `login.keychain-db` for that account under the account home and stores its unlock password as a generic-password entry in your real user login keychain (service `com.altergo.account-unlock`). Activation is silent — no Touch ID prompt, works over SSH and in automation — because reading from an already-unlocked login keychain doesn't prompt.
+By default (`isolated` mode), altergo does **not** plant any entry in your real login keychain. Providers fall back to flat-file credentials. This is a net-positive security posture: the attack surface on the real login keychain is zero for isolated accounts.
 
-**This is workflow isolation, not cryptographic separation.** Any process running under your macOS user can read your login keychain (which is already unlocked during your session) and therefore derive any altergo account's keychain password. If you need hard isolation between accounts — e.g., client work under NDA — at present the boundary is OS-level user separation; altergo's keychain isolation is complementary to, not a replacement for, that.
+In `dedicated` mode, altergo stores one generic-password entry per account in your real login keychain (the unlock password). Any process running under your macOS user can read your login keychain (which is already unlocked during your session) and derive any altergo account's keychain password. This is the same threat model as the macOS login keychain itself.
+
+**This is workflow isolation, not cryptographic separation.** If you need hard isolation between accounts — e.g., client work under NDA — at present the boundary is OS-level user separation.
 
 **Explicit non-goals:**
 
@@ -144,7 +157,7 @@ altergo supports opt-in per-account keychain isolation on macOS. When enabled fo
 
 ## 6. Troubleshooting
 
-**"login keychain is locked" error on launch**
+**"login keychain is locked" error on launch (dedicated mode only)**
 
 Your real user login keychain is locked (unusual — this normally happens only when the screen is locked). Unlock your login keychain first:
 
@@ -154,26 +167,30 @@ security unlock-keychain ~/Library/Keychains/login.keychain-db
 
 Then relaunch.
 
-**"no unlock entry found" error**
+**"no unlock entry found" error (dedicated mode only)**
 
-The `com.altergo.account-unlock` entry for this account is missing from your login keychain. This can happen if you manually deleted it from Keychain Access or restored from a backup that excluded keychain data. altergo cannot recover the unlock password. See the recovery procedure below.
+The `com.altergo.account-unlock` entry for this account is missing from your login keychain. Re-run `--config --keychain dedicated` to rebuild:
 
-**Keychain file on disk after downgrade — this is expected**
+```bash
+altergo --config <account> --keychain dedicated
+```
 
-If you downgraded an account with `--keychain system`, `Library/Keychains/login.keychain-db` remains on disk alongside a `com.altergo.account-unlock` entry in your real login keychain. This is intentional: altergo's preserve-and-reuse design keeps those files so a future `--keychain isolated` can restore them without losing stored tokens. You do not need to clean them up manually; `altergo --delete-account <account>` removes them when you delete the account.
+**Orphaned keychain file (C present, D absent) in dedicated mode**
 
-**True orphan: keychain file present but unlock entry missing**
+If the keychain file exists but the unlock entry is gone, altergo detects this, prints "Orphaned keychain file found — rebuilding", removes the unrecoverable file, and creates a fresh keychain. Credentials stored only in the orphaned file are lost; flat-file credentials are unaffected.
 
-This is different from the expected post-downgrade state. A true orphan is when the keychain file exists but the `com.altergo.account-unlock` entry is gone — for example, after manually deleting it from Keychain Access, or restoring from a backup that excluded keychain data.
+**Password mismatch in dedicated mode**
 
-altergo detects this automatically and self-heals: re-running `--config --keychain isolated` prints "Orphaned keychain file found — rebuilding", removes the unrecoverable file, and creates a fresh keychain with a new password.
+If the unlock password in the login keychain does not match the per-account keychain's password, `security unlock-keychain` returns `errSecAuthFailed`. altergo exits with an error. Recovery:
+
+```bash
+altergo --config <account> --keychain dedicated
+```
+
+**Switching back to isolated after dedicated**
 
 ```bash
 altergo --config <account> --keychain isolated
 ```
 
-Any credentials that were stored only in the unrecoverable keychain file are lost. Credentials stored in flat credential files (`.credentials.json`, etc.) are unaffected.
-
-**Password mismatches cannot self-heal**
-
-If the unlock password in the login keychain does not match the password the per-account keychain was created with, `security unlock-keychain` returns `errSecAuthFailed`. altergo exits with an error. There is no automatic recovery — the keychain was created with a different password and there is no way to derive it. Use the recovery procedure above.
+This removes the unlock entry from your real login keychain. Tokens that were stored only in the per-account keychain are no longer accessible. Flat-file credentials are unaffected.

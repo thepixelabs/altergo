@@ -122,18 +122,18 @@ If the notice prompts you to share a package manager across accounts, the shortc
 
 ---
 
-## Keychain isolation (macOS, per-account)
+## Keychain mode (macOS, per-account)
 
-Keychain isolation is a **per-account** setting stored in `account.json`, not in the global `.altergo.json`. It does not appear in the `altergo --settings` TUI.
+Keychain mode is a **per-account** setting stored in `account.json`, not in the global `.altergo.json`. It does not appear in the `altergo --settings` TUI.
 
-Toggle it via the CLI:
+The default since v0.44.0 is `isolated` — altergo blocks each account from writing to the macOS keychain; providers fall back to flat-file credentials. Opt into `dedicated` for per-account keychain behaviour:
 
 ```bash
-altergo --config <account> --keychain isolated   # enable
-altergo --config <account> --keychain system     # disable (preserves keychain file; full cleanup on --delete-account)
+altergo --config <account> --keychain dedicated  # per-account keychain, unlocked at launch
+altergo --config <account> --keychain isolated   # block keychain writes (the default)
 ```
 
-Or answer "y" to the keychain isolation prompt during interactive `altergo --config <account>`.
+Or answer "y" to the keychain mode prompt during interactive `altergo --config <account>`.
 
 See [docs/keychain-isolation.md](keychain-isolation.md) for the full guide.
 

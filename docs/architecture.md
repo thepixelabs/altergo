@@ -360,7 +360,10 @@ These symlinks live directly in the account home (e.g., `~/.altergo/accounts/wor
 | `PS1` | `(altergo:<account>) ` prefix prepended | Only in `launch_shell()`, only for bash/sh |
 | `PROMPT` | `(altergo:<account>) ` prefix prepended | Only in `launch_shell()`, only for zsh |
 
-Additionally, before the environment dict is returned on macOS when keychain isolation is enabled, `_unlock_account_keychain(account_home, account)` is called. It reads the unlock password from the real login keychain (silent) and unlocks the per-account `login.keychain-db`. The keychain remains unlocked for the session. On `KeychainError`, `_build_alt_env` exits 1.
+Additionally, before the environment dict is returned on macOS, `_reconcile_keychain_state` runs a cheap drift check. Then:
+
+- **dedicated mode** (`meta["keychain"] == "dedicated"`): `_unlock_account_keychain(account_home, account)` reads the unlock password from the real login keychain (silent) and unlocks the per-account `login.keychain-db`. The keychain remains unlocked for the session. On `KeychainError`, `_build_alt_env` exits 1.
+- **isolated mode** (default): no unlock step. The per-account keychain is permanently locked; Security.framework routes provider keychain writes to it and they fail, causing providers to fall back to flat-file credentials.
 
 All other environment variables pass through unchanged.
 
@@ -516,8 +519,8 @@ No polling, no background thread. The merge is a few lines of JSON and runs inli
 9. **Report credentials state.** If the provider's credentials file is absent, print a hint to authenticate by running `altergo <account>`.
 10. **MCP sync (Claude only).** `_sync_claude_mcps(account_home)`.
 11. **Apply the CLI-credentials catalog.** For each `CATALOG` entry, honour the user's override in `.altergo.json` or fall back to `default_on`. Link or unlink accordingly at the account-home level (not inside the dot-dir).
-12. **Keychain setup (macOS, opt-in).** If `--keychain isolated` was passed, or if the account already has `keychain: isolated` in its metadata, call `_create_account_keychain(account_home, account)`. This creates the per-account `login.keychain-db`, writes `com.apple.security.plist`, and stores the unlock password in the real login keychain. The function is idempotent — if the keychain file already exists it is reused. On `KeychainError`, `do_config` downgrades the setting to `shared` and continues. See [Keychain isolation reference](#keychain-isolation-reference) below.
-13. **Write v3 metadata.** `account.json = {"version": 3, "providers": [...], "default_provider": "<id>", "created": <iso8601>}` via `save_account_meta`. The `keychain` key is included only when isolation is enabled.
+12. **Keychain setup (macOS).** Calls `_apply_keychain_mode(account_home, account, keychain_mode, prior_meta=meta)` where `keychain_mode` is `"isolated"` (default) or `"dedicated"` (opt-in). For `isolated`: creates a permanently locked per-account keychain + plist, no unlock entry. For `dedicated`: creates the per-account keychain, stores the unlock password in the real login keychain, writes the plist. Both paths are idempotent. On `KeychainError`, `do_config` falls back to `isolated` mode and continues.
+13. **Write v3 metadata.** `account.json = {"version": 3, "providers": [...], "default_provider": "<id>", "created": <iso8601>, "keychain": "<mode>"}` via `save_account_meta`. The `keychain` key is always written after the first `--config` touch. Legal values: `"isolated"` | `"dedicated"`.
 
 There is no separate "repair" step in the current flow — `_ensure_symlinked_dir()` is itself idempotent and self-healing for the four cases enumerated above.
 
@@ -531,7 +534,7 @@ Introduced in v0.40.0. v3 supports multiple providers per account:
   "providers": ["claude", "codex"],
   "default_provider": "claude",
   "created": "2026-04-20T18:32:11",
-  "keychain": "isolated"
+  "keychain": "dedicated"
 }
 ```
 
@@ -541,9 +544,9 @@ Introduced in v0.40.0. v3 supports multiple providers per account:
 | `providers` | list[str] | Ordered list of installed provider ids (`claude`, `gemini`, `codex`, `copilot`) |
 | `default_provider` | str | Provider used by bare `altergo <account>`. Must be in `providers`. |
 | `created` | str | ISO 8601 timestamp, set at account creation, never overwritten |
-| `keychain` | str (optional) | `"isolated"` when macOS per-account keychain is enabled. Absent when `shared` (default). |
+| `keychain` | str (optional) | `"isolated"` (default — blocks keychain writes, providers use flat files) or `"dedicated"` (per-account keychain, unlocked at launch). Absent for legacy accounts. |
 
-The `keychain` key is present only when keychain isolation is enabled (macOS, opt-in). When absent, the account uses the shared (default) keychain behavior.
+The `keychain` key is written after every `--config` touch (v0.44.0+). Absent means `isolated` (the default). Legal values on disk: `"isolated"` | `"dedicated"`.
 
 **v2 read compatibility:** v2 files (`{"version": 2, "provider": "claude"}`) load forever. `load_account_meta()` reads a v2 file via `_coerce_meta_v3` and presents it in memory as a single-provider v3 record. The file on disk is only rewritten to v3 when the user mutates the account via `--add-provider`, `--remove-provider`, `--default-provider`, or `--keychain`. Read-only sessions leave v2 files untouched.
 
@@ -593,10 +596,9 @@ Type annotations are used selectively in the source — newer functions carry re
 
 | Location | Function | What happens |
 |---|---|---|
-| `altergo.py:~2725` (`do_config`) | `_create_account_keychain` | Called when `--keychain isolated` is set. Creates keychain, writes plist, stores unlock entry. On `KeychainError`, downgrades to `system` and continues. |
-| `altergo.py:~2690` (`do_config`) | Downgrade path | When `--keychain system` is passed and the account was previously isolated, removes only `Library/Preferences/com.apple.security.plist`. The per-account `login.keychain-db` and the unlock entry in the real login keychain are preserved. Re-enabling `--keychain isolated` later reuses both — prior tokens return without re-authentication. |
-| `altergo.py:~2955` (`do_delete_account`) | `_delete_account_keychain` | Unconditionally tears down keychain artifacts based on file-presence: deletes the per-account keychain and unlock entry before removing the account home. On `KeychainError`, warns and continues — rmtree proceeds regardless. |
-| `altergo.py:~5423` (`_build_alt_env`) | `_unlock_account_keychain` | Called before returning the env dict. Reads unlock password from login keychain (silent), unlocks per-account keychain. On `KeychainError`, exits 1. |
+| `do_config` | `_apply_keychain_mode` | Called for every macOS config run. Dispatches to `_create_account_keychain_dedicated` or `_create_account_keychain_isolated` based on the resolved mode. On `KeychainError`, falls back to `isolated` and continues. |
+| `do_delete_account` | `_delete_account_keychain` | Unconditionally tears down keychain artifacts based on file-presence: deletes the per-account keychain and unlock entry before removing the account home. On `KeychainError`, warns and continues. |
+| `_build_alt_env` | `_unlock_account_keychain` | Called only for `dedicated` mode accounts. Reads unlock password from login keychain (silent), unlocks per-account keychain. On `KeychainError`, exits 1. |
 
 ### Error paths
 
@@ -604,15 +606,14 @@ Type annotations are used selectively in the source — newer functions carry re
 
 | Call site | On `KeychainError` |
 |---|---|
-| `do_config` (create) | Downgrades account to `system`, prints warning, continues |
-| `do_config` (downgrade cleanup) | Prints warning, continues — account is already set to `system` |
+| `do_config` (`_apply_keychain_mode`) | Falls back to `isolated`, prints warning, continues |
 | `do_delete_account` | Prints warning, continues — rmtree removes remaining files |
-| `_build_alt_env` | Exits 1 — cannot activate isolated account without unlocking its keychain |
+| `_build_alt_env` (dedicated only) | Exits 1 — cannot activate dedicated account without unlocking its keychain |
 
 ### Idempotency
 
-`_create_account_keychain` checks whether the keychain file already exists before creating it. If it does, creation is skipped and the existing keychain is reused. If the keychain file exists but the unlock entry in the login keychain is missing (orphan state), altergo warns and aborts — it cannot reconstruct a lost unlock password. Recovery: delete `<account_home>/Library/Keychains/login.keychain-db` and re-run `altergo --config <account> --keychain isolated`.
+`_create_account_keychain(plant_unlock_entry=True)` (dedicated) checks whether the keychain file and unlock entry are consistent before re-creating. If consistent (Case 1), it reuses the existing keychain. For `isolated` mode (`plant_unlock_entry=False`), if C already exists it is left alone — the permanent lock is already in effect.
 
 ### Tests
 
-`tests/test_keychain.py` — 60 tests covering create/delete/unlock/downgrade paths, orphan detection, plist structure, idempotency, and `KeychainError` error paths.
+`tests/test_keychain.py` — 80 tests covering create/delete/unlock/mode-switch paths, orphan detection, plist structure, idempotency, migration, and `KeychainError` error paths.

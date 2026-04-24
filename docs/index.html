@@ -3041,8 +3041,8 @@
                 <line x1="11" y1="15" x2="11" y2="16.8" stroke="var(--cyan)" stroke-width="1.4"/>
               </svg>
             </div>
-            <h3>Keychain-isolated credentials</h3>
-            <p>Opt an account into <code style="font-family:var(--font-mono);font-size:0.82em;color:var(--cyan)">--keychain isolated</code> and its provider tokens move into a dedicated macOS keychain, separate from your login keychain and from other altergo accounts. Auto-unlocks with your session, no Touch-ID prompts, no TTL expiry.</p>
+            <h3>Keychain-safe by default</h3>
+            <p>By default, altergo blocks each account from writing to the macOS keychain — providers fall back to flat-file credentials, and nothing lands in your real login keychain. Opt into <code style="font-family:var(--font-mono);font-size:0.82em;color:var(--cyan)">--keychain dedicated</code> for a per-account keychain that auto-unlocks with your session, no Touch-ID prompts, no TTL expiry.</p>
           </div>
           <div class="feature-item reveal reveal-delay-6" role="listitem" style="--shimmer-duration:30s; --shimmer-delay:23s">
             <div class="feature-icon" aria-hidden="true">

@@ -4,6 +4,52 @@ This page covers syntax changes and one-time migrations that apply when you upgr
 
 ---
 
+## v0.44.0 — keychain safety-default flip
+
+**Applies to:** macOS users upgrading to v0.44.0+.
+
+### What changed
+
+The default keychain mode is now `isolated` (blocking). By default, altergo does not plant any entry in your real login keychain. Providers fall back to flat-file credentials under the account's HOME.
+
+| Old name | New name | Behavior |
+|---|---|---|
+| `system` (default) | `isolated` (default) | Unchanged: no altergo footprint in real login keychain |
+| `isolated` (opt-in) | `dedicated` (opt-in) | Unchanged: per-account keychain, unlocked at launch |
+
+### Automatic migration
+
+Existing accounts are migrated silently on the next launch or `--config` touch:
+
+- `"keychain": "system"` on disk → treated as `"isolated"` in memory (same behavior)
+- `"keychain": "shared"` on disk → treated as `"isolated"` in memory (same behavior)
+- `"keychain": "isolated"` on disk → stays `"isolated"` in v0.44.0 (same blocking behavior)
+- No `keychain` key → treated as `"isolated"` (the new default)
+
+**If you were using `--keychain isolated` in v0.43.x** (per-account keychain), your account continues to work but the mode is now called `dedicated`. Re-run `--config --keychain dedicated` to update the stored value, or use `altergo --config <account>` interactively.
+
+### CLI compatibility
+
+```bash
+# These still work but emit a deprecation warning to stderr:
+altergo --config <account> --keychain system   # → resolves to isolated
+altergo --config <account> --keychain shared   # → resolves to isolated
+
+# New vocabulary:
+altergo --config <account> --keychain isolated   # blocks keychain writes (default)
+altergo --config <account> --keychain dedicated  # per-account keychain, unlocked at launch
+```
+
+`--keychain system` and `--keychain shared` will be removed in v0.46.0.
+
+### Non-interactive / scripted `--config`
+
+Scripts that call `altergo --config <account>` without a `--keychain` flag now get `isolated` mode (the new default) instead of `system`. The behavior is the same — providers fall back to flat files — but the meta value written to `account.json` changes from `"system"` to `"isolated"`.
+
+If your script explicitly passes `--keychain system`, it continues to work (with a deprecation warning). Update to `--keychain isolated` to silence the warning.
+
+---
+
 ## v0.41.0 — opt-in keychain isolation (macOS)
 
 **Applies to:** macOS users upgrading to v0.41.0+.

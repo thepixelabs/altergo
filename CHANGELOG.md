@@ -1,37 +1,60 @@
 # CHANGELOG
 
 
-## v0.44.0 (2026-04-23)
+## v0.44.0 (2026-04-24)
 
-### Breaking (safe default flip — existing setups keep working)
+### Documentation
 
-- **Keychain mode default flipped to `isolated` (blocking).**
-  By default, altergo now blocks each account from writing to the macOS
-  keychain. Providers fall back to flat-file credentials under the account's
-  HOME. Nothing lands in your real login keychain.
+- Fix 4K ghost drift in persistent section, drop fixed page-wide ghost
+  ([`8a4758f`](https://github.com/thepixelabs/altergo/commit/8a4758f5b80690c0a4b1f6f8abe671d4157350a2))
 
-  If you want per-account keychain behaviour (what v0.43.x called
-  `--keychain isolated`), pass `--keychain dedicated`.
+Two independent landing-page fixes:
 
-  Existing accounts are migrated silently:
-  - `"keychain": "system"` → `"keychain": "isolated"` (same behavior)
-  - `"keychain": "shared"` → `"keychain": "isolated"` (same behavior)
-  - `"keychain": "isolated"` (old meaning) → stays `"isolated"` (blocking mode;
-    use `--keychain dedicated` to re-opt-in to per-account keychain)
-  - Accounts with no `keychain` key → treated as `"isolated"` (new default)
+- #persistent > .container now position:relative so the ghost-wrap's right:-60px anchors to the
+  1160px content column instead of the full-width section. On ultrawide/4K viewports the ghost was
+  sliding all the way to the viewport's right edge, far from the copy.
 
-  CLI aliases still work:
-  - `--keychain system` → resolves to `isolated`, stderr deprecation warning
-  - `--keychain shared` → resolves to `isolated`, stderr deprecation warning
-  - Both aliases will be removed in v0.46.0.
+- Removed the fixed, centered #ghost-bg-fixed layer that sat behind every section with low opacity.
+  Per-section atmosphere (.orb, .persistent-ghost-wrap, data-rain, .gits-illustration) already
+  carries the visual weight; the global fixed layer was just noise.
 
-### Changed
+- Reframe landing copy so account-name examples don't read as subcommands
+  ([`fb29873`](https://github.com/thepixelabs/altergo/commit/fb29873b31eb8242d024eff046baae80e32d07a8))
 
-- `--config` interactive prompt now asks whether to opt into `dedicated` mode
-  (default: no — keep `isolated`).
-- `--config` picker no longer shows a mode suffix for `isolated` accounts
-  (the default is implicit); `dedicated` accounts show `  ·  keychain: dedicated`.
-- New `--help` row: `altergo --config --keychain <m>  isolated | dedicated (macOS only)`.
+Renaming the placeholder from 'backup' to 'secondary' wasn't enough — any single word after
+  'altergo' parses as a subcommand to a first-time reader. Hero now describes the outcome without
+  showing a command. Step 3 and the docs notes use an explicit <account> placeholder. Feature card
+  drops the inline example and frames it as 'the name you chose'. Install block pairs 'work' + 'pro'
+  so both names obviously look like user-picked labels. Reference table uses frame-then-example
+  wording. Reduced-motion fallback matches the animated scene convention.
+
+### Features
+
+- **keychain**: Flip default to isolated (blocking) + rename old isolated → dedicated
+  ([#29](https://github.com/thepixelabs/altergo/pull/29),
+  [`ae80855`](https://github.com/thepixelabs/altergo/commit/ae808558dec9ef799e24d4018701131603368c34))
+
+* feat(keychain): flip default to isolated (blocking) + rename old isolated → dedicated
+
+- New default keychain mode is 'isolated': altergo creates a permanently locked per-account keychain
+  so providers fall back to flat-file creds. Nothing lands in the real login keychain by default. -
+  Old 'isolated' (per-account keychain + unlock entry) is now 'dedicated'. Users who were on
+  --keychain isolated retain the same behavior; the value stays 'isolated' on disk and is treated as
+  blocking mode going forward. Re-opt-in with --keychain dedicated. - --keychain system and
+  --keychain shared are deprecated aliases → isolated; both emit a stderr deprecation warning and
+  will be removed in v0.46.0. - Migration in _coerce_meta_v3: 'system'/'shared' → 'isolated'
+  (in-memory). - _apply_keychain_mode new helper orchestrates mode transitions with pre-flight meta
+  stamp for crash safety. - _create_account_keychain gains plant_unlock_entry parameter; two thin
+  wrappers _create_account_keychain_dedicated and _create_account_keychain_isolated. -
+  _build_alt_env gates on _is_keychain_dedicated (not old _is_keychain_isolated). - Reconciler
+  rewritten for isolated/dedicated/legacy three-way state machine. - 17 new tests in
+  test_keychain.py; existing tests updated for new semantics. Total: 80 keychain tests, 276 overall
+  (all green).
+
+- Docs: README, CHANGELOG, SECURITY, keychain-isolation.md, migration.md, settings.md,
+  architecture.md, how-it-works.md, index.html all updated. - Version bumped to 0.44.0.
+
+* style: apply ruff format
 
 
 ## v0.43.1 (2026-04-23)

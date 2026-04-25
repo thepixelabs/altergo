@@ -40,8 +40,13 @@ jobs:
       # altergo has no runtime dependencies. Auditing the build/dev toolchain
       # (setuptools, build, ruff, pytest, python-semantic-release, pip-audit
       # itself) catches supply-chain vulnerabilities in the CI environment.
+      #
+      # Suppressed advisories:
+      #   CVE-2026-3219 — pip 26.0.1: no fix version published yet (2026-04-25).
+      #     Affects pip itself, not a dependency we install. Revisit once
+      #     a fixed pip is released and bump the suppression off.
       - name: Audit dev/build dependencies
-        run: pip-audit --skip-editable --vulnerability-service osv
+        run: pip-audit --skip-editable --vulnerability-service osv --ignore-vuln CVE-2026-3219
 
   # ---------------------------------------------------------------------------
   # OSV Scanner — cross-ecosystem vulnerability scan via osv.dev.

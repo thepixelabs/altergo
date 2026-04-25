@@ -1145,6 +1145,184 @@ def test_native_provider_no_detection_exits_with_message(tmp_path, monkeypatch):
     assert exc.value.code != 0
 
 
+def test_native_default_provider_save_load_roundtrip(tmp_path, monkeypatch):
+    """save_native_default_provider/load_native_default_provider roundtrip; bogus values are rejected."""
+    mod = _load_altergo()
+    fake_settings = tmp_path / "settings.json"
+    monkeypatch.setattr(mod, "SETTINGS_FILE", fake_settings)
+
+    assert mod.load_native_default_provider() is None
+
+    fake_settings.parent.mkdir(parents=True, exist_ok=True)
+    fake_settings.write_text(json.dumps({"theme": "forest"}))
+    mod.save_native_default_provider("gemini")
+
+    data = json.loads(fake_settings.read_text())
+    assert data["theme"] == "forest"
+    assert data["native_default_provider"] == "gemini"
+    assert mod.load_native_default_provider() == "gemini"
+
+    mod.save_native_default_provider("not-a-real-provider")
+    assert mod.load_native_default_provider() == "gemini"
+
+
+def test_native_default_provider_pinned_takes_precedence(tmp_path, monkeypatch):
+    """When a default is pinned and its binary is on PATH, launch_claude must use it
+    even if another provider's dot-dir is the only one present in MAIN_HOME."""
+    import sys, io, types
+
+    mod = _load_altergo()
+
+    fake_home = tmp_path / "home"
+    # Only claude's dot-dir exists, but the user pinned gemini.
+    (fake_home / ".claude").mkdir(parents=True)
+    monkeypatch.setattr(mod, "MAIN_HOME", fake_home)
+    monkeypatch.setattr(mod, "MAIN_CLAUDE", fake_home / ".claude")
+
+    fake_settings = tmp_path / "settings.json"
+    monkeypatch.setattr(mod, "SETTINGS_FILE", fake_settings)
+    mod.save_native_default_provider("gemini")
+
+    run_calls = []
+    monkeypatch.setattr(mod.subprocess, "run", lambda cmd, env=None, **kw: (run_calls.append(cmd), types.SimpleNamespace(returncode=0))[1])
+    monkeypatch.setattr(mod, "_sweep_existing_accounts", lambda: None)
+    monkeypatch.setattr(mod.shutil, "which", lambda name: f"/usr/bin/{name}" if name in ("claude", "gemini") else None)
+    monkeypatch.setattr(mod, "maybe_refresh_update_cache", lambda: None)
+    monkeypatch.setattr(mod, "first_launch_notice_if_needed", lambda: None)
+    monkeypatch.setattr(mod, "home_change_notice_if_needed", lambda: None)
+    monkeypatch.setattr(mod, "load_animation_pack", lambda: "off")
+    monkeypatch.setattr(mod, "get_cached_latest_version", lambda: None)
+    monkeypatch.setattr(mod, "_load_bool_setting", lambda key, default=False: False)
+    monkeypatch.setattr(mod, "_sync_claude_mcps", lambda path: None)
+    monkeypatch.setattr(mod, "_record_last_session_after_exit", lambda *a: None)
+    monkeypatch.setattr(mod, "_print_launch_message", lambda: None)
+    monkeypatch.setattr(mod, "show_banner", lambda *a, **kw: None)
+    monkeypatch.setattr(sys, "stdout", io.StringIO())
+    monkeypatch.setattr(sys, "stderr", io.StringIO())
+
+    mod.launch_claude("native")
+
+    assert run_calls and run_calls[0][0] == "/usr/bin/gemini"
+
+
+def test_config_menu_native_action_saves_provider_pin(tmp_path, monkeypatch):
+    """The --config TUI's native action persists the picked provider via save_native_default_provider."""
+    mod = _load_altergo()
+
+    fake_settings = tmp_path / "settings.json"
+    monkeypatch.setattr(mod, "SETTINGS_FILE", fake_settings)
+
+    accounts_dir = tmp_path / "accounts"
+    accounts_dir.mkdir()
+    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
+    monkeypatch.setattr(mod, "list_accounts", lambda: ["work"])
+    (accounts_dir / "work").mkdir()
+
+    # Stub the curses pickers so the menu loop runs headlessly:
+    # 1st call: native row pressed → returns ("native", 1)
+    # 2nd call: ("account", "work") to exit the loop with a name
+    calls = {"picker": 0, "saved": []}
+
+    def fake_run_picker(accts, start_cursor=0):
+        calls["picker"] += 1
+        if calls["picker"] == 1:
+            return ("native", 1)
+        return ("account", "work")
+
+    def fake_provider_picker(current=None, *, allow_cancel=False):
+        # User picks 'gemini' regardless of current pin.
+        return "gemini"
+
+    monkeypatch.setattr(mod, "_run_config_picker", fake_run_picker)
+    monkeypatch.setattr(mod, "_prompt_provider_picker", fake_provider_picker)
+    import sys as _sys, io
+    class _FakeTTY(io.StringIO):
+        def isatty(self):
+            return True
+    monkeypatch.setattr(_sys, "stdin", _FakeTTY())
+    monkeypatch.setattr(_sys, "stdout", _FakeTTY())
+
+    result = mod._prompt_config_menu(["work"])
+
+    assert result == "work"
+    assert mod.load_native_default_provider() == "gemini"
+
+
+def test_config_menu_native_cancel_does_not_save(tmp_path, monkeypatch):
+    """Cancelling the provider picker (allow_cancel → None) leaves the pin untouched."""
+    mod = _load_altergo()
+
+    fake_settings = tmp_path / "settings.json"
+    monkeypatch.setattr(mod, "SETTINGS_FILE", fake_settings)
+    # Pre-seed a pin to confirm it isn't overwritten on cancel.
+    mod.save_native_default_provider("claude")
+
+    accounts_dir = tmp_path / "accounts"
+    accounts_dir.mkdir()
+    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
+    monkeypatch.setattr(mod, "list_accounts", lambda: ["work"])
+    (accounts_dir / "work").mkdir()
+
+    calls = {"picker": 0}
+
+    def fake_run_picker(accts, start_cursor=0):
+        calls["picker"] += 1
+        if calls["picker"] == 1:
+            return ("native", 1)
+        return ("account", "work")
+
+    monkeypatch.setattr(mod, "_run_config_picker", fake_run_picker)
+    monkeypatch.setattr(mod, "_prompt_provider_picker", lambda current=None, *, allow_cancel=False: None)
+    import sys as _sys, io
+    class _FakeTTY(io.StringIO):
+        def isatty(self):
+            return True
+    monkeypatch.setattr(_sys, "stdin", _FakeTTY())
+    monkeypatch.setattr(_sys, "stdout", _FakeTTY())
+
+    mod._prompt_config_menu(["work"])
+
+    assert mod.load_native_default_provider() == "claude"
+
+
+def test_native_default_provider_pinned_falls_back_when_binary_missing(tmp_path, monkeypatch):
+    """A pinned provider whose binary is no longer on PATH falls back to auto-detect."""
+    import sys, io, types
+
+    mod = _load_altergo()
+
+    fake_home = tmp_path / "home"
+    (fake_home / ".claude").mkdir(parents=True)
+    monkeypatch.setattr(mod, "MAIN_HOME", fake_home)
+    monkeypatch.setattr(mod, "MAIN_CLAUDE", fake_home / ".claude")
+
+    fake_settings = tmp_path / "settings.json"
+    monkeypatch.setattr(mod, "SETTINGS_FILE", fake_settings)
+    mod.save_native_default_provider("gemini")
+
+    run_calls = []
+    monkeypatch.setattr(mod.subprocess, "run", lambda cmd, env=None, **kw: (run_calls.append(cmd), types.SimpleNamespace(returncode=0))[1])
+    monkeypatch.setattr(mod, "_sweep_existing_accounts", lambda: None)
+    # gemini binary is gone; only claude is on PATH.
+    monkeypatch.setattr(mod.shutil, "which", lambda name: f"/usr/bin/{name}" if name == "claude" else None)
+    monkeypatch.setattr(mod, "maybe_refresh_update_cache", lambda: None)
+    monkeypatch.setattr(mod, "first_launch_notice_if_needed", lambda: None)
+    monkeypatch.setattr(mod, "home_change_notice_if_needed", lambda: None)
+    monkeypatch.setattr(mod, "load_animation_pack", lambda: "off")
+    monkeypatch.setattr(mod, "get_cached_latest_version", lambda: None)
+    monkeypatch.setattr(mod, "_load_bool_setting", lambda key, default=False: False)
+    monkeypatch.setattr(mod, "_sync_claude_mcps", lambda path: None)
+    monkeypatch.setattr(mod, "_record_last_session_after_exit", lambda *a: None)
+    monkeypatch.setattr(mod, "_print_launch_message", lambda: None)
+    monkeypatch.setattr(mod, "show_banner", lambda *a, **kw: None)
+    monkeypatch.setattr(sys, "stdout", io.StringIO())
+    monkeypatch.setattr(sys, "stderr", io.StringIO())
+
+    mod.launch_claude("native")
+
+    assert run_calls and run_calls[0][0] == "/usr/bin/claude"
+
+
 # =============================================================================
 # _translate_yolo_flags
 # =============================================================================

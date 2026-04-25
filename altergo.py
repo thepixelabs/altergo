@@ -1359,6 +1359,32 @@ def save_persisted_theme(name: str) -> None:
     os.replace(str(tmp), str(SETTINGS_FILE))
 
 
+# Native default provider — `native` has no per-account account.json (it
+# passes through to the real $HOME), so the preferred provider is stored in
+# altergo's own SETTINGS_FILE next to other UI prefs.
+
+
+def load_native_default_provider() -> "str | None":
+    """Return the persisted native default provider, or None if unset/invalid."""
+    if not SETTINGS_FILE.exists():
+        return None
+    try:
+        data = json.loads(SETTINGS_FILE.read_text())
+        pid = data.get("native_default_provider")
+        if isinstance(pid, str) and pid in PROVIDERS:
+            return pid
+    except Exception:
+        pass
+    return None
+
+
+def save_native_default_provider(provider_id: str) -> None:
+    """Persist the chosen native default provider without clobbering siblings."""
+    if provider_id not in PROVIDERS:
+        return
+    _patch_settings({"native_default_provider": provider_id})
+
+
 # Banner font
 
 # Curated list of pyfiglet fonts that look good in a terminal banner.
@@ -6331,15 +6357,21 @@ def launch_claude(
     # Resolve provider
     if provider is None:
         if account == _NATIVE_ACCOUNT:
-            # For native, detect from the real home: pick the first provider whose
-            # binary is on PATH and whose dot-dir exists in MAIN_HOME.  This matches
-            # the same presence check used in build_launcher_menu so the launcher and
-            # CLI are consistent.  Avoids reading ~/account.json which belongs to the
-            # user, not to altergo.
-            for _pid, _prov in PROVIDERS.items():
-                if (MAIN_HOME / _prov["dot_dir"]).exists() and shutil.which(_prov["binary"]):
-                    provider = _pid
-                    break
+            # For native, prefer a persisted choice (altergo native --default-provider <id>)
+            # if its binary is still on PATH; otherwise fall back to detecting the first
+            # provider whose binary is on PATH and whose dot-dir exists in MAIN_HOME.
+            # This matches build_launcher_menu's presence check so launcher and CLI agree,
+            # and avoids reading ~/account.json which belongs to the user, not to altergo.
+            _pinned = load_native_default_provider()
+            if _pinned is not None:
+                _pp = PROVIDERS.get(_pinned)
+                if _pp and shutil.which(_pp["binary"]):
+                    provider = _pinned
+            if provider is None:
+                for _pid, _prov in PROVIDERS.items():
+                    if (MAIN_HOME / _prov["dot_dir"]).exists() and shutil.which(_prov["binary"]):
+                        provider = _pid
+                        break
             if provider is None:
                 sys.exit(
                     "altergo: no provider detected in the real $HOME.\n"
@@ -6720,8 +6752,13 @@ def _prompt_new_account_name_tui(existing: list) -> str | None:
     return state["result"]
 
 
-def _prompt_provider_picker(current_provider: str | None = None) -> str:
-    """Curses-based single-select provider picker."""
+def _prompt_provider_picker(current_provider: str | None = None, *, allow_cancel: bool = False) -> "str | None":
+    """Curses-based single-select provider picker.
+
+    When ``allow_cancel`` is True, q/Esc returns None instead of falling back
+    to the current/initial provider — used by flows where cancel means "do
+    nothing", not "keep current".
+    """
     # Build ordered list: installed ones first, then others
     installed = [pid for pid, p in PROVIDERS.items() if shutil.which(p["binary"])]
     all_providers = list(PROVIDERS.keys())
@@ -6812,6 +6849,8 @@ def _prompt_provider_picker(current_provider: str | None = None) -> str:
         return initial
 
     if state["cancelled"]:
+        if allow_cancel:
+            return None
         return current_provider or initial
 
     return ordered[state["cursor"]]
@@ -7011,7 +7050,7 @@ def _run_config_picker(accounts: list, start_cursor: int = 0) -> tuple | None:
             # Context hint — varies with the highlighted row.
             cur_kind = rows[cursor][0] if rows else ""
             if cur_kind == "native":
-                hint = "  native passthrough — press d to make it default. Enter also sets default."
+                hint = "  Enter = pick default provider · d = set as default account"
             elif cur_kind == "account":
                 hint = "  Enter = reconfigure · d = set as default · r/Delete = remove (irreversible)"
             else:
@@ -7033,23 +7072,6 @@ def _run_config_picker(accounts: list, start_cursor: int = 0) -> tuple | None:
                 cursor = _clamp(cursor + 1)
             elif key in (curses.KEY_ENTER, 10, 13):
                 state["cursor"] = cursor
-                picked = rows[cursor]
-                if picked[0] == "native":
-                    # Native can't be "configured" — Enter here means "make default".
-                    set_active_account(picked[1])
-                    rows = _build_config_rows(accounts)
-                    confirm = f" ✓ '{picked[1]}' set as default account "
-                    _safe_addnstr(
-                        stdscr,
-                        max_y - 1,
-                        0,
-                        confirm[: max_x - 1].ljust(max_x - 1),
-                        max_x - 1,
-                        attrs["accent"],
-                    )
-                    stdscr.refresh()
-                    curses.napms(800)
-                    continue
                 state["action"] = "select"
                 return
             elif key in (ord("d"), ord("D")):
@@ -7115,6 +7137,8 @@ def _run_config_picker(accounts: list, start_cursor: int = 0) -> tuple | None:
         return ("remove", picked[1], idx)
     if picked[0] == "account":
         return ("account", picked[1])
+    if picked[0] == "native":
+        return ("native", idx)
     return ("create",)
 
 
@@ -7145,6 +7169,14 @@ def _prompt_config_menu(existing: list) -> str | None:
             return action[1]
         if kind == "create":
             return _prompt_new_account_name_tui(accounts)
+        if kind == "native":
+            cursor = action[1]
+            picked_provider = _prompt_provider_picker(load_native_default_provider(), allow_cancel=True)
+            if picked_provider in PROVIDERS:
+                save_native_default_provider(picked_provider)
+                print(_c(C("success"), f"  ✓ native default provider set to '{picked_provider}'"))
+            # Stay in the menu loop so the user can keep configuring.
+            continue
         if kind == "remove":
             target = action[1]
             cursor = action[2]
@@ -7808,6 +7840,15 @@ def main():
                 _yr_explicit_account = _cand
                 _yr_rest = _yr_rest[1:]
 
+        # Native passes through to the provider's own resume mechanism — sessions
+        # live in the real $HOME and the provider already has a picker, so altergo
+        # must not scan or show its own list here.
+        if _yr_explicit_account == _NATIVE_ACCOUNT:
+            _yr_passthrough = ["--yolo-resume"]
+            if _yr_session_id is not None:
+                _yr_passthrough.append(_yr_session_id)
+            sys.exit(launch_claude(_NATIVE_ACCOUNT, _yr_passthrough + _yr_rest))
+
         if _yr_session_id is None:
             # Case 1: no ID — open the interactive picker, then launch with yolo.
             show_banner()
@@ -8051,7 +8092,7 @@ def main():
     # altergo <name> --remove-provider <id> [--yes]
     # altergo <name> --default-provider <id>
     if args and args[0] in ("--add-provider", "--remove-provider", "--default-provider"):
-        if account == _NATIVE_ACCOUNT:
+        if account == _NATIVE_ACCOUNT and args[0] != "--default-provider":
             print(
                 f"altergo: '{_NATIVE_ACCOUNT}' has no account.json and cannot manage providers.",
                 file=sys.stderr,
@@ -8073,6 +8114,10 @@ def main():
         if sub == "--remove-provider":
             sys.exit(do_remove_provider(account, pid, assume_yes=yes))
         if sub == "--default-provider":
+            if account == _NATIVE_ACCOUNT:
+                save_native_default_provider(pid)
+                print(_c(32, f"Default provider for 'native' is now '{pid}'."))
+                sys.exit(0)
             sys.exit(do_default_provider(account, pid))
 
     # altergo [<name>] shell

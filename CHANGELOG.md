@@ -1,6 +1,48 @@
 # CHANGELOG
 
 
+## v0.44.1 (2026-04-25)
+
+### Bug Fixes
+
+- **native**: Pass --yolo-resume through + add --default-provider
+  ([#30](https://github.com/thepixelabs/altergo/pull/30),
+  [`678d760`](https://github.com/thepixelabs/altergo/commit/678d760ff103b28d758c3090c843cac21e88c147))
+
+* fix(native): pass --yolo-resume through to provider + add --default-provider
+
+altergo native --yolo-resume was opening altergo's own session picker. Native sessions live in the
+  real $HOME and the provider already has its own resume mechanism, so altergo now hands
+  --yolo-resume [<id>] straight to launch_claude where _translate_yolo_flags renders the
+  provider-native flags.
+
+Native also now supports a persisted default provider, stored in SETTINGS_FILE (native has no
+  per-account account.json by design):
+
+altergo native --default-provider gemini
+
+launch_claude reads the pin first; if its binary is on PATH it wins, otherwise it falls back to the
+  existing dot-dir + binary auto-detect so a stale pin never blocks launch.
+
+* feat(native): pick default provider from --config TUI
+
+Pressing Enter on the native row in the --config picker now opens the provider picker (cancellable
+  via q/Esc) and persists the choice via save_native_default_provider. The 'd' key still sets native
+  as the default account, so both affordances coexist:
+
+Enter = pick default provider d = set as default account
+
+_prompt_provider_picker grew an opt-in allow_cancel=True kwarg so the native flow can distinguish
+  'cancel' from 'kept current'; the existing managed-account caller is unchanged.
+
+* ci(security): suppress pip-audit CVE-2026-3219 (no fix available)
+
+pip-audit started failing 2026-04-25 on a newly-published CVE against pip 26.0.1 itself, with no fix
+  version listed. pip is the runner-shipped toolchain, not a dependency altergo bundles or installs
+  at runtime — and altergo has no runtime deps at all. Suppress the advisory with a comment pointing
+  to revisit once an upstream fix lands.
+
+
 ## v0.44.0 (2026-04-24)
 
 ### Documentation

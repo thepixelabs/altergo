@@ -1,6 +1,53 @@
 # CHANGELOG
 
 
+## v0.44.2 (2026-04-26)
+
+### Bug Fixes
+
+- **yolo-resume**: Defer to portal handler when 'portal' is in args
+  ([#33](https://github.com/thepixelabs/altergo/pull/33),
+  [`d8de17b`](https://github.com/thepixelabs/altergo/commit/d8de17ba30bd3a02a369ef2a93f9184210dc3234))
+
+The global --yolo-resume interceptor at the top of main() doesn't know that 'portal' is a
+  subcommand. For \`altergo portal native claude --yolo-resume\` it stripped the flag, opened
+  altergo's session picker, then handed launch_claude args=['--resume', <id>,
+  '--dangerously-skip-permissions', 'portal', 'native', 'claude'] — the leftover positionals ended
+  up as provider argv junk after --resume.
+
+Same shape for \`altergo native portal --yolo-resume\` (account-prefix form) and the *-with-id
+  variants.
+
+Bail out of the global interceptor when 'portal' or 'shell' appears in the args after extracting
+  --yolo-resume — those subcommands have their own parsers that already forward --yolo-resume
+  cleanly through launch_claude / _translate_yolo_flags.
+
+### Documentation
+
+- **landing**: Tmux + stale-claim fixes, plus GA4 with GDPR consent
+  ([#32](https://github.com/thepixelabs/altergo/pull/32),
+  [`b9e9a33`](https://github.com/thepixelabs/altergo/commit/b9e9a33446aa73fb42d4ad32ce68add5bd1c4d0e))
+
+* docs(landing): fix tmux 'always on' framing and several stale claims
+
+- Persistent section: tmux is opt-in via --settings or one-shot via altergo portal, not "every
+  altergo session". - tmux session name format is <account>/<provider>, not the imagined
+  altergo-<account>-<provider>-<id>; demo terminal scene updated to match. - Replace "Silent
+  Auto-migration" feature card (described the v0.4.x → v0.5.0 path that was removed in v0.35.3) with
+  an accurate "Quiet upgrades" card covering today's silent schema + keychain coercions. - Commands
+  table: --recall is the cross-account picker; --resume passes through to the provider's native
+  resume UI (or resumes by id). - "Three commands to go" step 3: same fix — --recall, not --resume.
+
+* docs(landing): add Google Analytics (GA4) with GDPR consent banner and privacy modal
+
+- Inject gtag.js with Consent Mode v2 defaulted to denied for all storage signals -
+  Bottom-of-viewport consent banner (Accept/Decline) themed for dark/light - Persist choice in
+  localStorage (altergo_consent_v1); no banner flash on return visits - Privacy modal triggered from
+  banner Learn more and footer Privacy link, with inline manage cookie preferences button that
+  re-opens the banner - Modal is fully responsive (mobile-friendly padding, scroll, max-height) and
+  dismissible via X, backdrop click, or ESC
+
+
 ## v0.44.1 (2026-04-25)
 
 ### Bug Fixes

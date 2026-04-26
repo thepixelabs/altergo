@@ -1,6 +1,28 @@
 <!DOCTYPE html>
 <html lang="en" data-theme="dark">
 <head>
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-KLH5JQNZHY"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+
+    // Consent Mode v2 — default to denied before banner resolves.
+    // wait_for_update gives the consent-init script 500 ms to upgrade
+    // consent before the first page_view fires. Cookieless modeled
+    // pings still flow in denied state (behavioral modeling in GA4).
+    gtag('consent', 'default', {
+      analytics_storage:  'denied',
+      ad_storage:         'denied',
+      ad_user_data:       'denied',
+      ad_personalization: 'denied',
+      wait_for_update:    500
+    });
+
+    gtag('js', new Date());
+    gtag('config', 'G-KLH5JQNZHY');
+  </script>
+
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>altergo: Switch AI Accounts Without Breaking Flow | CLI for Claude, Gemini, Codex</title>
@@ -2534,6 +2556,266 @@
           rgba(235,240,255,0.20) 100%);
       }
     }
+
+    /* ============================================================
+       COOKIE CONSENT BANNER
+    ============================================================ */
+    #consent-banner {
+      /* Hidden by default — JS reveals it only when consent is unset,
+         preventing a flash on returning visitors who already chose. */
+      display: none;
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      z-index: 9998;
+      padding: 20px 24px;
+      background: var(--bg-1);
+      border-top: 1px solid var(--border-glow);
+      box-shadow: 0 -4px 32px rgba(99, 102, 241, 0.18), 0 -1px 0 var(--glass-border);
+      backdrop-filter: blur(12px);
+      animation: consent-slide-in 280ms cubic-bezier(0.4, 0, 0.2, 1) both;
+    }
+    #consent-banner.is-visible {
+      display: block;
+    }
+    @keyframes consent-slide-in {
+      from { transform: translateY(100%); opacity: 0; }
+      to   { transform: translateY(0);   opacity: 1; }
+    }
+    .consent-inner {
+      max-width: 900px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      flex-wrap: wrap;
+    }
+    .consent-text {
+      flex: 1;
+      min-width: 240px;
+      font-size: 0.875rem;
+      color: var(--text-1);
+      line-height: 1.55;
+    }
+    .consent-text a {
+      color: var(--cyan);
+      text-decoration: underline;
+      text-underline-offset: 3px;
+    }
+    .consent-actions {
+      display: flex;
+      gap: 10px;
+      flex-shrink: 0;
+      flex-wrap: wrap;
+    }
+    .consent-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 9px 20px;
+      min-height: 38px;
+      border-radius: var(--radius-sm);
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      font-weight: 500;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: all var(--transition-fast);
+      white-space: nowrap;
+    }
+    .consent-btn:focus-visible {
+      outline: 2px solid var(--cyan);
+      outline-offset: 2px;
+    }
+    .consent-btn-accept {
+      background: linear-gradient(135deg, var(--indigo) 0%, #4f46e5 100%);
+      color: #fff;
+      border-color: transparent;
+      box-shadow: 0 2px 12px rgba(99, 102, 241, 0.4);
+    }
+    .consent-btn-accept:hover {
+      box-shadow: 0 4px 20px rgba(99, 102, 241, 0.55);
+      transform: translateY(-1px);
+    }
+    .consent-btn-decline {
+      background: var(--glass-bg);
+      color: var(--text-1);
+      border-color: var(--glass-border);
+    }
+    .consent-btn-decline:hover {
+      border-color: var(--border-glow);
+      color: var(--text-0);
+      transform: translateY(-1px);
+    }
+    [data-theme="light"] #consent-banner {
+      background: var(--bg-1);
+      border-top-color: var(--border-glow);
+    }
+    [data-theme="light"] .consent-btn-decline {
+      background: rgba(180, 200, 235, 0.8);
+    }
+    @media (max-width: 600px) {
+      .consent-inner { flex-direction: column; align-items: stretch; }
+      .consent-actions { justify-content: stretch; }
+      .consent-btn { flex: 1; }
+    }
+
+    /* "Manage cookie preferences" inline link used in the disclaimer card */
+    .consent-manage-link {
+      font-size: 0.8rem;
+      color: var(--text-2);
+      text-decoration: underline;
+      text-underline-offset: 3px;
+      cursor: pointer;
+      background: none;
+      border: none;
+      padding: 0;
+      font-family: var(--font-mono);
+    }
+    .consent-manage-link:hover { color: var(--cyan); }
+    .consent-manage-link:focus-visible {
+      outline: 2px solid var(--cyan);
+      outline-offset: 2px;
+      border-radius: 2px;
+    }
+
+    /* Inline "Learn more" button inside the consent banner — looks like a link */
+    .consent-text-link {
+      background: none;
+      border: none;
+      padding: 0;
+      margin: 0;
+      font: inherit;
+      color: var(--cyan);
+      text-decoration: underline;
+      text-underline-offset: 3px;
+      cursor: pointer;
+    }
+    .consent-text-link:hover { filter: brightness(1.2); }
+    .consent-text-link:focus-visible {
+      outline: 2px solid var(--cyan);
+      outline-offset: 2px;
+      border-radius: 2px;
+    }
+
+    /* Footer Privacy button — looks like an inline link */
+    .footer-privacy-link {
+      background: none;
+      border: none;
+      padding: 0;
+      margin: 0;
+      font: inherit;
+      font-size: 0.78rem;
+      color: var(--text-2);
+      text-decoration: underline;
+      text-underline-offset: 3px;
+      cursor: pointer;
+    }
+    .footer-privacy-link:hover { color: var(--cyan); }
+    .footer-privacy-link:focus-visible {
+      outline: 2px solid var(--cyan);
+      outline-offset: 2px;
+      border-radius: 2px;
+    }
+
+    /* ============================================================
+       PRIVACY MODAL
+    ============================================================ */
+    #privacy-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 10000;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      background: rgba(2, 6, 16, 0.72);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      animation: privacy-fade-in 200ms ease-out both;
+    }
+    #privacy-modal.is-open { display: flex; }
+    @keyframes privacy-fade-in {
+      from { opacity: 0; }
+      to   { opacity: 1; }
+    }
+
+    .privacy-modal-card {
+      position: relative;
+      width: 100%;
+      max-width: 520px;
+      max-height: calc(100vh - 48px);
+      overflow-y: auto;
+      background: var(--bg-1, #0b0f1a);
+      border: 1px solid var(--border-glow, rgba(120, 200, 255, 0.25));
+      border-radius: 12px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5), 0 0 24px rgba(120, 200, 255, 0.12);
+      padding: 28px 28px 24px;
+      animation: privacy-card-in 240ms cubic-bezier(0.4, 0, 0.2, 1) both;
+    }
+    @keyframes privacy-card-in {
+      from { opacity: 0; transform: translateY(8px) scale(0.98); }
+      to   { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    .privacy-modal-card h3 {
+      margin: 0 0 14px;
+      font-size: 1.05rem;
+      letter-spacing: 0.04em;
+      color: var(--text-1);
+      text-transform: uppercase;
+    }
+    .privacy-modal-card p {
+      margin: 0 0 12px;
+      font-size: 0.92rem;
+      line-height: 1.55;
+      color: var(--text-2);
+    }
+    .privacy-modal-card p:last-child { margin-bottom: 0; }
+    .privacy-modal-card strong { color: var(--text-1); }
+
+    .privacy-modal-close {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      width: 32px;
+      height: 32px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--text-3);
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 1.1rem;
+      line-height: 1;
+    }
+    .privacy-modal-close:hover {
+      color: var(--text-1);
+      border-color: var(--border-glow, rgba(120, 200, 255, 0.25));
+    }
+    .privacy-modal-close:focus-visible {
+      outline: 2px solid var(--cyan);
+      outline-offset: 2px;
+    }
+
+    [data-theme="light"] #privacy-modal {
+      background: rgba(240, 245, 252, 0.7);
+    }
+    [data-theme="light"] .privacy-modal-card {
+      background: #ffffff;
+      border-color: rgba(20, 50, 100, 0.15);
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+    }
+
+    @media (max-width: 480px) {
+      #privacy-modal { padding: 16px; }
+      .privacy-modal-card { padding: 22px 20px 18px; max-height: calc(100vh - 32px); }
+      .privacy-modal-card h3 { font-size: 0.98rem; }
+      .privacy-modal-card p  { font-size: 0.88rem; }
+    }
   </style>
 </head>
 <body>
@@ -2547,6 +2829,48 @@
   <!-- Canvas background -->
   <canvas id="canvas-bg" aria-hidden="true" role="presentation"></canvas>
 
+  <!-- ============================================================
+       COOKIE CONSENT BANNER
+       Hidden until JS confirms no stored preference (prevents flash).
+  ============================================================ -->
+  <div
+    id="consent-banner"
+    role="dialog"
+    aria-modal="false"
+    aria-label="Cookie consent"
+    aria-live="polite"
+  >
+    <div class="consent-inner">
+      <p class="consent-text">
+        This site uses Google Analytics to collect <strong>anonymous</strong> traffic stats. No ads, no cross-site tracking. Nothing activates until you accept.
+        <button type="button" class="consent-text-link" data-open-privacy>Learn more</button>.
+      </p>
+      <div class="consent-actions">
+        <button class="consent-btn consent-btn-accept" id="consent-accept" type="button">Accept</button>
+        <button class="consent-btn consent-btn-decline" id="consent-decline" type="button">Decline</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       PRIVACY MODAL
+  ============================================================ -->
+  <div
+    id="privacy-modal"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="privacy-modal-title"
+    aria-hidden="true"
+  >
+    <div class="privacy-modal-card" role="document">
+      <button type="button" class="privacy-modal-close" id="privacy-modal-close" aria-label="Close">&times;</button>
+      <h3 id="privacy-modal-title">Site analytics</h3>
+      <p>We use <strong>Google Analytics 4 (GA4)</strong> to count page views and understand general traffic patterns. No ads. No cross-site tracking. No personal data.</p>
+      <p>Analytics only activate after you accept the cookie banner. Until then, all storage is off by default.</p>
+      <p>If you decline, Google may still receive minimal anonymous signals to estimate aggregate traffic. No cookies are set. Nothing identifies you.</p>
+      <p>Changed your mind? <button type="button" class="consent-manage-link" id="consent-manage-open">Manage cookie preferences</button></p>
+    </div>
+  </div>
 
   <!-- ============================================================
        NAV
@@ -2955,7 +3279,7 @@
             </div>
             <div class="step-body">
               <code class="step-command"><span class="prompt" aria-hidden="true">$</span><span class="cmd">altergo <span style="opacity:0.7">&lt;account&gt;</span></span></code>
-              <p class="step-caption">Type the name you gave the account. That's it. Run <code>altergo --resume</code> any time to open the interactive session picker across all accounts.</p>
+              <p class="step-caption">Type the name you gave the account. That's it. Run <code>altergo --recall</code> any time to open the interactive session picker across all accounts.</p>
             </div>
           </div>
         </div>
@@ -3069,8 +3393,8 @@
                 <polyline points="8.5,17.5 10,19 13.5,16" stroke="var(--green)" stroke-width="1.4" fill="none"/>
               </svg>
             </div>
-            <h3>Silent Auto-migration</h3>
-            <p>Existing single-account installs upgrade automatically on first run. No manual steps, no config edits. Your old setup becomes the default account and keeps working.</p>
+            <h3>Quiet upgrades</h3>
+            <p>Schema and keychain-mode migrations happen in memory on first run after an upgrade. No prompts, no manual edits, no breaking changes — your existing accounts keep working as-is.</p>
           </div>
         </div>
       </div>
@@ -3086,9 +3410,9 @@
         <div class="persistent-layout">
           <div>
             <div class="reveal">
-              <span class="section-label" aria-hidden="true">Always on</span>
+              <span class="section-label" aria-hidden="true">Stay connected</span>
               <h2 class="section-title" id="persistent-heading">Your session outlives the connection.</h2>
-              <p class="section-subtitle">Every altergo session runs inside a named tmux window. Lose the SSH connection, close the laptop, switch devices. Reattach in one command and the AI never knew you left.</p>
+              <p class="section-subtitle">Opt in to <strong>tmux sessions</strong> from <code>altergo --settings</code>, or run <code>altergo portal</code> for a one-shot tmux-backed launch. Either way, your altergo session lives inside a named tmux window. Lose the SSH connection, close the laptop, switch devices. Reattach in one command and the AI never knew you left.</p>
             </div>
 
         <div class="features-grid" role="list" aria-label="Session persistence features" style="margin-top: 36px;">
@@ -3132,7 +3456,7 @@
               </svg>
             </div>
             <h3>Named automatically</h3>
-            <p>Sessions follow <code>altergo-&lt;account&gt;-&lt;provider&gt;-&lt;id&gt;</code> so <code>tmux ls</code> is always readable.</p>
+            <p>Sessions follow <code>&lt;account&gt;/&lt;provider&gt;</code> so <code>tmux ls</code> is always readable.</p>
           </div>
 
           <div class="feature-item reveal reveal-delay-4" role="listitem" style="--shimmer-duration:38s; --shimmer-delay:7s">
@@ -3280,7 +3604,8 @@
                 <tr><td>altergo &lt;account&gt;</td><td>Launch the account you named (e.g. if you created an account called "pro", run <code>altergo pro</code>)</td></tr>
                 <tr><td>altergo &lt;account&gt; &lt;provider&gt;</td><td>Launch with a specific provider (e.g. <code>altergo pro gemini</code>, <code>altergo pro codex</code>)</td></tr>
                 <tr><td>altergo --config &lt;account&gt; --provider &lt;p&gt;</td><td>Create or reconfigure an account with a specific provider, <code>claude</code>, <code>gemini</code>, <code>codex</code>, <code>copilot</code></td></tr>
-                <tr><td>altergo --resume</td><td>Interactive session picker, browse, preview, resume</td></tr>
+                <tr><td>altergo --recall</td><td>Interactive session picker across all accounts and providers, browse, preview, resume</td></tr>
+                <tr><td>altergo --resume [&lt;id&gt;]</td><td>Pass <code>--resume</code> through to the active provider's native resume UI, or resume a specific session by ID</td></tr>
                 <tr><td>altergo --search</td><td>Full-text search across all conversation history</td></tr>
                 <tr><td>altergo --settings</td><td>Configure themes, behavior, and credential sharing</td></tr>
                 <tr><td>altergo &lt;account&gt; -- &lt;cmd&gt;</td><td>Run any command inside a named account's HOME</td></tr>
@@ -3362,7 +3687,7 @@
         <a href="#hero" class="footer-brand" aria-label="altergo, back to top">
           <span class="brand-alt" aria-hidden="true">alt</span><span class="brand-chop" aria-hidden="true"></span><span class="brand-e" aria-hidden="true">e</span><span class="brand-r" aria-hidden="true">r</span><span class="brand-go" aria-hidden="true">go</span>
         </a>
-        <span style="font-size:0.78rem;color:var(--text-3);margin-left:auto;">altergo is an independent open-source project by <a href="https://pixelabs.net" target="_blank" rel="noopener noreferrer" style="color:var(--cyan);text-shadow:0 0 8px var(--cyan);text-decoration:underline;text-underline-offset:3px;">Pixelabs</a> · not affiliated with Anthropic, Google, OpenAI, or GitHub</span>
+        <span style="font-size:0.78rem;color:var(--text-3);margin-left:auto;">altergo is an independent open-source project by <a href="https://pixelabs.net" target="_blank" rel="noopener noreferrer" style="color:var(--cyan);text-shadow:0 0 8px var(--cyan);text-decoration:underline;text-underline-offset:3px;">Pixelabs</a> · not affiliated with Anthropic, Google, OpenAI, or GitHub · <button type="button" class="footer-privacy-link" data-open-privacy>Privacy</button></span>
       </div>
     </div>
   </footer>
@@ -3868,7 +4193,7 @@
           { type: 'pause', ms: 380 },
           { type: 'enter' },
           { type: 'output', html: '<span class="tc-dim">Spawning tmux session...</span>', delay: 150 },
-          { type: 'output', html: '<span class="tc-cyan">  altergo-work-claude-a3f9b</span>', delay: 200 },
+          { type: 'output', html: '<span class="tc-cyan">  work/claude</span>', delay: 200 },
           { type: 'output', html: '<span class="tc-green">&#10003; tmux attached</span>', delay: 180 },
           { type: 'output', html: '<span class="tc-dim">  ──────────────────────────────</span>', delay: 100 },
           { type: 'output', html: '<span class="tc-indigo">  [work] &#9679; claude  ~/projects/infra</span>', delay: 120 },
@@ -4201,6 +4526,158 @@
         } catch(e) {}
       })
       .catch(() => {});
+    })();
+  </script>
+
+  <!-- ============================================================
+       COOKIE CONSENT — GDPR Consent Mode v2
+  ============================================================ -->
+  <script>
+    (function () {
+      var CONSENT_KEY = 'altergo_consent_v1';
+      var banner      = document.getElementById('consent-banner');
+      var acceptBtn   = document.getElementById('consent-accept');
+      var declineBtn  = document.getElementById('consent-decline');
+      var manageBtn   = document.getElementById('consent-manage-open');
+
+      // ---- helpers ----
+
+      function grantConsent() {
+        gtag('consent', 'update', {
+          analytics_storage:  'granted',
+          ad_storage:         'granted',
+          ad_user_data:       'granted',
+          ad_personalization: 'granted'
+        });
+      }
+
+      function revokeConsent() {
+        // No-op in terms of gtag state (default is already denied),
+        // but explicit for clarity and future-proofing.
+        gtag('consent', 'update', {
+          analytics_storage:  'denied',
+          ad_storage:         'denied',
+          ad_user_data:       'denied',
+          ad_personalization: 'denied'
+        });
+      }
+
+      function hideBanner() {
+        if (!banner) return;
+        banner.classList.remove('is-visible');
+        // Remove from tab order once hidden
+        banner.setAttribute('aria-hidden', 'true');
+      }
+
+      function showBanner() {
+        if (!banner) return;
+        banner.removeAttribute('aria-hidden');
+        banner.classList.add('is-visible');
+        // Move focus to the Accept button so keyboard users land somewhere useful
+        if (acceptBtn) acceptBtn.focus();
+      }
+
+      function saveAndClose(choice) {
+        try { localStorage.setItem(CONSENT_KEY, choice); } catch (e) {}
+        hideBanner();
+      }
+
+      // ---- init: read stored preference before first paint ----
+      var stored;
+      try { stored = localStorage.getItem(CONSENT_KEY); } catch (e) {}
+
+      if (stored === 'granted') {
+        // User previously accepted — upgrade consent immediately, no banner.
+        grantConsent();
+      } else if (stored === 'denied') {
+        // User previously declined — stay denied, no banner.
+      } else {
+        // No preference yet — show the banner.
+        showBanner();
+      }
+
+      // ---- button handlers ----
+
+      if (acceptBtn) {
+        acceptBtn.addEventListener('click', function () {
+          grantConsent();
+          saveAndClose('granted');
+        });
+      }
+
+      if (declineBtn) {
+        declineBtn.addEventListener('click', function () {
+          revokeConsent();
+          saveAndClose('denied');
+        });
+      }
+
+      // "Manage cookie preferences" button (lives inside the privacy modal)
+      // re-opens the banner. Clears stored choice so subsequent ESC or
+      // decline persists correctly.
+      if (manageBtn) {
+        manageBtn.addEventListener('click', function () {
+          try { localStorage.removeItem(CONSENT_KEY); } catch (e) {}
+          closeModal();
+          showBanner();
+        });
+      }
+
+      // ---- privacy modal ----
+      var modal      = document.getElementById('privacy-modal');
+      var modalClose = document.getElementById('privacy-modal-close');
+      var lastFocus  = null;
+
+      function openModal(triggerEl) {
+        if (!modal) return;
+        lastFocus = triggerEl || document.activeElement;
+        modal.classList.add('is-open');
+        modal.setAttribute('aria-hidden', 'false');
+        if (modalClose) modalClose.focus();
+      }
+
+      function closeModal() {
+        if (!modal) return;
+        modal.classList.remove('is-open');
+        modal.setAttribute('aria-hidden', 'true');
+        if (lastFocus && typeof lastFocus.focus === 'function') {
+          lastFocus.focus();
+          lastFocus = null;
+        }
+      }
+
+      // Any element with [data-open-privacy] opens the modal.
+      var openTriggers = document.querySelectorAll('[data-open-privacy]');
+      for (var i = 0; i < openTriggers.length; i++) {
+        openTriggers[i].addEventListener('click', function (e) {
+          e.preventDefault();
+          openModal(e.currentTarget);
+        });
+      }
+
+      if (modalClose) {
+        modalClose.addEventListener('click', closeModal);
+      }
+
+      // Click on backdrop (the modal element itself, not the card) closes it.
+      if (modal) {
+        modal.addEventListener('click', function (e) {
+          if (e.target === modal) closeModal();
+        });
+      }
+
+      // ESC: close the modal first if it's open; otherwise treat as decline
+      // for the consent banner. Persisting "denied" on banner-ESC avoids
+      // re-prompting on every visit; the manage link handles change-of-mind.
+      document.addEventListener('keydown', function (e) {
+        if (e.key !== 'Escape') return;
+        if (modal && modal.classList.contains('is-open')) {
+          closeModal();
+        } else if (banner && banner.classList.contains('is-visible')) {
+          revokeConsent();
+          saveAndClose('denied');
+        }
+      });
     })();
   </script>
 </body>

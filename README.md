@@ -160,7 +160,7 @@ That is the full workflow. The first time you run `altergo personal`, your confi
 | **tmux session persistence** | Opt in via settings — wraps every session in a tmux window so it survives SSH disconnects and can be reattached. |
 | **Native passthrough** | `altergo native` launches your provider against your real `$HOME` — handy for quick one-offs without isolation. |
 | **Minimal dependencies** | Standard library for the core. `rich`, `pyfiglet`, and `rich-pyfiglet` are loaded at runtime for TUI chrome; altergo degrades gracefully if they are absent. |
-| **Keychain modes (macOS)** | Default (`isolated`) blocks each account from writing to the macOS keychain — providers fall back to flat-file credentials. Opt into `dedicated` for a per-account keychain. See [docs/keychain-isolation.md](docs/keychain-isolation.md). |
+| **Keychain modes (macOS)** | Default (`isolated`) blocks each account from writing to the macOS keychain — providers fall back to flat-file credentials. Opt into `dedicated` for a per-account keychain. See [docs/keychain-isolation.md](docs/keychain-isolation.md) · [FAQ](docs/faq.md). |
 | **Cross-platform** | macOS and Linux wherever Python 3.10+ is available. |
 
 ---
@@ -343,12 +343,20 @@ Three power-user features new users miss:
 
 ---
 
-## <img src="docs/icons/legal.svg" width="22" align="center"> Contributing & License
+## <img src="docs/icons/legal.svg" width="22" align="center"> Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) · [PolyForm Shield 1.0.0 License](LICENSE)
+See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## License
+
+This project is fair-code distributed under the **PolyForm Shield 1.0.0 License**.
+
+You may use, modify, and distribute this software for personal and internal business operations. Commercial use is permitted, provided it does not directly compete with the primary product or services offered by the repository owner.
+
+Please refer to the [`LICENSE`](LICENSE) file for the complete terms and conditions.
 
 ---
 
-> altergo is an independent open-source project by [Pixelabs](https://pixelabs.net) · not affiliated with Anthropic, Google, OpenAI, or GitHub
+> altergo is an independent fair-code project by [Pixelabs](https://pixelabs.net) · not affiliated with Anthropic, Google, OpenAI, or GitHub
 >
 > altergo depends on the internal directory structure of each supported provider. Any provider may change their structure without notice — if altergo breaks after an update, please [open an issue](https://github.com/thepixelabs/altergo/issues). Back up your provider data directories before first use. Full terms in [DISCLAIMER.md](DISCLAIMER.md).

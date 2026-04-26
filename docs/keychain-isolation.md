@@ -194,3 +194,5 @@ altergo --config <account> --keychain isolated
 ```
 
 This removes the unlock entry from your real login keychain. Tokens that were stored only in the per-account keychain are no longer accessible. Flat-file credentials are unaffected.
+
+For plain-language explanations of repair messages you may see at launch, see [FAQ](./faq.md).

@@ -3411,8 +3411,8 @@
           <div>
             <div class="reveal">
               <span class="section-label" aria-hidden="true">Stay connected</span>
-              <h2 class="section-title" id="persistent-heading">Your session outlives the connection.</h2>
-              <p class="section-subtitle">Opt in to <strong>tmux sessions</strong> from <code>altergo --settings</code>, or run <code>altergo portal</code> for a one-shot tmux-backed launch. Either way, your altergo session lives inside a named tmux window. Lose the SSH connection, close the laptop, switch devices. Reattach in one command and the AI never knew you left.</p>
+              <h2 class="section-title" id="persistent-heading">altergo keeps the session. Rover gives you the door back.</h2>
+              <p class="section-subtitle">Enable <strong>tmux sessions</strong> in <code>altergo --settings</code>, or use <code>altergo portal</code> for a one-shot launch. Either way, your session stays alive in a named tmux window. SSH back in from any device and <a href="https://rover.pixelabs.net" target="_blank" rel="noopener noreferrer" style="color:var(--cyan);text-decoration:none;border-bottom:1px solid rgba(0,229,255,0.35)">Rover</a> is already waiting — pick your session, press <kbd>Enter</kbd>, and you're back. The AI never knew you left.</p>
             </div>
 
         <div class="features-grid" role="list" aria-label="Session persistence features" style="margin-top: 36px;">
@@ -3428,35 +3428,42 @@
               </svg>
             </div>
             <h3>Survives disconnects</h3>
-            <p>SSH from Terminus or any mobile client; a dropped connection does not kill the process.</p>
+            <p>SSH from Terminus or any mobile client. A dropped connection does not kill the process.</p>
           </div>
 
           <div class="feature-item reveal reveal-delay-2" role="listitem" style="--shimmer-duration:36s; --shimmer-delay:12s">
             <div class="feature-icon" aria-hidden="true">
-              <!-- two overlapping rectangles / detach icon -->
+              <!-- terminal frame with session list and cursor arrow -->
               <svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="var(--indigo-bright)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                <rect x="2" y="5" width="12" height="9" rx="1.5" fill="rgba(99,102,241,0.1)"/>
-                <rect x="8" y="8" width="12" height="9" rx="1.5" fill="rgba(0,229,255,0.08)" stroke="var(--cyan)" stroke-width="1.3"/>
-                <line x1="11" y1="9.5" x2="11" y2="15.5" stroke="var(--indigo-bright)" stroke-width="1.2" stroke-dasharray="1.5 1.5"/>
+                <rect x="2" y="2" width="18" height="14" rx="2" fill="rgba(99,102,241,0.08)"/>
+                <rect x="2" y="8" width="18" height="4" rx="0" fill="rgba(99,102,241,0.2)" stroke="none"/>
+                <line x1="5" y1="5.5" x2="13" y2="5.5" stroke="var(--indigo-bright)" stroke-width="1.1" opacity="0.5"/>
+                <line x1="5" y1="10" x2="12" y2="10" stroke="var(--indigo-bright)" stroke-width="1.3"/>
+                <line x1="5" y1="14.5" x2="10" y2="14.5" stroke="var(--indigo-bright)" stroke-width="1.1" opacity="0.4"/>
+                <path d="M17 9 L19.5 10 L17 11" stroke="var(--cyan)" stroke-width="1.4" fill="none"/>
+                <line x1="16" y1="18" x2="16" y2="21" stroke="var(--cyan)" stroke-width="1.4"/>
+                <line x1="13" y1="19.5" x2="19" y2="19.5" stroke="var(--cyan)" stroke-width="1.4"/>
               </svg>
             </div>
-            <h3>Detach and return</h3>
-            <p><code>Ctrl-b d</code> to detach; reattach from any machine with <code>tmux attach -t &lt;name&gt;</code>.</p>
+            <h3>Rover is already waiting</h3>
+            <p>Rover auto-launches on SSH login. No commands to type. Your running sessions are listed the moment you connect.</p>
           </div>
 
           <div class="feature-item reveal reveal-delay-3" role="listitem" style="--shimmer-duration:32s; --shimmer-delay:24s">
             <div class="feature-icon" aria-hidden="true">
-              <!-- price-tag / label shape -->
+              <!-- keyboard key + list rows suggesting picker UI -->
               <svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="var(--indigo-bright)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M3 3 L13 3 L19 9 L13 15 L3 15 Z" fill="rgba(99,102,241,0.1)"/>
-                <circle cx="7" cy="9" r="1.5" fill="rgba(0,229,255,0.3)" stroke="var(--cyan)" stroke-width="1.2"/>
-                <line x1="11" y1="6" x2="16" y2="6" stroke="var(--indigo-bright)" stroke-width="1.2"/>
-                <line x1="11" y1="9" x2="17" y2="9" stroke="var(--indigo-bright)" stroke-width="1.2"/>
-                <line x1="11" y1="12" x2="15" y2="12" stroke="var(--indigo-bright)" stroke-width="1.2"/>
+                <rect x="1" y="3" width="20" height="16" rx="2.5" fill="rgba(99,102,241,0.08)"/>
+                <rect x="1" y="8" width="20" height="5" rx="0" fill="rgba(99,102,241,0.2)" stroke="none"/>
+                <line x1="4" y1="10.5" x2="11" y2="10.5" stroke="var(--indigo-bright)" stroke-width="1.3"/>
+                <line x1="4" y1="6" x2="9" y2="6" stroke="var(--indigo-bright)" stroke-width="1.1" opacity="0.5"/>
+                <line x1="4" y1="15" x2="8" y2="15" stroke="var(--indigo-bright)" stroke-width="1.1" opacity="0.4"/>
+                <rect x="14" y="8.5" width="5.5" height="4" rx="1" fill="rgba(0,229,255,0.15)" stroke="var(--cyan)" stroke-width="1.2"/>
+                <line x1="15.5" y1="10.5" x2="18" y2="10.5" stroke="var(--cyan)" stroke-width="1.2"/>
               </svg>
             </div>
-            <h3>Named automatically</h3>
-            <p>Sessions follow <code>&lt;account&gt;/&lt;provider&gt;</code> so <code>tmux ls</code> is always readable.</p>
+            <h3>Pick or start, no typing</h3>
+            <p><kbd>Enter</kbd> attaches to the highlighted session. <kbd>A</kbd> opens the project and account picker to start a new altergo session. <kbd>Y</kbd> resumes your last yolo session, cross-account.</p>
           </div>
 
           <div class="feature-item reveal reveal-delay-4" role="listitem" style="--shimmer-duration:38s; --shimmer-delay:7s">

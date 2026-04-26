@@ -1,6 +1,39 @@
 # CHANGELOG
 
 
+## v0.44.3 (2026-04-26)
+
+### Bug Fixes
+
+- **yolo-resume**: Consume any non-flag token as session id; route explicit provider on native
+  ([#34](https://github.com/thepixelabs/altergo/pull/34),
+  [`6458888`](https://github.com/thepixelabs/altergo/commit/6458888162a39197aa3ee95689f8b0b2caaba2f5))
+
+* fix(yolo-resume): consume any non-flag token after --yolo-resume as session id
+
+Two related bugs surfaced when running the user's actual command shape:
+
+altergo native claude --yolo-resume delete-persona-heartbeat-wrapper
+
+1. _extract_yolo_resume only consumed the trailing token as a session id when it matched a strict
+  UUID regex. claude (and other providers) accept named-session aliases like
+  'delete-persona-heartbeat-wrapper' that aren't UUID-shaped, so the alias fell through and was
+  forwarded to the provider as a chat prompt instead of a --resume target. Relax the rule: any token
+  that doesn't start with '-' is the session id; the provider validates.
+
+2. The native --yolo-resume shortcut consumed an explicit account but ignored a subsequent provider
+  token, so 'claude' (the explicit provider) was passed to launch_claude as positional argv. Detect
+  a leading provider token in _yr_rest and route it to launch_claude as provider= instead.
+
+Also: native --yolo-resume no longer requires any managed accounts to exist (native is the
+  passthrough account; the no-accounts check now runs only on the non-native fallthrough path).
+
+Updated UUID-strict tests to reflect the new "any non-flag token" rule and added regression tests
+  for the kebab-alias shape.
+
+* style: ruff format
+
+
 ## v0.44.2 (2026-04-26)
 
 ### Bug Fixes

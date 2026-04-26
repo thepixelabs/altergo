@@ -1,6 +1,33 @@
 # CHANGELOG
 
 
+## v0.44.4 (2026-04-26)
+
+### Bug Fixes
+
+- **landing**: Point Stay Connected Rover link to dispatch.pixelabs.net/rover
+  ([#36](https://github.com/thepixelabs/altergo/pull/36),
+  [`f52f726`](https://github.com/thepixelabs/altergo/commit/f52f726fe37e72a19cbac4e38dbc6c3fae629cc8))
+
+### Documentation
+
+- **landing**: Re-pitch Stay Connected around Rover + altergo
+  ([#35](https://github.com/thepixelabs/altergo/pull/35),
+  [`4237e53`](https://github.com/thepixelabs/altergo/commit/4237e532b9c2931c0a0279f9507bc018d5d05f01))
+
+Rework the persistent sessions section to feature Rover as the way you get back into a tmux-backed
+  altergo session, replacing the old "type tmux attach" framing. Adds a cyan link to
+  rover.pixelabs.net in the subtitle and swaps two of the four feature cards:
+
+- "Detach and return" (Ctrl-b d, tmux attach -t) -> "Rover is already waiting" (auto-launches on SSH
+  login) - "Named automatically" (tmux ls trivia) -> "Pick or start, no typing" (Enter / A / Y
+  keymap)
+
+"Survives disconnects" and "All providers" cards are kept. Layout, reveal classes, shimmer styles,
+  and the persistent-ghost composition are unchanged. New SVG icons match the existing line-art
+  style.
+
+
 ## v0.44.3 (2026-04-26)
 
 ### Bug Fixes

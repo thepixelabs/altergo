@@ -7825,8 +7825,15 @@ def main():
     # --yolo-resume [<id>] → resume a session with skip-permissions flags.
     # Intercept before account/provider resolution so the user never has to
     # specify an account name; we derive it from the session metadata.
+    #
+    # Subcommands like `portal` have their own arg parser that already routes
+    # --yolo-resume correctly through launch_claude. If we see one in the args,
+    # bail out of the global interceptor and let that handler take over —
+    # otherwise leftover positionals (`portal`, `native`, `claude`) end up as
+    # provider argv junk after --resume <id>.
     _yr_present, _yr_session_id, _yr_rest = _extract_yolo_resume(args)
-    if _yr_present:
+    _yr_subcommand_present = any(tok in ("portal", "shell") for tok in _yr_rest)
+    if _yr_present and not _yr_subcommand_present:
         if not list_accounts():
             print("altergo: no accounts found. Run 'altergo --config' first.", file=sys.stderr)
             sys.exit(1)

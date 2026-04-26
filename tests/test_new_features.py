@@ -582,6 +582,56 @@ def test_portal_resume_with_id_in_remaining_args(tmp_path, monkeypatch):
     assert call["args"][resume_idx + 1] == "abc123"
 
 
+# -- --yolo-resume must not be hijacked by the global interceptor --------------
+
+
+def test_portal_native_provider_yolo_resume_passes_through(tmp_path, monkeypatch):
+    """`altergo portal native claude --yolo-resume` must reach launch_claude with
+    args=['--yolo-resume'], account='native', provider='claude' — the global
+    --yolo-resume interceptor must defer to the portal handler when 'portal'
+    is in the args, otherwise leftover positionals end up as provider argv junk."""
+    mod = _portal_mod(tmp_path, monkeypatch)
+
+    result = _run_portal(mod, monkeypatch, ["portal", "native", "claude", "--yolo-resume"])
+
+    assert result["exit_code"] == 0, result["stderr"]
+    assert len(result["calls"]) == 1
+    call = result["calls"][0]
+    assert call["account"] == "native"
+    assert call["provider"] == "claude"
+    assert call["args"] == ["--yolo-resume"]
+    assert call["force_tmux"] is True
+
+
+def test_portal_native_yolo_resume_no_provider_passes_through(tmp_path, monkeypatch):
+    """`altergo portal native --yolo-resume` (no explicit provider) must still
+    reach launch_claude with account='native' and args=['--yolo-resume']."""
+    mod = _portal_mod(tmp_path, monkeypatch)
+
+    result = _run_portal(mod, monkeypatch, ["portal", "native", "--yolo-resume"])
+
+    assert result["exit_code"] == 0, result["stderr"]
+    call = result["calls"][0]
+    assert call["account"] == "native"
+    assert call["args"] == ["--yolo-resume"]
+    assert call["force_tmux"] is True
+
+
+def test_portal_native_yolo_resume_with_id_passes_through(tmp_path, monkeypatch):
+    """`altergo portal native --yolo-resume <uuid>` must keep --yolo-resume and
+    its ID together in launch_claude args (translation happens inside)."""
+    mod = _portal_mod(tmp_path, monkeypatch)
+    _id = "12345678-1234-1234-1234-123456789012"
+
+    result = _run_portal(mod, monkeypatch, ["portal", "native", "--yolo-resume", _id])
+
+    assert result["exit_code"] == 0, result["stderr"]
+    call = result["calls"][0]
+    assert call["account"] == "native"
+    assert "--yolo-resume" in call["args"]
+    assert _id in call["args"]
+
+
 # -- force_tmux is always True -------------------------------------------------
 
 

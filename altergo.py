@@ -1858,8 +1858,12 @@ def _extract_yolo_resume(args: list[str]) -> tuple[bool, str | None, list[str]]:
         a = args[i]
         if a == "--yolo-resume":
             present = True
-            # Consume next arg as ID only if it actually looks like one.
-            if i + 1 < len(args) and _looks_like_session_id(args[i + 1]):
+            # Consume the next token as the session ID whenever it isn't
+            # another flag. Providers accept non-UUID identifiers too — claude's
+            # named-session aliases (e.g. "delete-persona-heartbeat-wrapper")
+            # are kebab-case strings, not UUIDs — so a strict UUID check would
+            # turn the alias into a chat prompt instead of resuming the session.
+            if i + 1 < len(args) and not args[i + 1].startswith("-"):
                 session_id = args[i + 1]
                 i += 2
                 continue
@@ -7834,10 +7838,6 @@ def main():
     _yr_present, _yr_session_id, _yr_rest = _extract_yolo_resume(args)
     _yr_subcommand_present = any(tok in ("portal", "shell") for tok in _yr_rest)
     if _yr_present and not _yr_subcommand_present:
-        if not list_accounts():
-            print("altergo: no accounts found. Run 'altergo --config' first.", file=sys.stderr)
-            sys.exit(1)
-
         # Honor a leading explicit account token (e.g. `altergo native --yolo-resume <id>`
         # or `altergo work --yolo-resume <id>`) so it isn't silently dropped.
         _yr_explicit_account: str | None = None
@@ -7847,14 +7847,33 @@ def main():
                 _yr_explicit_account = _cand
                 _yr_rest = _yr_rest[1:]
 
+        # An explicit provider token may follow the account (e.g.
+        # `altergo native claude --yolo-resume <id>`). Consume it so it isn't
+        # passed to launch_claude as positional argv junk.
+        _yr_explicit_provider: str | None = None
+        if _yr_rest and _yr_rest[0] in PROVIDERS:
+            _yr_explicit_provider = _yr_rest[0]
+            _yr_rest = _yr_rest[1:]
+
         # Native passes through to the provider's own resume mechanism — sessions
         # live in the real $HOME and the provider already has a picker, so altergo
-        # must not scan or show its own list here.
+        # must not scan or show its own list here. Native works without any
+        # managed accounts so we short-circuit before the accounts check below.
         if _yr_explicit_account == _NATIVE_ACCOUNT:
             _yr_passthrough = ["--yolo-resume"]
             if _yr_session_id is not None:
                 _yr_passthrough.append(_yr_session_id)
-            sys.exit(launch_claude(_NATIVE_ACCOUNT, _yr_passthrough + _yr_rest))
+            sys.exit(
+                launch_claude(
+                    _NATIVE_ACCOUNT,
+                    _yr_passthrough + _yr_rest,
+                    provider=_yr_explicit_provider,
+                )
+            )
+
+        if not list_accounts():
+            print("altergo: no accounts found. Run 'altergo --config' first.", file=sys.stderr)
+            sys.exit(1)
 
         if _yr_session_id is None:
             # Case 1: no ID — open the interactive picker, then launch with yolo.

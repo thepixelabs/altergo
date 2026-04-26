@@ -632,6 +632,39 @@ def test_portal_native_yolo_resume_with_id_passes_through(tmp_path, monkeypatch)
     assert _id in call["args"]
 
 
+def test_native_provider_yolo_resume_with_kebab_alias_routes_cleanly(tmp_path, monkeypatch):
+    """`altergo native claude --yolo-resume <kebab-alias>` must reach launch_claude
+    with account='native', provider='claude', and args=['--yolo-resume', alias].
+    No leftover 'claude' or alias text in argv — those would otherwise get
+    forwarded to the provider as a chat prompt."""
+    mod = _portal_mod(tmp_path, monkeypatch)
+    alias = "delete-persona-heartbeat-wrapper"
+
+    result = _run_portal(mod, monkeypatch, ["native", "claude", "--yolo-resume", alias])
+
+    assert result["exit_code"] == 0, result["stderr"]
+    assert len(result["calls"]) == 1
+    call = result["calls"][0]
+    assert call["account"] == "native"
+    assert call["provider"] == "claude"
+    assert call["args"] == ["--yolo-resume", alias]
+
+
+def test_native_yolo_resume_with_kebab_alias_no_provider(tmp_path, monkeypatch):
+    """`altergo native --yolo-resume <alias>` must reach launch_claude with
+    account='native' and args=['--yolo-resume', alias] — the alias must not be
+    silently dropped or forwarded as a positional."""
+    mod = _portal_mod(tmp_path, monkeypatch)
+    alias = "delete-persona-heartbeat-wrapper"
+
+    result = _run_portal(mod, monkeypatch, ["native", "--yolo-resume", alias])
+
+    assert result["exit_code"] == 0, result["stderr"]
+    call = result["calls"][0]
+    assert call["account"] == "native"
+    assert call["args"] == ["--yolo-resume", alias]
+
+
 # -- force_tmux is always True -------------------------------------------------
 
 
@@ -1401,14 +1434,16 @@ def test_yolo_flag_per_provider(provider, expected_suffix):
 
 
 def test_yolo_resume_codex():
-    """Codex --yolo-resume: resume subcommand goes to prefix, bypass flag to suffix."""
+    """Codex --yolo-resume (no id, with a trailing flag): resume_subcommand
+    goes to prefix, bypass flag to suffix, the flag stays in cleaned."""
     mod = _load_altergo()
-    prefix, cleaned, suffix = mod._translate_yolo_flags("codex", ["--yolo-resume", "task"])
+    prefix, cleaned, suffix = mod._translate_yolo_flags("codex", ["--yolo-resume", "--profile", "fast"])
     assert prefix == ["resume", "--last"]
     assert suffix == ["--dangerously-bypass-approvals-and-sandbox"]
     assert "--yolo" not in cleaned
     assert "--yolo-resume" not in cleaned
-    assert "task" in cleaned
+    assert "--profile" in cleaned
+    assert "fast" in cleaned
 
 
 def test_yolo_resume_gemini():
@@ -1502,23 +1537,34 @@ def test_yolo_resume_space_form_uppercase_uuid():
     assert upper not in cleaned
 
 
-def test_yolo_resume_space_form_nonuuid_not_consumed():
-    """Backwards-compat: a non-UUID trailing arg stays as a user prompt."""
+def test_yolo_resume_space_form_kebab_alias_consumed():
+    """Claude accepts named-session aliases (kebab-case) for --resume; any
+    non-flag token after --yolo-resume is forwarded as the session id so
+    aliases like 'delete-persona-heartbeat-wrapper' don't get treated as
+    chat prompts."""
     mod = _load_altergo()
-    prefix, cleaned, suffix = mod._translate_yolo_flags("claude", ["--yolo-resume", "do this thing please"])
-    # Falls back to last-session behavior...
-    assert prefix == ["--continue"]
-    # ...and the prompt is preserved as a positional arg.
-    assert "do this thing please" in cleaned
+    alias = "delete-persona-heartbeat-wrapper"
+    prefix, cleaned, suffix = mod._translate_yolo_flags("claude", ["--yolo-resume", alias])
+    assert prefix == ["--resume", alias]
+    assert alias not in cleaned
 
 
-def test_yolo_resume_space_form_almost_uuid_not_consumed():
-    """A token that's close to a UUID but missing a segment is left alone."""
+def test_yolo_resume_space_form_almost_uuid_consumed():
+    """Any non-flag token is consumed as the id; the provider validates shape."""
     mod = _load_altergo()
-    almost = "4794df18-1ece-40c5-8e2c"  # missing final segment
+    almost = "4794df18-1ece-40c5-8e2c"  # missing final segment, still not a flag
     prefix, cleaned, suffix = mod._translate_yolo_flags("claude", ["--yolo-resume", almost])
+    assert prefix == ["--resume", almost]
+    assert almost not in cleaned
+
+
+def test_yolo_resume_followed_by_flag_not_consumed():
+    """A trailing token that starts with '-' is a flag, not an id."""
+    mod = _load_altergo()
+    prefix, cleaned, suffix = mod._translate_yolo_flags("claude", ["--yolo-resume", "--model", "sonnet"])
     assert prefix == ["--continue"]
-    assert almost in cleaned
+    assert "--model" in cleaned
+    assert "sonnet" in cleaned
 
 
 def test_yolo_resume_no_id_regression_claude():

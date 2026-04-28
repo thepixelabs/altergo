@@ -64,7 +64,23 @@ At every `altergo <account>` launch, altergo reads the unlock password from the 
 
 ---
 
-## 3. On-disk layout
+## 3. Dev tool credentials (gh, aws, gcloud) — shared by design
+
+altergo symlinks dev tool config dirs (`.config/gh`, `.aws`, `.config/gcloud`, and others) from each account's HOME back to your real `$HOME` by default. This is **independent of keychain mode** — the two settings do not interact.
+
+What this means in practice:
+
+- `gh`, `aws`, and `gcloud` work in every altergo account without re-authenticating.
+- Your existing logins, project configs, and profiles are available across all accounts.
+- In `isolated` keychain mode (the default), keychain writes from these tools are blocked, but they fall back to flat-file credentials — which are already in your real `$HOME` via the symlink, so everything still works.
+
+**This is intentional.** altergo isolates **AI provider credentials** (Claude, Codex, Gemini, Copilot), not your dev infrastructure. You have one GitHub login, one AWS profile, one gcloud config — there is no reason to re-auth those in every account.
+
+If you do need per-account isolation for `gh`, `aws`, or `gcloud` (e.g., consulting with multiple client AWS accounts), toggle those entries off individually in `altergo --settings` → Credentials.
+
+---
+
+## 4. On-disk layout
 
 ### Both modes
 
@@ -95,7 +111,7 @@ Legal values: `"isolated"` | `"dedicated"`. Accounts with no `keychain` key are 
 
 ---
 
-## 4. Lifecycle
+## 5. Lifecycle
 
 ### Create (`dedicated` mode)
 
@@ -139,7 +155,7 @@ Note: tokens that were stored in the per-account keychain are no longer accessib
 
 ---
 
-## 5. Threat model and non-goals
+## 6. Threat model and non-goals
 
 By default (`isolated` mode), altergo does **not** plant any entry in your real login keychain. Providers fall back to flat-file credentials. This is a net-positive security posture: the attack surface on the real login keychain is zero for isolated accounts.
 
@@ -155,7 +171,7 @@ In `dedicated` mode, altergo stores one generic-password entry per account in yo
 
 ---
 
-## 6. Troubleshooting
+## 7. Troubleshooting
 
 **"login keychain is locked" error on launch (dedicated mode only)**
 

@@ -5484,7 +5484,6 @@ def _draw_settings(stdscr):
                 is_current = row_idx == current_row_idx
                 has_warn = "warning" in entry
 
-                warn_tag = " \u26a0" if has_warn else "  "
                 path_hint = ", ".join(f"~/{p}" for p in entry["paths"])
 
                 prefix = "\u25b8 " if is_current else "  "
@@ -5499,7 +5498,7 @@ def _draw_settings(stdscr):
                     dot_attr = attrs["dim"]
                 _safe_addnstr(stdscr, screen_row, 2, dot, 1, dot_attr)
 
-                name_str = "  " + entry["name"].ljust(22) + warn_tag
+                name_str = "  " + entry["name"].ljust(22)
                 _safe_addnstr(
                     stdscr,
                     screen_row,
@@ -5509,6 +5508,9 @@ def _draw_settings(stdscr):
                     curses.A_BOLD if is_current else curses.A_NORMAL,
                 )
                 nx = 3 + len(name_str)
+                if has_warn and nx < max_x - 3:
+                    _safe_addnstr(stdscr, screen_row, nx, " \u26a0", 2, curses.color_pair(7) | curses.A_BOLD)
+                nx += 2  # always advance past warn slot so path_hint column stays stable
                 if nx < max_x - 4:
                     _safe_addnstr(stdscr, screen_row, nx, path_hint[: max_x - nx - 1], max_x - nx - 1, attrs["dim"])
 
@@ -5551,7 +5553,7 @@ def _draw_settings(stdscr):
             if crow["type"] == "entry" and crow["entry"].get("warning"):
                 warn_line = "  \u26a0  " + crow["entry"]["warning"]
                 _safe_addnstr(
-                    stdscr, footer_row, 0, warn_line[: max_x - 1], max_x - 1, curses.color_pair(7) | curses.A_DIM
+                    stdscr, footer_row, 0, warn_line[: max_x - 1], max_x - 1, curses.color_pair(7) | curses.A_BOLD
                 )
 
         _on_freq_slider = current_page == 0 and page0_cursor == _p0_freq_idx() and random_theme_on

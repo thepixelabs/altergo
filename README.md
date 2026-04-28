@@ -313,6 +313,8 @@ Or answer "y" to the keychain mode prompt during interactive `--config`.
 
 **UI indicators:** `altergo --config` (interactive picker) shows `  ·  keychain: dedicated` next to dedicated accounts. Isolated accounts show no suffix (the default is implicit).
 
+**Dev tool credentials are shared by design.** `gh`, `aws`, `gcloud`, and other dev tools are symlinked to your real `$HOME` by default so your existing logins work across all altergo accounts — no re-auth needed. Keychain mode applies to AI provider credentials only and does not affect these symlinks. Toggle per-tool in `altergo --settings` → Credentials if you need per-account separation.
+
 See [docs/keychain-isolation.md](docs/keychain-isolation.md) for the full lifecycle and troubleshooting guide.
 
 ---

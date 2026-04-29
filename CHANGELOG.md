@@ -1,38 +1,35 @@
 # CHANGELOG
 
 
-## v0.46.0 (2026-04-30)
-
-### Breaking Changes
-
-- **keychain**: Remove all legacy `--keychain` aliases — only `private` and `none` accepted
-
-  The four removed aliases and their canonical replacements:
-
-  | Removed | Use instead |
-  |---------|-------------|
-  | `dedicated` | `private` |
-  | `isolated` | `none` |
-  | `system` | `none` |
-  | `shared` | `none` |
-
-  Passing a removed alias to `--keychain` now exits non-zero with an argparse-style
-  error naming the valid choices. Existing `account.json` files with legacy values still
-  load, but emit a one-line warning to stderr and are treated as `private`. Run
-  `altergo --config <name>` to normalize any stored legacy value.
+## v1.0.0 (2026-04-29)
 
 ### Features
 
-- **keychain**: Add Cancel warning for `none` mode
+- **keychain**: Drop legacy mode aliases (dedicated/isolated/system/shared) + add Cancel warning
+  ([#43](https://github.com/thepixelabs/altergo/pull/43),
+  [`64c4984`](https://github.com/thepixelabs/altergo/commit/64c4984c5076c66a8f12decc64d649d7b6c5ce8f))
 
-  When `none` mode is chosen — interactively (3-line warning printed to stdout after
-  the picker confirms) or non-interactively (`--keychain none` via CLI, single line
-  to stderr) — altergo now warns: always click **Cancel** if macOS prompts for a
-  keychain password; never click "Reset To Defaults" (that destroys the real login
-  keychain and is unrelated to altergo).
+BREAKING CHANGE: --keychain now only accepts 'private' and 'none'. All four legacy aliases
+  (dedicated, isolated, system, shared) are rejected with a hard error at the CLI level. Accounts
+  with legacy values in account.json still load but emit a one-line warning to stderr and are
+  treated as 'private'; run `altergo --config <name>` to normalize.
 
-  The same warning is documented in `docs/keychain-isolation.md` §2, `docs/faq.md`,
-  and `README.md`.
+- CLI parser: any old alias → argparse-style error, exit 2 - _coerce_meta_v3: legacy on-disk values
+  → 'private' + stderr warning - do_config: removed internal alias normalisation; validates
+  'private'/'none' only - _reconcile_keychain_state / _apply_keychain_mode: removed legacy
+  desired/mode normalisation; callers now always pass canonical values - New _warn_none_mode_cancel
+  helper: 3-line interactive warning + 1-line non-interactive stderr note shown whenever 'none' mode
+  is activated - docs: keychain-isolation.md §2 Cancel warning blockquote; faq.md Cancel/Reset Q&A;
+  README.md cancel-warning callout; migration.md v0.46.0 section - tests: alias-acceptance tests
+  replaced by rejection tests; migration coercion tests updated to verify warning emission +
+  'private' fallback
+
+### Breaking Changes
+
+- **keychain**: --keychain now only accepts 'private' and 'none'. All four legacy aliases
+  (dedicated, isolated, system, shared) are rejected with a hard error at the CLI level. Accounts
+  with legacy values in account.json still load but emit a one-line warning to stderr and are
+  treated as 'private'; run `altergo --config <name>` to normalize.
 
 
 ## v0.45.0 (2026-04-29)

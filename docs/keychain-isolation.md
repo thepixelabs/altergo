@@ -78,6 +78,12 @@ What this means in practice:
 
 If you do need per-account isolation for `gh`, `aws`, or `gcloud` (e.g., consulting with multiple client AWS accounts), toggle those entries off individually in `altergo --settings` → Credentials.
 
+### Keychain search list hygiene
+
+macOS's `security create-keychain` command silently appends each new keychain file to the user's global keychain search list (`~/Library/Preferences/com.apple.security.plist`), regardless of where the file is created. Without intervention, this would pollute your real `$HOME` search list with every altergo per-account keychain, causing native-mode tools to encounter locked keychains during token lookups.
+
+altergo prevents this by capturing and restoring the real search list around every keychain creation — your global search list always contains only your real login keychain and any keychains you added yourself.
+
 ---
 
 ## 4. On-disk layout

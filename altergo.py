@@ -5885,6 +5885,22 @@ def _write_keychain_prefs(account_home: Path) -> None:
         plistlib.dump(plist_data, f, fmt=plistlib.FMT_XML)
 
 
+def _sec_create_keychain(kc_path: Path, password: str) -> None:
+    """Create a keychain without polluting the user's global keychain search list.
+
+    `security create-keychain` silently appends the new keychain to the user's
+    DLDBSearchList in ~/Library/Preferences/com.apple.security.plist. Left
+    uncorrected, every altergo account creation pollutes the real $HOME search
+    list, which breaks native-mode tools (e.g. gh, aws) that try to write to
+    the login keychain and instead find locked per-account keychains first.
+    """
+    result = _sec(["list-keychains", "-d", "user"], check=False)
+    original = [p.strip().strip('"') for p in result.stdout.splitlines() if p.strip()] if result.returncode == 0 else []
+    _sec(["create-keychain", "-p", password, str(kc_path)])
+    if original:
+        _sec(["list-keychains", "-d", "user", "-s"] + original, check=False)
+
+
 def _create_account_keychain(account_home: Path, slug: str, *, plant_unlock_entry: bool = True) -> None:
     """Create (or reconcile) the per-account keychain.
 
@@ -5929,7 +5945,7 @@ def _create_account_keychain(account_home: Path, slug: str, *, plant_unlock_entr
             _sec(["delete-generic-password", "-s", _KC_SERVICE, "-a", slug], check=False)
         # Fresh C — password is discarded immediately; nothing can unlock this keychain.
         P = secrets.token_bytes(32).hex()
-        _sec(["create-keychain", "-p", P, str(kc_path)])
+        _sec_create_keychain(kc_path, P)
         _sec(["set-keychain-settings", str(kc_path)])
         # Do NOT call add-generic-password — that's the whole point of isolated mode.
         _write_keychain_prefs(account_home)
@@ -5963,7 +5979,7 @@ def _create_account_keychain(account_home: Path, slug: str, *, plant_unlock_entr
     # C and D are both absent at this point.
     P = secrets.token_bytes(32).hex()  # 64 hex chars, 256-bit entropy
 
-    _sec(["create-keychain", "-p", P, str(kc_path)])
+    _sec_create_keychain(kc_path, P)
     # No flags = no auto-lock, no lock-on-sleep, no timeout (confirmed from man security).
     _sec(["set-keychain-settings", str(kc_path)])
 
@@ -5984,6 +6000,27 @@ def _create_account_keychain_dedicated(account_home: Path, slug: str) -> None:
 def _create_account_keychain_isolated(account_home: Path, slug: str) -> None:
     """Thin wrapper: create per-account keychain without unlock entry (isolated mode)."""
     _create_account_keychain(account_home, slug, plant_unlock_entry=False)
+
+
+def _prune_altergo_keychains_from_search_list() -> None:
+    """Remove any altergo per-account keychains from the real user keychain search list.
+
+    Security.framework's `create-keychain` silently adds the new keychain to
+    ~/Library/Preferences/com.apple.security.plist. Over time this pollutes the
+    real login keychain search list with locked per-account keychains, which
+    causes native-mode tools (gh, aws, gcloud) to fail keychain writes and fall
+    back to flat files even when the real login keychain is accessible.
+
+    Safe to call on every launch — no-op when the list is already clean.
+    """
+    result = _sec(["list-keychains", "-d", "user"], check=False)
+    if result.returncode != 0:
+        return
+    current = [p.strip().strip('"') for p in result.stdout.splitlines() if p.strip()]
+    altergo_root = str(ACCOUNTS_DIR)
+    cleaned = [p for p in current if altergo_root not in p and "/pytest-" not in p]
+    if len(cleaned) < len(current):
+        _sec(["list-keychains", "-d", "user", "-s"] + cleaned, check=False)
 
 
 def _unlock_account_keychain(account_home: Path, slug: str) -> None:

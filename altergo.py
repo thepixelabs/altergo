@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Altergo — multi-account session manager for AI coding assistants. Run 'altergo --help' for usage."""
 
-__version__ = "0.45.0"
+__version__ = "0.46.0"
 
 import curses
 import json
@@ -1044,12 +1044,16 @@ CATALOG = [
 def load_account_meta(account_home: Path) -> dict:
     """Load account metadata. Returns v3-shape dict in memory regardless of on-disk form."""
     meta_file = account_home / "account.json"
+    slug = account_home.name  # used in legacy-mode warning
     if meta_file.exists():
         try:
             data = json.loads(meta_file.read_text())
         except Exception:
             return _coerce_meta_v3({})
-        return _coerce_meta_v3(data)
+        data["_account_slug"] = slug
+        result = _coerce_meta_v3(data)
+        result.pop("_account_slug", None)
+        return result
     if (account_home / ".claude").exists():
         return _coerce_meta_v3({"provider": "claude"})
     return None
@@ -1083,13 +1087,18 @@ def _coerce_meta_v3(data: dict) -> dict:
     # On-disk file is NOT rewritten here; persistence happens at next
     # do_config touch or via _reconcile_keychain_state on launch.
     #
-    # Migration map (v0.45.0 — private/none rename):
-    #   "system"    → "none"     (v0.43.x default; silent rename)
-    #   "shared"    → "none"     (deprecated alias for system; silent rename)
-    #   "isolated"  → "none"     (v0.44.x name; silent backwards-compat alias)
-    #   "dedicated" → "private"  (v0.44.x name; silent backwards-compat alias)
-    #   "none"      → "none"     (current vocabulary; pass through)
-    #   "private"   → "private"  (current vocabulary; pass through)
+    # v0.46.0: all legacy aliases (dedicated, isolated, system, shared) are
+    # removed from the CLI and treated as "private" (the default) with a
+    # one-line warning on first encounter per process.  The coercion here
+    # is a graceful fallback for pre-existing account.json files; new writes
+    # will always use "private" or "none".
+    #
+    #   "none"      → "none"     (canonical; pass through)
+    #   "private"   → "private"  (canonical; pass through)
+    #   "system"    → "private"  + warn  (v0.43.x name; removed in v0.46.0)
+    #   "shared"    → "private"  + warn  (deprecated alias; removed in v0.46.0)
+    #   "isolated"  → "private"  + warn  (v0.44.x name; removed in v0.46.0)
+    #   "dedicated" → "private"  + warn  (v0.44.x name; removed in v0.46.0)
     #   absent key  → not set    (_is_keychain_none handles None as none/default)
     #
     # Note: we intentionally do NOT map absent key → "private" here because
@@ -1099,10 +1108,18 @@ def _coerce_meta_v3(data: dict) -> dict:
     # default is applied at decision points (_is_keychain_private, do_config,
     # _reconcile_keychain_state) where context makes the intent clear.
     kc = data.get("keychain")
-    if kc in ("system", "shared", "isolated"):
-        out["keychain"] = "none"  # silent backwards-compat rename → none
-    elif kc == "dedicated":
-        out["keychain"] = "private"  # silent backwards-compat rename → private
+    _LEGACY_KC_VALUES = {"system", "shared", "dedicated", "isolated"}
+    if kc in _LEGACY_KC_VALUES:
+        _acct_hint = data.get("_account_slug", "<account>")
+        print(
+            _c(
+                2,
+                f"altergo: account '{_acct_hint}' has legacy keychain mode '{kc}' — "
+                f"treating as 'private'. Run `altergo --config {_acct_hint}` to normalize.",
+            ),
+            file=sys.stderr,
+        )
+        out["keychain"] = "private"
     elif kc in ("none", "private"):
         out["keychain"] = kc  # pass through current-vocabulary values
     # else (missing key): do NOT set — _is_keychain_none handles None as none (default)
@@ -2682,6 +2699,31 @@ def _remove_provider_setup(account_home: Path, provider_id: str, *, silent: bool
             pass
 
 
+def _warn_none_mode_cancel(*, interactive: bool) -> None:
+    """Print the 'none' mode Cancel warning.
+
+    In interactive sessions (after the picker confirms the choice) the full
+    3-line warning is printed to stdout in warn color.  In non-interactive /
+    scripted invocations a single-line version goes to stderr so it appears in
+    CI logs without polluting stdout pipelines.
+    """
+    if interactive:
+        print()
+        print(_c(C("warn"), "  ⚠  In 'none' mode, macOS may prompt apps for a keychain password"))
+        print(_c(C("warn"), '     they don\'t have. ALWAYS click Cancel — never "Reset To Defaults"'))
+        print(_c(C("warn"), "     (that nukes your real login keychain — totally unrelated, very destructive)."))
+        print()
+    else:
+        print(
+            _c(
+                C("warn"),
+                "altergo: none mode — if macOS prompts for a keychain password, "
+                "click Cancel (never Reset To Defaults — that deletes your real login keychain).",
+            ),
+            file=sys.stderr,
+        )
+
+
 def do_config(account: str = "default", provider: str = "claude", *, keychain_arg: str | None = None):
     """Configure (or reconfigure) an altergo account."""
     if account == _NATIVE_ACCOUNT:
@@ -2730,15 +2772,20 @@ def do_config(account: str = "default", provider: str = "claude", *, keychain_ar
     _status_wrap("Linking shared credentials…", _apply_catalog_entries)
 
     # 5. Keychain mode (macOS only). Default: private (per-account keychain).
-    keychain_mode = "private"  # new default in v0.45.0
+    keychain_mode = "private"  # default since v0.45.0
     if sys.platform == "darwin":
         if keychain_arg is not None:
-            # Normalise deprecated aliases (CLI parser also does this, but direct
-            # callers may bypass the parser so we normalise here too).
-            if keychain_arg in ("system", "shared", "isolated"):
-                keychain_arg = "none"
-            elif keychain_arg == "dedicated":
-                keychain_arg = "private"
+            # v0.46.0: only "private" and "none" are accepted. The CLI parser
+            # already rejects old names with an error, but callers that bypass
+            # the parser (e.g. tests using do_config directly) should still
+            # receive a hard failure so misuse is caught early.
+            if keychain_arg not in ("private", "none"):
+                print(
+                    f"altergo: invalid keychain mode '{keychain_arg}' — "
+                    "must be 'private' or 'none' (v0.46.0 removed old aliases)",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
             keychain_mode = keychain_arg
         elif meta and meta.get("keychain") == "none":
             # Re-config of a none account — preserve unless user says otherwise.
@@ -2756,6 +2803,10 @@ def do_config(account: str = "default", provider: str = "claude", *, keychain_ar
             except (KeyboardInterrupt, EOFError):
                 answer = ""
             keychain_mode = "none" if answer in ("n", "no") else "private"
+
+        # Show Cancel warning when none mode is chosen (interactive or non-interactive).
+        if keychain_mode == "none":
+            _warn_none_mode_cancel(interactive=sys.stdin.isatty())
 
         # Repair any pre-existing drift before applying the user's intent.
         # desired=None is cheap when state is consistent (no security calls).
@@ -6087,22 +6138,24 @@ def _delete_account_keychain(account_home: Path, slug: str) -> None:
 def _is_keychain_private(meta: dict | None) -> bool:
     """True if meta requests per-account keychain with unlock on session start.
 
-    Returns True for explicit "private" or the v0.44.x backwards-compat alias
-    "dedicated" (already coerced to "private" by _coerce_meta_v3).
-    Returns True for absent key (the new default since v0.45.0 is private).
+    v0.46.0: only "private" is the canonical value. Legacy values (dedicated,
+    isolated, system, shared) are coerced to "private" by _coerce_meta_v3 with
+    a warning; this function sees only "private" or "none" in practice.
+    Returns True for absent key (the default since v0.45.0 is private).
     """
     if not meta:
         return True  # absent meta → private by default
     kc = meta.get("keychain")
     if kc is None:
         return True  # absent key → private by default
-    return kc == "private"  # "dedicated" already normalised to "private" by coerce
+    return kc == "private"
 
 
 def _is_keychain_dedicated(meta: dict | None) -> bool:
-    """Backwards-compat alias for _is_keychain_private (v0.44.x name).
+    """Internal alias for _is_keychain_private.
 
-    Retained so existing callers and tests continue to work without change.
+    Retained for internal use only — the "dedicated" CLI/config alias was
+    removed in v0.46.0.
     """
     return _is_keychain_private(meta)
 
@@ -6110,21 +6163,22 @@ def _is_keychain_dedicated(meta: dict | None) -> bool:
 def _is_keychain_none(meta: dict | None) -> bool:
     """True if meta requests no keychain (flat-file credentials only).
 
-    Returns True only for explicit "none" (or its v0.44.x alias "isolated",
-    already coerced to "none" by _coerce_meta_v3).
+    v0.46.0: only "none" is the canonical value. This function sees only
+    "private" or "none" after _coerce_meta_v3 normalises on load.
     """
     if not meta:
         return False  # absent meta → private by default, not none
     kc = meta.get("keychain")
     if kc is None:
         return False  # absent key → private by default
-    return kc == "none"  # "isolated" already normalised to "none" by coerce
+    return kc == "none"
 
 
 def _is_keychain_isolated(meta: dict | None) -> bool:
-    """Backwards-compat alias for _is_keychain_none (v0.44.x name).
+    """Internal alias for _is_keychain_none.
 
-    Retained so existing callers and tests continue to work without change.
+    Retained for internal use only — the "isolated" CLI/config alias was
+    removed in v0.46.0.
     """
     return _is_keychain_none(meta)
 
@@ -6160,19 +6214,11 @@ def _reconcile_keychain_state(account_home: Path, slug: str, desired: str | None
     desired=None:      launch-time drift repair. Cheap — avoids destructive ops.
                        Never delete user data at launch time.
 
-    Accepts legacy desired values "dedicated" (→ "private") and "isolated" (→ "none")
-    so call sites that pre-date v0.45.0 continue to work transparently.
-
     Call sites:
     - _build_alt_env: desired=None (launch-time silent repair).
     - do_config:      _apply_keychain_mode handles do_config transitions.
     - do_delete_account: not needed — destructive by design; presence probe handles it.
     """
-    # Normalise legacy desired values silently.
-    if desired == "dedicated":
-        desired = "private"
-    elif desired == "isolated":
-        desired = "none"
 
     meta = load_account_meta(account_home)  # already coerced → "none"|"private"|missing
     b_present = _keychain_prefs_path(account_home).exists()
@@ -6262,8 +6308,7 @@ def _reconcile_keychain_state(account_home: Path, slug: str, desired: str | None
 def _apply_keychain_mode(account_home: Path, slug: str, mode: str, *, prior_meta: dict | None) -> None:
     """Transition the account to `mode` ('none' | 'private'), idempotent.
 
-    Accepts legacy mode values "dedicated" (→ "private") and "isolated" (→ "none")
-    for call sites that pre-date v0.45.0.
+    Only "private" and "none" are accepted (v0.46.0: legacy aliases removed).
 
     Pre-flight stamps meta["keychain"]=mode BEFORE any security-framework
     mutation so a crash mid-operation is heal-able by the reconciler on next
@@ -6284,12 +6329,6 @@ def _apply_keychain_mode(account_home: Path, slug: str, mode: str, *, prior_meta
       - _create_account_keychain_isolated → ensures plist + empty locked
         per-account keychain (C) exist WITHOUT an unlock entry.
     """
-    # Normalise legacy mode values silently.
-    if mode == "dedicated":
-        mode = "private"
-    elif mode == "isolated":
-        mode = "none"
-
     # Pre-flight stamp so the reconciler can heal a crash mid-operation.
     _save_meta_keychain(account_home, prior_meta, mode)
 
@@ -7789,22 +7828,19 @@ def main():
                 i += 2
             elif remaining[i] == "--keychain" and i + 1 < len(remaining):
                 keychain_arg = remaining[i + 1]
-                if keychain_arg in ("system", "shared"):
+                if keychain_arg in ("system", "shared", "isolated", "dedicated"):
+                    # v0.46.0: all legacy aliases removed — hard error.
                     print(
-                        f"altergo: --keychain {keychain_arg} is deprecated; use --keychain none "
-                        "(alias will be removed in v0.46.0)",
+                        f"error: argument --keychain: invalid choice: '{keychain_arg}' (choose from 'private', 'none')",
                         file=sys.stderr,
                     )
-                    keychain_arg = "none"
-                elif keychain_arg in ("isolated", "dedicated"):
-                    # Silent backwards-compat alias (v0.44.x names) — no warning.
-                    keychain_arg = "none" if keychain_arg == "isolated" else "private"
+                    sys.exit(2)
                 elif keychain_arg not in ("private", "none"):
                     print(
-                        f"altergo: --keychain must be 'private' or 'none', got '{keychain_arg}'",
+                        f"error: argument --keychain: invalid choice: '{keychain_arg}' (choose from 'private', 'none')",
                         file=sys.stderr,
                     )
-                    sys.exit(1)
+                    sys.exit(2)
                 i += 2
             elif not remaining[i].startswith("--") and name is None:
                 name = remaining[i]

@@ -79,3 +79,23 @@ For a full comparison of the two modes, see [`keychain-isolation.md`](./keychain
 ## I restored from a backup. Should I expect this?
 
 Yes, on the first launch of any `private`-mode account after a restore or a Mac migration. Log back in to the provider once and you are done.
+
+---
+
+## What is the keychain password prompt I keep seeing? (none mode)
+
+**What you see.** A macOS system dialog that says something like "keychain" and asks for a password. This typically pops up when a provider app tries to write a token to the keychain.
+
+**What to do.** Click **Cancel**. Every time, without exception.
+
+**Never click "Reset To Defaults".** That button is unrelated to altergo — it nukes your entire real login keychain (the one that holds your macOS passwords, SSH keys, and other credentials) and replaces it with an empty one. The damage cannot be undone and the original keychain cannot be recovered.
+
+**Why does this happen in `none` mode?** In `none` mode, altergo routes the provider's keychain writes to a permanently locked per-account keychain. The provider app doesn't know the password for that keychain (there isn't one — the password was discarded at creation time), so macOS surfaces its standard "locked keychain" password dialog. Clicking Cancel tells macOS to skip the keychain write; the provider then falls back to flat-file credentials (`.credentials.json`, `oauth_creds.json`, etc.), which is the intended behavior.
+
+**If these prompts are disruptive,** consider switching the account to `private` mode:
+
+```bash
+altergo --config <account> --keychain private
+```
+
+In `private` mode, the per-account keychain is unlocked silently at launch so providers can write tokens without any dialog.

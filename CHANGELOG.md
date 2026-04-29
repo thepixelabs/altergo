@@ -1,6 +1,40 @@
 # CHANGELOG
 
 
+## v0.46.0 (2026-04-30)
+
+### Breaking Changes
+
+- **keychain**: Remove all legacy `--keychain` aliases — only `private` and `none` accepted
+
+  The four removed aliases and their canonical replacements:
+
+  | Removed | Use instead |
+  |---------|-------------|
+  | `dedicated` | `private` |
+  | `isolated` | `none` |
+  | `system` | `none` |
+  | `shared` | `none` |
+
+  Passing a removed alias to `--keychain` now exits non-zero with an argparse-style
+  error naming the valid choices. Existing `account.json` files with legacy values still
+  load, but emit a one-line warning to stderr and are treated as `private`. Run
+  `altergo --config <name>` to normalize any stored legacy value.
+
+### Features
+
+- **keychain**: Add Cancel warning for `none` mode
+
+  When `none` mode is chosen — interactively (3-line warning printed to stdout after
+  the picker confirms) or non-interactively (`--keychain none` via CLI, single line
+  to stderr) — altergo now warns: always click **Cancel** if macOS prompts for a
+  keychain password; never click "Reset To Defaults" (that destroys the real login
+  keychain and is unrelated to altergo).
+
+  The same warning is documented in `docs/keychain-isolation.md` §2, `docs/faq.md`,
+  and `README.md`.
+
+
 ## v0.45.0 (2026-04-29)
 
 ### Features

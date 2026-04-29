@@ -1,11 +1,11 @@
 # Keychain modes (macOS)
 
-**Applies to:** altergo v0.45.0+ (previous name: "keychain isolation", v0.41.0+)  
+**Applies to:** altergo v0.46.0+ (previous name: "keychain isolation", v0.41.0+)  
 **Audience:** macOS users who want to understand how altergo interacts with the macOS keychain.
 
-> **v0.45.0 rename:** The keychain modes have been renamed for clarity. `dedicated` is now called `private`; `isolated` is now called `none`. Both old names are accepted silently as backwards-compat aliases — your existing accounts work without any changes. See [backwards compatibility](#backwards-compat-aliases) below.
+> **v0.46.0 breaking change:** All legacy `--keychain` aliases (`dedicated`, `isolated`, `system`, `shared`) have been removed. Only `private` and `none` are accepted. Accounts with legacy values in `account.json` will see a one-time warning and be treated as `private`. Run `altergo --config <account>` to normalize. See [migration notes](migration.md#v0460--keychain-alias-removal--cancel-warning) for details.
 
-> **v0.45.0 default change:** The default keychain mode is now `private` (was `none`/`isolated` since v0.44.0). When you run `altergo --config <account>` interactively, the picker defaults to Yes (enable private mode). Non-interactive `--config` also defaults to `private`. See [migration notes](#switching-modes) below if you were relying on the `none` default.
+> **v0.45.0 rename (history):** The keychain modes were renamed for clarity. `dedicated` → `private`; `isolated` → `none`. Default flipped to `private`.
 
 For the short version, see the [Keychain modes section in the README](../README.md#keychain-modes-macos). For the threat model and security scope, see the [Threat model and non-goals](#6-threat-model-and-non-goals) section below.
 
@@ -55,6 +55,8 @@ altergo --config <account> --keychain none
 
 Or answer "n" to the keychain mode prompt during interactive `--config`.
 
+> **Warning:** In `none` mode, macOS may prompt apps for a keychain password they don't have. **Always click Cancel — never "Reset To Defaults".** Clicking "Reset To Defaults" destroys your real login keychain and the credentials stored in it — it is completely unrelated to altergo and cannot be undone. Cancel is always safe.
+
 What altergo creates:
 
 - `Library/Preferences/com.apple.security.plist` — routes Security.framework keychain operations to the per-account keychain.
@@ -62,13 +64,9 @@ What altergo creates:
 
 No `com.altergo.account-unlock` entry is planted in your real login keychain. When a provider tries to write a token to the keychain, it gets `errSecAuthFailed` and falls back to writing a flat-file credential (e.g. `.credentials.json`, `oauth_creds.json`).
 
-### Deprecated aliases
+### Removed aliases (v0.46.0)
 
-`--keychain system` and `--keychain shared` are deprecated aliases that resolve to `none`. They emit a warning to stderr and will be removed in v0.46.0.
-
-### Backwards-compat aliases
-
-`--keychain dedicated` (v0.44.x name for `private`) and `--keychain isolated` (v0.44.x name for `none`) are accepted silently without any deprecation warning. They are normalised to the current canonical names (`private`/`none`) on the next write to `account.json`.
+`--keychain system`, `--keychain shared`, `--keychain dedicated`, and `--keychain isolated` were removed in v0.46.0. Only `private` and `none` are accepted by the CLI. Accounts with legacy values in `account.json` are treated as `private` with a one-time warning on load; run `altergo --config <account>` to normalize the stored value.
 
 ---
 
@@ -137,7 +135,7 @@ When you create or reconfigure a private account, altergo runs `set-generic-pass
 }
 ```
 
-Legal values: `"private"` | `"none"`. Accounts with no `keychain` key are treated as `private` (the default since v0.45.0). The v0.44.x names `"dedicated"` and `"isolated"` are silently coerced to `"private"` and `"none"` respectively on load.
+Legal values: `"private"` | `"none"`. Accounts with no `keychain` key are treated as `private` (the default since v0.45.0). Legacy values (`dedicated`, `isolated`, `system`, `shared`) are coerced to `private` on load with a one-time warning; they are normalized on the next `--config` touch.
 
 ---
 
@@ -241,15 +239,15 @@ altergo --config <account> --keychain none
 
 This removes the unlock entry from your real login keychain. Tokens that were stored only in the per-account keychain are no longer accessible. Flat-file credentials are unaffected.
 
-**Using old v0.44.x names (`dedicated`, `isolated`)**
+**Using old names (`dedicated`, `isolated`, `system`, `shared`)**
 
-Both old names are accepted silently:
+All legacy `--keychain` values were removed in v0.46.0. Use the canonical names:
 
 ```bash
-altergo --config <account> --keychain dedicated   # → private (silent alias)
-altergo --config <account> --keychain isolated    # → none (silent alias)
+altergo --config <account> --keychain private   # per-account keychain
+altergo --config <account> --keychain none      # flat files only
 ```
 
-No deprecation warning is emitted. The on-disk `account.json` will be updated to the new canonical name (`private` or `none`) on the next write.
+Accounts with legacy values in `account.json` from before v0.46.0 will still load — altergo prints a one-time warning and treats them as `private`. Run `altergo --config <account>` to normalize the stored value.
 
 For plain-language explanations of repair messages you may see at launch, see [FAQ](./faq.md).

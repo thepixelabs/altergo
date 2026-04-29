@@ -4,6 +4,60 @@ This page covers syntax changes and one-time migrations that apply when you upgr
 
 ---
 
+## v0.46.0 — Keychain alias removal + Cancel warning
+
+**Applies to:** macOS users upgrading from v0.45.x or earlier.
+
+**Breaking change.** This release removes all legacy `--keychain` alias names.
+
+### Removed names
+
+| Removed alias | Canonical replacement |
+|---|---|
+| `dedicated` | `private` |
+| `isolated` | `none` |
+| `system` | `none` |
+| `shared` | `none` |
+
+### CLI behavior change
+
+Passing a removed alias to `--keychain` is now an error:
+
+```bash
+# v0.45.x: silently resolved to 'private' or 'none'
+# v0.46.0: hard error — exits non-zero
+altergo --config <account> --keychain dedicated
+# error: argument --keychain: invalid choice: 'dedicated' (choose from 'private', 'none')
+```
+
+**Action required:** Update any scripts or aliases that pass a legacy `--keychain` value to use `private` or `none`.
+
+```bash
+# New canonical forms (always worked, now the only valid values):
+altergo --config <account> --keychain private
+altergo --config <account> --keychain none
+```
+
+### account.json migration — what you will see
+
+If an existing `account.json` contains a legacy `keychain` value (e.g. `"keychain": "dedicated"` written by v0.44.x), altergo still loads it, but now prints a one-line warning to stderr and treats the account as `private`:
+
+```
+altergo: account 'work' has legacy keychain mode 'dedicated' — treating as 'private'. Run `altergo --config work` to normalize.
+```
+
+Running `altergo --config work` (interactive or with `--keychain private`/`--keychain none`) normalizes the stored value and silences the warning permanently.
+
+### New Cancel warning
+
+When you choose `none` mode (interactively or via `--keychain none`), altergo now shows a warning:
+
+> In `none` mode, macOS may prompt apps for a keychain password they don't have. ALWAYS click Cancel — never "Reset To Defaults" (that nukes your real login keychain — totally unrelated, very destructive).
+
+This warning also appears as a single line on stderr when `--keychain none` is passed non-interactively.
+
+---
+
 ## v0.45.0 — keychain mode rename (private / none)
 
 **Applies to:** macOS users upgrading from v0.44.x.

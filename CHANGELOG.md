@@ -1,32 +1,28 @@
 # CHANGELOG
 
 
-## v0.45.0 (2026-04-30)
+## v0.45.0 (2026-04-29)
 
 ### Features
 
-- **keychain**: Rename modes to `private`/`none` and flip default to `private`
+- **keychain**: Rename modes to private/none, flip default to private
+  ([#42](https://github.com/thepixelabs/altergo/pull/42),
+  [`798af23`](https://github.com/thepixelabs/altergo/commit/798af233d8f8a87e49eb8f88ea75007dfd0f36fd))
 
-  `dedicated` → `private` (per-account keychain, unlocked at session start).
-  `isolated` → `none` (no keychain; flat-file credentials only).
-
-  Both old names are accepted silently as backwards-compat aliases — no warning,
-  no manual migration required. On-disk values coerce in memory; the canonical
-  name is written on the next `--config` touch.
-
-  Default flipped: absent `keychain` key and `--config` without `--keychain` now
-  default to `private` (was `none`/`isolated` since v0.44.0). The macOS system
-  dialog that appeared when providers tried to write to the permanently-locked
-  isolated keychain is eliminated — `private` mode unlocks silently.
-
-  `--keychain system` and `--keychain shared` remain deprecated with a warning
-  (removal in v0.46.0). `--keychain dedicated` and `--keychain isolated` are
-  now silent backwards-compat aliases (no warning).
-
-  Internal helpers `_is_keychain_dedicated` and `_is_keychain_isolated` remain
-  as backwards-compat wrappers for `_is_keychain_private` and `_is_keychain_none`.
-
-  See [docs/migration.md](docs/migration.md#v0450--keychain-mode-rename-private--none).
+- Canonical names: dedicated → private, isolated → none - Silent backwards-compat:
+  dedicated/isolated accepted on read (CLI + account.json) without warning, normalised to
+  private/none on next write - system/shared deprecated aliases keep their stderr warning (→ v0.46.0
+  removal) - Default flipped: absent keychain key + --config with no --keychain flag now resolves to
+  private (was none/isolated since v0.44.0), eliminating the confusing macOS system dialog that
+  appeared for locked-keychain accounts - Internal helpers: _is_keychain_private/_is_keychain_none
+  added; _is_keychain_dedicated/_is_keychain_isolated kept as compat wrappers -
+  _reconcile_keychain_state and _apply_keychain_mode accept and normalise both old and new
+  desired/mode values transparently - All user-facing strings (help text, prompts, picker rows,
+  error messages, comments, docstrings) updated to private/none vocabulary - account.json writes:
+  "keychain": "private" or "keychain": "none" - Version bump: 0.44.6 → 0.45.0 - Tests: updated all
+  41 affected references; added 9 new tests including the 3 spec-required ones (alias parse,
+  account.json canonical names, default=private for fresh accounts) - Docs: keychain-isolation.md,
+  README.md, migration.md (new §), faq.md, CHANGELOG.md all updated
 
 
 ## v0.44.7 (2026-04-29)

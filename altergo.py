@@ -5988,6 +5988,17 @@ def _create_account_keychain(account_home: Path, slug: str, *, plant_unlock_entr
     # non-GUI contexts (SSH, tmux, cron) without a GUI authorization prompt.
     _sec(["add-generic-password", "-s", _KC_SERVICE, "-a", slug, "-w", P, "-T", SECURITY_CMD])
 
+    # macOS Sierra+ enforces a "partition list" on top of the ACL. Without
+    # explicit pinning, future find-generic-password -w calls re-prompt the user
+    # whenever cached partition state is invalidated (search-list changes, OS
+    # updates, denied prompts). Pin apple-tool: + apple: so /usr/bin/security
+    # reads silently. This call may itself prompt for the login keychain
+    # password once at creation time — acceptable since --config is interactive.
+    _sec(
+        ["set-generic-password-partition-list", "-S", "apple-tool:,apple:", "-s", _KC_SERVICE, "-a", slug],
+        check=False,
+    )
+
     # Write B last: B present implies C+D present (invariant §5.3).
     _write_keychain_prefs(account_home)
 

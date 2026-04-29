@@ -101,6 +101,22 @@ altergo prevents this by capturing and restoring the real search list around eve
 |---|---|
 | Login keychain entry (your real user login keychain) | Generic-password entry: service `com.altergo.account-unlock`, account `<account>`. Stores the random unlock password for this account's keychain. |
 
+### How the dedicated unlock flow works
+
+In dedicated mode, every `altergo <account>` launch silently unlocks the per-account keychain by:
+
+1. Reading the random unlock password from your **real login keychain** via `security find-generic-password -s com.altergo.account-unlock -a <account> -w`.
+2. Using that password to unlock the **per-account keychain** at `~/.altergo/accounts/<account>/Library/Keychains/login.keychain-db` via `security unlock-keychain -p <password>`.
+
+For step 1 to succeed silently (no GUI password prompt), altergo grants two layers of permission to the unlock entry when it's created:
+
+- **ACL:** `add-generic-password -T /usr/bin/security` adds the `security` binary to the entry's access control list.
+- **Partition list:** `set-generic-password-partition-list -S apple-tool:,apple:` pins the entry's partition list (a macOS Sierra+ enforcement layer) so the ACL grant is durable across keychain search-list changes, OS updates, and other state shifts.
+
+If altergo only set the ACL without the partition list, future reads would intermittently re-prompt for your login password whenever the cached partition state was invalidated. The partition-list pinning is what makes silent unlock reliable.
+
+When you create or reconfigure a dedicated account, altergo runs `set-generic-password-partition-list`, which itself requires authorization — macOS will prompt for your login keychain password **once** at creation time. After that, all subsequent launches are silent.
+
 ### `account.json` shape
 
 ```json

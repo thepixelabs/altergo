@@ -1,6 +1,36 @@
 # CHANGELOG
 
 
+## v0.44.7 (2026-04-29)
+
+### Bug Fixes
+
+- **keychain**: Pin partition list on dedicated unlock entry to prevent re-prompts
+  ([#41](https://github.com/thepixelabs/altergo/pull/41),
+  [`5aef7b4`](https://github.com/thepixelabs/altergo/commit/5aef7b4a9284987c5cb11f24679fd3c537e3badf))
+
+When altergo creates a dedicated-mode unlock entry it sets the ACL via 'add-generic-password -T
+  /usr/bin/security'. Sierra+ enforces a second layer called the partition list, and without
+  explicit pinning the default partition state is fragile — it can be invalidated by keychain
+  search-list changes, macOS updates, or a single Deny click, after which 'find-generic-password -w'
+  starts re-prompting for the login password on every dedicated account launch.
+
+Fix: after add-generic-password, run set-generic-password-partition-list
+
+with apple-tool:,apple: so the ACL grant for /usr/bin/security is durable across all of those state
+  shifts. The set-partition-list call itself requires authorization and may prompt once at account
+  creation time — acceptable since --config is interactive. After that, every 'altergo <account>'
+  launch is silent.
+
+docs: add a "How the dedicated unlock flow works" section to keychain-isolation.md explaining the
+  two-layer ACL/partition model and why the one-time creation prompt is necessary.
+
+Existing dedicated entries created before this fix still need a one-time manual partition-list grant
+  — a future migration in --config could auto-repair, but for now users running into prompts can fix
+  manually: security set-generic-password-partition-list \ -S apple-tool:,apple: -s
+  com.altergo.account-unlock -a <account>
+
+
 ## v0.44.6 (2026-04-29)
 
 ### Bug Fixes

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Altergo — multi-account session manager for AI coding assistants. Run 'altergo --help' for usage."""
 
-__version__ = "0.44.5"
+__version__ = "0.44.6"
 
 import curses
 import json

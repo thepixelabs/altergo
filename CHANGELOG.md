@@ -1,6 +1,46 @@
 # CHANGELOG
 
 
+## v0.44.6 (2026-04-29)
+
+### Bug Fixes
+
+- **keychain**: Prevent per-account keychains from polluting real HOME search list
+  ([#40](https://github.com/thepixelabs/altergo/pull/40),
+  [`cbd0b5c`](https://github.com/thepixelabs/altergo/commit/cbd0b5c597287ef146607adfeb3cbfa24118bc71))
+
+* fix(keychain): prevent per-account keychains from polluting real HOME search list
+
+security create-keychain silently appends the new keychain to the user's global DLDBSearchList in
+  ~/Library/Preferences/com.apple.security.plist. Over time this filled the real $HOME search list
+  with locked altergo per-account keychains, causing native-mode tools (gh, aws, gcloud) to
+  encounter errSecAuthFailed on keychain writes and fall back to flat files even when the real login
+  keychain was fully accessible.
+
+Fix: _sec_create_keychain captures the real search list before creation and restores it after, so
+  the per-account keychain file is created in the right place without leaving a breadcrumb in the
+  user's global list.
+
+Also adds _prune_altergo_keychains_from_search_list for one-time cleanup of stale entries from
+  existing installs (callable ad-hoc if needed).
+
+docs: explain the search list hygiene behaviour in keychain-isolation.md
+
+* fix(keychain): use ACCOUNTS_DIR constant in prune helper
+
+### Documentation
+
+- **settings**: Clarify catalog sharing intent + fix warn icon visibility
+  ([#39](https://github.com/thepixelabs/altergo/pull/39),
+  [`3146747`](https://github.com/thepixelabs/altergo/commit/3146747ece3e1095fc4c021be087499bb0ab3491))
+
+- README + keychain-isolation.md: document that gh/aws/gcloud symlinks are independent of keychain
+  mode and shared by design (AI provider credentials are what gets isolated, not dev infrastructure)
+  - docs/keychain-isolation.md: new §3 with full explanation; renumber subsequent sections -
+  settings TUI credentials page: render ⚠ icon in amber+bold instead of plain text, and show warning
+  tooltip in amber+bold instead of amber+dim
+
+
 ## v0.44.5 (2026-04-28)
 
 ### Bug Fixes

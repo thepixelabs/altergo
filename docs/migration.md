@@ -4,6 +4,61 @@ This page covers syntax changes and one-time migrations that apply when you upgr
 
 ---
 
+## v0.45.0 — keychain mode rename (private / none)
+
+**Applies to:** macOS users upgrading from v0.44.x.
+
+### What changed
+
+The keychain modes were renamed for clarity:
+
+| v0.44.x name | v0.45.0 name | Behavior |
+|---|---|---|
+| `dedicated` | `private` | Per-account keychain, unlocked at launch |
+| `isolated` | `none` | No keychain; providers fall back to flat files |
+
+The **default also changed**: new accounts and accounts with no `keychain` key are now treated as `private` (was `none`/`isolated` in v0.44.x).
+
+### Automatic migration
+
+Your existing accounts keep working without any manual changes:
+
+- `"keychain": "dedicated"` on disk → treated as `"private"` in memory (same behavior)
+- `"keychain": "isolated"` on disk → treated as `"none"` in memory (same behavior)
+- `"keychain": "system"` on disk → treated as `"none"` in memory (unchanged from v0.44.x)
+- `"keychain": "shared"` on disk → treated as `"none"` in memory (unchanged from v0.44.x)
+- No `keychain` key → now treated as `"private"` (was `"none"` in v0.44.x — see below)
+
+The in-memory coercion is silent. The on-disk file is not rewritten until the next `--config` touch, at which point the new canonical name is written.
+
+### Default flip — what it means for you
+
+**If you had accounts without a `keychain` key:** They now default to `private` mode. At launch, altergo will attempt to build a per-account keychain and may prompt for your login keychain password once (for the partition list grant). If you prefer the old `none` behavior, run:
+
+```bash
+altergo --config <account> --keychain none
+```
+
+**If you had accounts with `"keychain": "isolated"` (the old blocking default):** They continue to behave as `none` — no change.
+
+### CLI compatibility
+
+```bash
+# These still work and are silently normalised (no warning):
+altergo --config <account> --keychain dedicated   # → private
+altergo --config <account> --keychain isolated    # → none
+
+# These still work but emit a deprecation warning (removed in v0.46.0):
+altergo --config <account> --keychain system      # → none
+altergo --config <account> --keychain shared      # → none
+
+# New vocabulary (canonical):
+altergo --config <account> --keychain private     # per-account keychain, unlocked at launch
+altergo --config <account> --keychain none        # flat files only; no keychain writes
+```
+
+---
+
 ## v0.44.0 — keychain safety-default flip
 
 **Applies to:** macOS users upgrading to v0.44.0+.

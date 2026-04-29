@@ -8,9 +8,9 @@ If something here doesn't match what you're seeing, please open an issue — sho
 
 ## Most users will never see these messages
 
-The repair messages below only appear for accounts in **`dedicated` keychain mode** (opt-in since v0.44.0). The default mode is `isolated`, which never produces them. If you set up your accounts without passing `--keychain dedicated`, none of this applies to you.
+The repair messages below only appear for accounts in **`private` keychain mode** (the default since v0.45.0; was called `dedicated` in v0.44.x). The `none` mode never produces them.
 
-To check which mode an account uses, look at the `keychain` field in `~/.altergo/accounts/<account>/account.json`. A missing field means `isolated`.
+To check which mode an account uses, look at the `keychain` field in `~/.altergo/accounts/<account>/account.json`. A missing field means `private` (the default). A value of `none` (or old `isolated`) means no keychain is in use.
 
 ---
 
@@ -64,13 +64,13 @@ No data outside the per-account keychain is touched by these repair paths. Your 
 
 ## Can I stop seeing this?
 
-Yes. Switch the account to `isolated` mode (the default for new accounts since v0.44.0):
+Yes. Switch the account to `none` mode (no keychain at all):
 
 ```sh
-altergo --config <account> --keychain isolated
+altergo --config <account> --keychain none
 ```
 
-In `isolated` mode, altergo blocks the provider from writing tokens to the macOS keychain at all — providers fall back to flat-file credentials under the account's home directory. There is no keychain to drift, so these messages can never appear.
+In `none` mode, altergo blocks the provider from writing tokens to the macOS keychain at all — providers fall back to flat-file credentials under the account's home directory. There is no keychain to drift, so these messages can never appear.
 
 For a full comparison of the two modes, see [`keychain-isolation.md`](./keychain-isolation.md).
 
@@ -78,4 +78,4 @@ For a full comparison of the two modes, see [`keychain-isolation.md`](./keychain
 
 ## I restored from a backup. Should I expect this?
 
-Yes, on the first launch of any `dedicated`-mode account after a restore or a Mac migration. Log back in to the provider once and you are done.
+Yes, on the first launch of any `private`-mode account after a restore or a Mac migration. Log back in to the provider once and you are done.

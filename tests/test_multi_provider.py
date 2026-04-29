@@ -116,18 +116,19 @@ def test_load_account_meta_coerces_bad_default_provider(mod):
 
 
 def test_load_account_meta_preserves_aux_fields(mod):
+    # "isolated" on disk coerces to "none" in v0.45.0 — use "none" directly.
     home = _write_account(
         mod,
         "iso",
         {
             "version": 2,
             "provider": "claude",
-            "keychain": "isolated",
+            "keychain": "none",
             "created": "2026-01-01",
         },
     )
     meta = mod.load_account_meta(home)
-    assert meta["keychain"] == "isolated"
+    assert meta["keychain"] == "none"
     assert meta["created"] == "2026-01-01"
 
 

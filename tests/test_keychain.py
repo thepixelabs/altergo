@@ -3,8 +3,14 @@
 Covers: SECURITY_CMD, _KC_SERVICE, _KC_GUID, _KC_SUBSERVICE_TYPE, KeychainError,
 _sec, _keychain_path, _keychain_prefs_path, _write_keychain_prefs,
 _create_account_keychain, _unlock_account_keychain, _delete_account_keychain,
-_is_keychain_isolated, _build_alt_env (unlock path), do_config (keychain_arg),
-do_delete_account (keychain teardown).
+_is_keychain_private, _is_keychain_none, _is_keychain_isolated (compat alias),
+_is_keychain_dedicated (compat alias), _build_alt_env (unlock path),
+do_config (keychain_arg), do_delete_account (keychain teardown).
+
+v0.45.0 vocabulary:
+  - "private" : per-account keychain, unlocked at launch (was "dedicated" in v0.44.x)
+  - "none"    : no keychain; flat-file credentials only (was "isolated" in v0.44.x)
+  Default since v0.45.0: private (was none/isolated in v0.44.x)
 
 Patching boundary: _sec only. No real /usr/bin/security calls. Ever.
 """
@@ -139,29 +145,40 @@ def mock_sec_auth_failed(monkeypatch, mod):
 
 @pytest.fixture()
 def account_meta_dedicated():
-    """In-memory v3 shape for a dedicated-mode account (was 'isolated' in v0.43.x)."""
+    """In-memory v3 shape for a private-mode account (v0.45.0 name; v0.44.x called it 'dedicated').
+
+    Uses the new canonical name "private".  Tests that need the old on-disk value
+    "dedicated" should write account.json directly.
+    """
     return {
         "version": 3,
         "providers": ["claude"],
         "default_provider": "claude",
-        "keychain": "dedicated",
+        "keychain": "private",
     }
 
 
 @pytest.fixture()
 def account_meta_isolated():
-    """In-memory v3 shape for the new isolated mode (blocking, no unlock entry)."""
+    """In-memory v3 shape for none mode (v0.45.0 name; v0.44.x called it 'isolated').
+
+    Uses the new canonical name "none".  Tests that need the old on-disk value
+    "isolated" should write account.json directly.
+    """
     return {
         "version": 3,
         "providers": ["claude"],
         "default_provider": "claude",
-        "keychain": "isolated",
+        "keychain": "none",
     }
 
 
 @pytest.fixture()
 def account_meta_legacy():
-    """In-memory v3 shape with no keychain key (legacy pre-v0.44.0 system account)."""
+    """In-memory v3 shape with no keychain key (legacy pre-v0.44.0 system account).
+
+    Since v0.45.0 the absent key → private by default.
+    """
     return {
         "version": 3,
         "providers": ["claude"],
@@ -592,20 +609,26 @@ def test_delete_account_keychain_idempotent_when_both_fail(monkeypatch, mod, tmp
 @pytest.mark.parametrize(
     "meta,expected",
     [
-        # v0.44.0: isolated is the NEW DEFAULT — None/empty/missing-key → True.
-        (None, True),
-        ({}, True),
-        ({"version": 2, "provider": "claude"}, True),
-        # Explicit "isolated" value → True.
-        ({"version": 2, "provider": "claude", "keychain": "isolated"}, True),
-        # dedicated → NOT isolated.
+        # v0.45.0: absent key / None / empty → private by default → _is_keychain_none=False.
+        (None, False),
+        ({}, False),
+        ({"version": 2, "provider": "claude"}, False),
+        # Explicit "none" (current canonical name) → True.
+        ({"version": 2, "provider": "claude", "keychain": "none"}, True),
+        # "private" → NOT none.
+        ({"keychain": "private"}, False),
+        # "dedicated" (old name, coerced to "private" by _coerce_meta_v3) → NOT none.
         ({"keychain": "dedicated"}, False),
-        # Wrong-case / unknown values: not "isolated", not absent → False.
+        # Wrong-case / unknown values → False.
         ({"keychain": "ISOLATED"}, False),
         ({"keychain": "Isolated"}, False),
     ],
 )
 def test_is_keychain_isolated_truth_table(mod, meta, expected):
+    """_is_keychain_isolated is the v0.44.x compat alias for _is_keychain_none.
+    In v0.45.0, absent key / None → private by default, so _is_keychain_none returns False
+    for those cases.  In production, meta is always coerced by _coerce_meta_v3 before
+    reaching this function, so "isolated" on disk → "none" in memory → returns True."""
     assert mod._is_keychain_isolated(meta) is expected
 
 
@@ -668,17 +691,15 @@ def test_build_alt_env_propagates_keychain_error_message(monkeypatch, mod, tmp_p
 @pytest.mark.parametrize(
     "meta",
     [
-        # dedicated mode accounts never reach unlock path because _reconcile handles them;
-        # here we're testing accounts with NO keychain entry (legacy) — they coerce to isolated.
-        # For these accounts B is absent, so reconciler just writes B for isolated mode.
-        # No _sec calls should be made — only _write_keychain_prefs (pure Python).
-        {"version": 2, "provider": "claude"},
+        # none-mode accounts: B is absent, reconciler writes B using pure Python.
+        # No build/unlock/delete _sec calls should occur (B write is pure Python).
+        {"version": 2, "provider": "claude", "keychain": "none"},
     ],
 )
 def test_build_alt_env_legacy_meta_no_unlock_sec_calls(monkeypatch, mod, tmp_path, meta):
-    """_build_alt_env with legacy (no keychain key) meta must not call _unlock_account_keychain.
-    Isolated is now the default; no unlock occurs. The reconciler writes B (plist) if absent
-    using pure Python — no _sec calls needed for that operation."""
+    """_build_alt_env with none-mode meta must not call _unlock_account_keychain.
+    None mode never calls unlock. The reconciler writes B (plist) if absent
+    using pure Python (_write_keychain_prefs) — no _sec calls needed for that."""
     accounts_dir = tmp_path / "accounts"
     account_home = accounts_dir / "work"
     account_home.mkdir(parents=True)
@@ -704,7 +725,7 @@ def test_build_alt_env_legacy_meta_no_unlock_sec_calls(monkeypatch, mod, tmp_pat
 
     mod._build_alt_env("work")
 
-    # No unlock, create, or destructive _sec calls — isolated mode never calls unlock.
+    # No unlock, create, or destructive _sec calls — none mode never calls unlock.
     disallowed = {
         "unlock-keychain",
         "create-keychain",
@@ -714,7 +735,7 @@ def test_build_alt_env_legacy_meta_no_unlock_sec_calls(monkeypatch, mod, tmp_pat
         "delete-generic-password",
     }
     bad_calls = [args for args in sec_calls if args[0] in disallowed]
-    assert bad_calls == [], f"Expected no unlock/build/delete _sec calls for legacy meta={meta!r}; got {bad_calls}"
+    assert bad_calls == [], f"Expected no unlock/build/delete _sec calls for none meta={meta!r}; got {bad_calls}"
 
 
 # ---------------------------------------------------------------------------
@@ -752,8 +773,9 @@ def _create_main_claude_sources_for_mod(mod, main_claude: Path):
 
 
 def test_do_config_non_tty_isolated_writes_meta_and_plist(monkeypatch, mod, tmp_path):
-    """do_config with keychain_arg='isolated' on non-TTY writes meta with keychain=isolated
-    and creates the plist file."""
+    """do_config with keychain_arg='none' on non-TTY writes meta with keychain=none
+    and creates the plist file.  Also tests that the legacy alias 'isolated' is
+    silently accepted and normalised to 'none'."""
     main_home = tmp_path / "main_home"
     main_claude = main_home / ".claude"
     accounts_dir = tmp_path / "accounts"
@@ -777,16 +799,17 @@ def test_do_config_non_tty_isolated_writes_meta_and_plist(monkeypatch, mod, tmp_
     monkeypatch.setattr(mod, "_status_wrap", lambda msg, fn: fn())
     monkeypatch.setattr(mod, "load_settings", lambda: {})
 
+    # Pass legacy alias "isolated" — must be silently normalised to "none".
     mod.do_config("work", keychain_arg="isolated")
 
     account_home = accounts_dir / "work"
     meta_path = account_home / "account.json"
     assert meta_path.exists(), "account.json must exist"
     meta = json.loads(meta_path.read_text())
-    assert meta.get("keychain") == "isolated", f"Expected keychain=isolated, got {meta}"
+    assert meta.get("keychain") == "none", f"Expected keychain=none (isolated alias), got {meta}"
 
     plist_path = account_home / "Library" / "Preferences" / "com.apple.security.plist"
-    assert plist_path.exists(), "plist must exist for isolated account"
+    assert plist_path.exists(), "plist must exist for none-mode account"
 
 
 def test_do_config_non_tty_isolated_sec_is_called(monkeypatch, mod, tmp_path):
@@ -824,10 +847,10 @@ def test_do_config_non_tty_isolated_sec_is_called(monkeypatch, mod, tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_do_config_non_tty_no_flag_creates_isolated_mode(monkeypatch, mod, tmp_path):
-    """do_config with keychain_arg=None on non-TTY defaults to isolated mode (v0.44.0 safety default).
-    Isolated mode creates plist (B) and keychain file (C) but does NOT plant unlock entry (D).
-    meta must have keychain='isolated'."""
+def test_do_config_non_tty_no_flag_creates_private_mode(monkeypatch, mod, tmp_path):
+    """do_config with keychain_arg=None on non-TTY defaults to private mode (v0.45.0 default).
+    Private mode creates plist (B), keychain file (C), and plants the unlock entry (D).
+    meta must have keychain='private'."""
     main_home = tmp_path / "main_home"
     main_claude = main_home / ".claude"
     accounts_dir = tmp_path / "accounts"
@@ -857,15 +880,15 @@ def test_do_config_non_tty_no_flag_creates_isolated_mode(monkeypatch, mod, tmp_p
     meta_path = account_home / "account.json"
     assert meta_path.exists()
     meta = json.loads(meta_path.read_text())
-    assert meta.get("keychain") == "isolated", f"v0.44.0 default is 'isolated'; got {meta}"
+    assert meta.get("keychain") == "private", f"v0.45.0 default is 'private'; got {meta}"
 
-    # isolated mode: plist must exist (routes Security.framework to per-account keychain).
+    # private mode: plist must exist (routes Security.framework to per-account keychain).
     plist_path = account_home / "Library" / "Preferences" / "com.apple.security.plist"
-    assert plist_path.exists(), "plist must exist for isolated mode (required for Security.framework routing)"
+    assert plist_path.exists(), "plist must exist for private mode (required for Security.framework routing)"
 
-    # isolated mode: add-generic-password must NOT be called (no unlock entry planted).
+    # private mode: add-generic-password MUST be called (unlock entry planted).
     add_calls = [args for args in sec_calls if args[0] == "add-generic-password"]
-    assert add_calls == [], f"isolated mode must NOT call add-generic-password; got {add_calls}"
+    assert add_calls != [], f"private mode must call add-generic-password; sec_calls={sec_calls}"
 
 
 def test_do_config_non_tty_no_flag_does_not_hang(monkeypatch, mod, tmp_path):
@@ -963,10 +986,10 @@ def test_build_alt_env_non_darwin_never_calls_sec(monkeypatch, mod, tmp_path, ac
 # ---------------------------------------------------------------------------
 
 
-def test_do_config_reconfig_preserves_isolated(monkeypatch, mod, tmp_path):
-    """Re-running do_config on an account that already has keychain='isolated' (either old v0.43.x
-    meaning or new v0.44.0 meaning) keeps isolated mode when keychain_arg is None on non-TTY.
-    On non-TTY without keychain_arg, the default is isolated."""
+def test_do_config_reconfig_preserves_none(monkeypatch, mod, tmp_path):
+    """Re-running do_config on an account that already has keychain='none' keeps none mode
+    when keychain_arg is None on non-TTY.  On non-TTY without keychain_arg, if the existing
+    meta says 'none', do_config preserves 'none' (user opted out of private mode)."""
     main_home = tmp_path / "main_home"
     main_claude = main_home / ".claude"
     accounts_dir = tmp_path / "accounts"
@@ -980,8 +1003,8 @@ def test_do_config_reconfig_preserves_isolated(monkeypatch, mod, tmp_path):
     (account_home / "Library" / "Keychains").mkdir(parents=True)
     _create_main_claude_sources_for_mod(mod, main_claude)
 
-    # Pre-existing "isolated" metadata — stays "isolated" in v0.44.0.
-    (account_home / "account.json").write_text(json.dumps({"version": 2, "provider": "claude", "keychain": "isolated"}))
+    # Pre-existing "none" metadata — should stay "none" on re-config.
+    (account_home / "account.json").write_text(json.dumps({"version": 2, "provider": "claude", "keychain": "none"}))
 
     monkeypatch.setattr(mod, "MAIN_HOME", main_home)
     monkeypatch.setattr(mod, "MAIN_CLAUDE", main_claude)
@@ -1003,8 +1026,8 @@ def test_do_config_reconfig_preserves_isolated(monkeypatch, mod, tmp_path):
     mod.do_config("work", keychain_arg=None)
 
     meta = json.loads((account_home / "account.json").read_text())
-    assert meta.get("keychain") == "isolated", (
-        f"Re-config with keychain_arg=None on non-TTY must keep isolated mode; got {meta}"
+    assert meta.get("keychain") == "none", (
+        f"Re-config with keychain_arg=None on non-TTY must preserve 'none' mode; got {meta}"
     )
 
 
@@ -1198,11 +1221,11 @@ def test_do_config_then_build_alt_env_calls_find_generic_password(monkeypatch, m
 # ---------------------------------------------------------------------------
 
 
-def test_do_config_existing_system_account_normalizes_to_isolated(monkeypatch, mod, tmp_path):
+def test_do_config_existing_system_account_normalizes_to_private(monkeypatch, mod, tmp_path):
     """Given an account.json with no 'keychain' key (legacy system/shared account),
     calling do_config(..., keychain_arg=None) on non-TTY must save meta with
-    keychain='isolated' (the new default) and must not plant an unlock entry (D).
-    Isolated mode creates plist (B) and keychain file (C) but no D."""
+    keychain='private' (the new default since v0.45.0) and must plant an unlock entry (D).
+    Private mode creates plist (B), keychain file (C), and stores unlock entry (D)."""
     accounts_dir = _setup_do_config_env(monkeypatch, mod, tmp_path)
     account_home = accounts_dir / "work"
     account_home.mkdir(parents=True)
@@ -1219,11 +1242,11 @@ def test_do_config_existing_system_account_normalizes_to_isolated(monkeypatch, m
     mod.do_config("work", keychain_arg=None)
 
     meta = json.loads((account_home / "account.json").read_text())
-    assert meta.get("keychain") == "isolated", f"v0.44.0 default is 'isolated'; got {meta}"
+    assert meta.get("keychain") == "private", f"v0.45.0 default is 'private'; got {meta}"
 
-    # isolated mode must NOT plant unlock entry (D).
+    # private mode MUST plant unlock entry (D).
     add_calls = [args for args in sec_calls if args[0] == "add-generic-password"]
-    assert add_calls == [], f"isolated mode must NOT call add-generic-password; got {add_calls}"
+    assert add_calls != [], f"private mode must call add-generic-password; sec_calls={sec_calls}"
 
 
 # ---------------------------------------------------------------------------
@@ -1305,21 +1328,20 @@ def test_create_account_keychain_case1_probe_succeeds_also_writes_plist(monkeypa
 # ---------------------------------------------------------------------------
 
 
-def test_do_config_dedicated_to_isolated_removes_unlock_entry(monkeypatch, mod, tmp_path):
-    """do_config('work', keychain_arg='isolated') on a dedicated account (A=old 'isolated',
-    which migrates to 'dedicated') must:
+def test_do_config_private_to_none_removes_unlock_entry(monkeypatch, mod, tmp_path):
+    """do_config('work', keychain_arg='none') on a private account must:
     (a) call delete-generic-password to remove the unlock entry D (zero-footprint promise),
     (b) NOT call delete-keychain (C preserved for re-enable — preserve-and-reuse),
-    (c) save meta with keychain='isolated'.
+    (c) save meta with keychain='none'.
 
-    Note: keychain_arg='system' is also tested as a deprecated alias for 'isolated'."""
+    Also tests that deprecated aliases ('system', 'isolated') are silently accepted."""
     accounts_dir = _setup_do_config_env(monkeypatch, mod, tmp_path)
     account_home = accounts_dir / "work"
     (account_home / "Library" / "Preferences").mkdir(parents=True)
     (account_home / "Library" / "Keychains").mkdir(parents=True)
 
-    # Pre-existing dedicated account: A=old-isolated (migrates to dedicated), B+C present.
-    existing_meta = {"version": 2, "provider": "claude", "keychain": "isolated", "created": "2025-01-01T00:00:00"}
+    # Pre-existing private account: A=private, B+C present.
+    existing_meta = {"version": 2, "provider": "claude", "keychain": "private", "created": "2025-01-01T00:00:00"}
     (account_home / "account.json").write_text(json.dumps(existing_meta))
     plist_path = account_home / "Library" / "Preferences" / "com.apple.security.plist"
     plist_path.touch()  # B present.
@@ -1336,27 +1358,27 @@ def test_do_config_dedicated_to_isolated_removes_unlock_entry(monkeypatch, mod, 
 
     monkeypatch.setattr(mod, "_sec", fake_sec)
 
-    # --keychain system is a deprecated alias → maps to isolated inside do_config.
+    # --keychain system is a deprecated alias → maps to none inside do_config.
     mod.do_config("work", keychain_arg="system")
 
     subcommands = [args[0] for args in sec_calls]
 
     # (a) Unlock entry must be removed (zero altergo footprint in real login keychain).
     assert "delete-generic-password" in subcommands, (
-        f"Switching to isolated must call delete-generic-password to remove D; got: {subcommands}"
+        f"Switching to none must call delete-generic-password to remove D; got: {subcommands}"
     )
 
     # (b) Keychain file must NOT be deleted (preserve-and-reuse for future re-upgrade).
     assert "delete-keychain" not in subcommands, (
-        f"Switching to isolated must NOT call delete-keychain; got: {subcommands}"
+        f"Switching to none must NOT call delete-keychain; got: {subcommands}"
     )
 
-    # (c) Meta must record keychain=isolated.
+    # (c) Meta must record keychain=none.
     meta = json.loads((account_home / "account.json").read_text())
-    assert meta.get("keychain") == "isolated", f"Switch to isolated must save keychain='isolated'; got {meta}"
+    assert meta.get("keychain") == "none", f"Switch to none must save keychain='none'; got {meta}"
 
-    # Plist must remain (isolated mode requires it for Security.framework routing).
-    assert plist_path.exists(), "Plist B must remain after switch to isolated mode"
+    # Plist must remain (none mode requires it for Security.framework routing).
+    assert plist_path.exists(), "Plist B must remain after switch to none mode"
 
 
 # ---------------------------------------------------------------------------
@@ -1455,13 +1477,14 @@ def test_create_account_keychain_case4_stale_d_rebuild(monkeypatch, mod, tmp_acc
 
 
 def test_reconcile_desired_none_state1_crash_recovery_rebuilds(monkeypatch, mod, tmp_account_home):
-    """State #1 crash-recovery: A=dedicated (written via pre-flight stamp) + B/C/D all absent
+    """State #1 crash-recovery: A=private (written via pre-flight stamp) + B/C/D all absent
     (process crashed after writing meta but before creating B/C/D).
     _reconcile_keychain_state(desired=None) must detect the missing B and trigger a rebuild.
 
-    Note: A='dedicated' + B absent = drift → rebuild is correct because the pre-flight stamp
-    means the user explicitly asked for dedicated mode."""
-    # A=dedicated (pre-flight stamp written); B/C/D all absent (crash scenario).
+    Also tests that the legacy on-disk value "dedicated" is coerced to "private" and that
+    after rebuild A is persisted with the new canonical name "private"."""
+    # A=dedicated on disk (pre-flight stamp written); coerces to "private" in memory.
+    # B/C/D all absent (crash scenario).
     (tmp_account_home / "account.json").write_text(json.dumps({"keychain": "dedicated"}))
     assert not mod._keychain_prefs_path(tmp_account_home).exists()
     assert not mod._keychain_path(tmp_account_home).exists()
@@ -1481,12 +1504,12 @@ def test_reconcile_desired_none_state1_crash_recovery_rebuilds(monkeypatch, mod,
     # Rebuild must have fired — create-keychain is the signal.
     subcommands = [args[0] for args, _ in sec_calls]
     assert "create-keychain" in subcommands, (
-        f"State #1 dedicated crash-recovery: reconciler must rebuild when B absent; got {subcommands}"
+        f"State #1 private crash-recovery: reconciler must rebuild when B absent; got {subcommands}"
     )
 
-    # A must be updated to 'dedicated' after rebuild.
+    # A must be updated to 'private' after rebuild (new canonical name).
     meta = json.loads((tmp_account_home / "account.json").read_text())
-    assert meta.get("keychain") == "dedicated", f"State #1 repair: A must be 'dedicated' after rebuild; got {meta}"
+    assert meta.get("keychain") == "private", f"State #1 repair: A must be 'private' after rebuild; got {meta}"
 
 
 # ---------------------------------------------------------------------------
@@ -1497,9 +1520,9 @@ def test_reconcile_desired_none_state1_crash_recovery_rebuilds(monkeypatch, mod,
 def test_reconcile_desired_none_state13_wrong_password_drift_rebuilds(monkeypatch, mod, tmp_account_home):
     """State #13: B+C+D all present but unlock probe fails (password mismatch drift).
     _reconcile_keychain_state(desired=None) must trigger _create_account_keychain
-    (rebuild) and write A='dedicated'."""
-    # Set up B, C present on disk; A=dedicated (v0.44.0 value).
-    (tmp_account_home / "account.json").write_text(json.dumps({"keychain": "dedicated"}))
+    (rebuild) and write A='private'."""
+    # Set up B, C present on disk; A=private (v0.45.0 canonical name).
+    (tmp_account_home / "account.json").write_text(json.dumps({"keychain": "private"}))
     mod._keychain_prefs_path(tmp_account_home).parent.mkdir(parents=True, exist_ok=True)
     mod._keychain_prefs_path(tmp_account_home).touch()  # B present.
     mod._keychain_path(tmp_account_home).parent.mkdir(parents=True, exist_ok=True)
@@ -1525,10 +1548,10 @@ def test_reconcile_desired_none_state13_wrong_password_drift_rebuilds(monkeypatc
     assert "create-keychain" in subcommands, "State #13: reconciler must trigger rebuild when unlock probe fails"
     assert "add-generic-password" in subcommands, "State #13: rebuild must store a fresh unlock entry"
 
-    # A must be written as 'dedicated' after successful rebuild.
+    # A must be written as 'private' after successful rebuild (new canonical name).
     meta = json.loads((tmp_account_home / "account.json").read_text())
-    assert meta.get("keychain") == "dedicated", (
-        f"State #13 rebuild: A must be written as 'dedicated' after repair; got {meta}"
+    assert meta.get("keychain") == "private", (
+        f"State #13 rebuild: A must be written as 'private' after repair; got {meta}"
     )
 
 
@@ -1537,11 +1560,11 @@ def test_reconcile_desired_none_state13_wrong_password_drift_rebuilds(monkeypatc
 # ---------------------------------------------------------------------------
 
 
-def test_reconcile_desired_none_isolated_b_absent_writes_plist_no_sec(monkeypatch, mod, tmp_account_home):
-    """desired=None with A=isolated (or legacy system → migrated to isolated) and B absent:
+def test_reconcile_desired_none_none_b_absent_writes_plist_no_sec(monkeypatch, mod, tmp_account_home):
+    """desired=None with A=none (or legacy system → migrated to none) and B absent:
     reconciler writes plist B using pure Python (_write_keychain_prefs — no _sec call),
-    and persists A='isolated' to disk. No build/unlock/delete _sec calls occur."""
-    # A=system on disk — migrates in-memory to isolated.
+    and persists A='none' to disk. No build/unlock/delete _sec calls occur."""
+    # A=system on disk — migrates in-memory to none.
     (tmp_account_home / "account.json").write_text(json.dumps({"keychain": "system"}))
     assert not mod._keychain_prefs_path(tmp_account_home).exists()  # B absent.
 
@@ -1568,17 +1591,17 @@ def test_reconcile_desired_none_isolated_b_absent_writes_plist_no_sec(monkeypatc
     }
     bad_calls = [args[0] for args, _ in sec_calls if args[0] in disallowed]
     assert bad_calls == [], (
-        f"Isolated mode B-absent repair must make zero build/unlock/delete _sec calls; got {bad_calls}"
+        f"None mode B-absent repair must make zero build/unlock/delete _sec calls; got {bad_calls}"
     )
 
     # B (plist) must now exist — written by _write_keychain_prefs.
     assert mod._keychain_prefs_path(tmp_account_home).exists(), (
-        "Reconciler must write plist B when A=isolated and B absent"
+        "Reconciler must write plist B when A=none and B absent"
     )
 
-    # Meta must be updated to 'isolated' (migration from 'system').
+    # Meta must be updated to 'none' (migration from 'system').
     meta = json.loads((tmp_account_home / "account.json").read_text())
-    assert meta.get("keychain") == "isolated", f"Reconciler must persist migrated key 'isolated'; got {meta}"
+    assert meta.get("keychain") == "none", f"Reconciler must persist migrated key 'none'; got {meta}"
 
 
 # ---------------------------------------------------------------------------
@@ -1714,8 +1737,9 @@ def test_build_alt_env_dedicated_mode_unlocks(monkeypatch, mod, tmp_path, accoun
     assert len(unlock_calls) == 1, f"dedicated mode must call _unlock_account_keychain once; got {unlock_calls}"
 
 
-def test_migration_system_to_isolated_on_load(tmp_account_home):
-    """load_account_meta with keychain='system' on disk returns in-memory keychain='isolated'."""
+def test_migration_system_to_none_on_load(tmp_account_home):
+    """load_account_meta with keychain='system' on disk returns in-memory keychain='none'.
+    (v0.45.0: system → none; was system → isolated in v0.44.x)"""
     import json as _json
     import importlib.util
 
@@ -1728,15 +1752,16 @@ def test_migration_system_to_isolated_on_load(tmp_account_home):
     )
 
     meta = mod.load_account_meta(tmp_account_home)
-    assert meta.get("keychain") == "isolated", f"system → isolated migration failed; got {meta}"
+    assert meta.get("keychain") == "none", f"system → none migration failed; got {meta}"
 
     # On-disk must be unchanged (migration is in-memory only).
     raw = _json.loads((tmp_account_home / "account.json").read_text())
     assert raw.get("keychain") == "system", "on-disk value must not be changed by load alone"
 
 
-def test_migration_shared_to_isolated_on_load(tmp_account_home):
-    """load_account_meta with keychain='shared' on disk returns in-memory keychain='isolated'."""
+def test_migration_shared_to_none_on_load(tmp_account_home):
+    """load_account_meta with keychain='shared' on disk returns in-memory keychain='none'.
+    (v0.45.0: shared → none; was shared → isolated in v0.44.x)"""
     import json as _json
     import importlib.util
 
@@ -1749,16 +1774,15 @@ def test_migration_shared_to_isolated_on_load(tmp_account_home):
     )
 
     meta = mod.load_account_meta(tmp_account_home)
-    assert meta.get("keychain") == "isolated", f"shared → isolated migration failed; got {meta}"
+    assert meta.get("keychain") == "none", f"shared → none migration failed; got {meta}"
 
     raw = _json.loads((tmp_account_home / "account.json").read_text())
     assert raw.get("keychain") == "shared", "on-disk value must not be changed by load alone"
 
 
-def test_migration_old_isolated_stays_isolated_on_load(tmp_account_home):
-    """load_account_meta with keychain='isolated' on disk stays 'isolated' in v0.44.0.
-    (Old 'isolated' = blocking mode in new vocabulary; dedicated mode requires
-    explicit --keychain dedicated.)"""
+def test_migration_old_isolated_to_none_on_load(tmp_account_home):
+    """load_account_meta with keychain='isolated' on disk coerces to 'none' in v0.45.0.
+    ('isolated' was the blocking-mode name in v0.44.x; it is now called 'none'.)"""
     import json as _json
     import importlib.util
 
@@ -1771,11 +1795,38 @@ def test_migration_old_isolated_stays_isolated_on_load(tmp_account_home):
     )
 
     meta = mod.load_account_meta(tmp_account_home)
-    assert meta.get("keychain") == "isolated", f"old isolated must stay isolated; got {meta}"
+    assert meta.get("keychain") == "none", f"old isolated must coerce to none; got {meta}"
+
+    # On-disk must be unchanged (migration is in-memory only).
+    raw = _json.loads((tmp_account_home / "account.json").read_text())
+    assert raw.get("keychain") == "isolated", "on-disk value must not be changed by load alone"
 
 
-def test_migration_legacy_no_keychain_key_treated_as_isolated(tmp_account_home):
-    """load_account_meta with no keychain key → _is_keychain_isolated returns True."""
+def test_migration_old_dedicated_to_private_on_load(tmp_account_home):
+    """load_account_meta with keychain='dedicated' on disk coerces to 'private' in v0.45.0.
+    ('dedicated' was the per-account-keychain name in v0.44.x; it is now called 'private'.)"""
+    import json as _json
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("altergo", ROOT / "altergo.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    (tmp_account_home / "account.json").write_text(
+        _json.dumps({"version": 3, "providers": ["claude"], "default_provider": "claude", "keychain": "dedicated"})
+    )
+
+    meta = mod.load_account_meta(tmp_account_home)
+    assert meta.get("keychain") == "private", f"old dedicated must coerce to private; got {meta}"
+
+    # On-disk must be unchanged (migration is in-memory only).
+    raw = _json.loads((tmp_account_home / "account.json").read_text())
+    assert raw.get("keychain") == "dedicated", "on-disk value must not be changed by load alone"
+
+
+def test_migration_legacy_no_keychain_key_treated_as_private(tmp_account_home):
+    """load_account_meta with no keychain key → _is_keychain_private returns True.
+    v0.45.0 default is private (was none/isolated in v0.44.x)."""
     import json as _json
     import importlib.util
 
@@ -1788,12 +1839,16 @@ def test_migration_legacy_no_keychain_key_treated_as_isolated(tmp_account_home):
     )
 
     meta = mod.load_account_meta(tmp_account_home)
-    assert mod._is_keychain_isolated(meta) is True, "no keychain key → isolated (new default)"
-    assert mod._is_keychain_dedicated(meta) is False, "no keychain key → not dedicated"
+    assert mod._is_keychain_private(meta) is True, "no keychain key → private (new default since v0.45.0)"
+    assert mod._is_keychain_none(meta) is False, "no keychain key → not none"
+    # Backwards-compat aliases
+    assert mod._is_keychain_dedicated(meta) is True, "dedicated alias → same as _is_keychain_private"
+    assert mod._is_keychain_isolated(meta) is False, "isolated alias → same as _is_keychain_none"
 
 
 def test_reconcile_persists_migrated_key_on_launch(monkeypatch, tmp_account_home):
-    """_reconcile_keychain_state(desired=None) with 'system' on disk persists 'isolated'."""
+    """_reconcile_keychain_state(desired=None) with 'system' on disk persists 'none'
+    (v0.45.0: system → none; was system → isolated in v0.44.x)."""
     import json as _json
     import importlib.util
 
@@ -1815,12 +1870,13 @@ def test_reconcile_persists_migrated_key_on_launch(monkeypatch, tmp_account_home
     mod._reconcile_keychain_state(tmp_account_home, "work", desired=None)
 
     raw = _json.loads((tmp_account_home / "account.json").read_text())
-    assert raw.get("keychain") == "isolated", f"reconciler must persist migrated 'isolated' to disk; got {raw}"
+    assert raw.get("keychain") == "none", f"reconciler must persist migrated 'none' to disk; got {raw}"
 
 
-def test_reconcile_preserves_dedicated_on_launch_with_prior_state(monkeypatch, tmp_account_home):
-    """_reconcile_keychain_state(desired=None) with 'dedicated' account + B+C+D consistent:
-    leaves everything unchanged, no files deleted."""
+def test_reconcile_preserves_private_on_launch_with_prior_state(monkeypatch, tmp_account_home):
+    """_reconcile_keychain_state(desired=None) with 'private' account + B+C+D consistent:
+    leaves everything unchanged, no files deleted.  Also tests that old on-disk value
+    'dedicated' is coerced in-memory to 'private' and then persisted as 'private'."""
     import json as _json
     import importlib.util
 
@@ -1828,6 +1884,7 @@ def test_reconcile_preserves_dedicated_on_launch_with_prior_state(monkeypatch, t
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
 
+    # Write old on-disk "dedicated" — coerces to "private" in memory.
     (tmp_account_home / "account.json").write_text(
         _json.dumps({"version": 3, "providers": ["claude"], "default_provider": "claude", "keychain": "dedicated"})
     )
@@ -1849,13 +1906,13 @@ def test_reconcile_preserves_dedicated_on_launch_with_prior_state(monkeypatch, t
 
     # C must still exist (not deleted).
     assert mod._keychain_path(tmp_account_home).exists(), "C must be preserved"
-    # A must still say dedicated.
+    # A must now say 'private' (migration from 'dedicated' persisted).
     raw = _json.loads((tmp_account_home / "account.json").read_text())
-    assert raw.get("keychain") == "dedicated", f"A must stay dedicated; got {raw}"
+    assert raw.get("keychain") == "private", f"A must be persisted as 'private' after migration; got {raw}"
 
 
 def test_cli_keychain_system_emits_deprecation_warning(monkeypatch, tmp_path):
-    """--keychain system in the arg parser emits a deprecation warning and resolves to isolated."""
+    """--keychain system in the arg parser emits a deprecation warning and resolves to none."""
     import importlib.util, io, json as _json, sys as _sys
 
     spec = importlib.util.spec_from_file_location("altergo", ROOT / "altergo.py")
@@ -1882,8 +1939,8 @@ def test_cli_keychain_system_emits_deprecation_warning(monkeypatch, tmp_path):
     with pytest.raises(SystemExit):
         mod.main()
 
-    assert captured.get("keychain_arg") == "isolated", (
-        f"--keychain system must resolve to 'isolated'; got {captured.get('keychain_arg')}"
+    assert captured.get("keychain_arg") == "none", (
+        f"--keychain system must resolve to 'none'; got {captured.get('keychain_arg')}"
     )
     assert "deprecated" in stderr_buf.getvalue().lower(), (
         f"--keychain system must emit deprecation warning; got: {stderr_buf.getvalue()!r}"
@@ -1891,7 +1948,7 @@ def test_cli_keychain_system_emits_deprecation_warning(monkeypatch, tmp_path):
 
 
 def test_cli_keychain_shared_emits_deprecation_warning(monkeypatch, tmp_path):
-    """--keychain shared in the arg parser emits a deprecation warning and resolves to isolated."""
+    """--keychain shared in the arg parser emits a deprecation warning and resolves to none."""
     import importlib.util, io
 
     spec = importlib.util.spec_from_file_location("altergo", ROOT / "altergo.py")
@@ -1917,14 +1974,15 @@ def test_cli_keychain_shared_emits_deprecation_warning(monkeypatch, tmp_path):
     with pytest.raises(SystemExit):
         mod.main()
 
-    assert captured.get("keychain_arg") == "isolated", (
-        f"--keychain shared must resolve to 'isolated'; got {captured.get('keychain_arg')}"
+    assert captured.get("keychain_arg") == "none", (
+        f"--keychain shared must resolve to 'none'; got {captured.get('keychain_arg')}"
     )
     assert "deprecated" in stderr_buf.getvalue().lower()
 
 
-def test_cli_keychain_dedicated_no_warning(monkeypatch, tmp_path):
-    """--keychain dedicated resolves correctly with no deprecation warning."""
+def test_cli_keychain_dedicated_silent_alias(monkeypatch, tmp_path):
+    """--keychain dedicated is a silent backwards-compat alias for 'private' (no warning).
+    v0.45.0: 'dedicated' resolves to 'private' without emitting a deprecation warning."""
     import importlib.util, io
 
     spec = importlib.util.spec_from_file_location("altergo", ROOT / "altergo.py")
@@ -1950,14 +2008,122 @@ def test_cli_keychain_dedicated_no_warning(monkeypatch, tmp_path):
     with pytest.raises(SystemExit):
         mod.main()
 
-    assert captured.get("keychain_arg") == "dedicated"
+    assert captured.get("keychain_arg") == "private", (
+        f"--keychain dedicated must resolve to 'private'; got {captured.get('keychain_arg')}"
+    )
     assert "deprecated" not in stderr_buf.getvalue().lower(), (
         f"--keychain dedicated must NOT emit deprecation; got: {stderr_buf.getvalue()!r}"
     )
 
 
+def test_cli_keychain_isolated_silent_alias(monkeypatch, tmp_path):
+    """--keychain isolated is a silent backwards-compat alias for 'none' (no warning).
+    v0.45.0: 'isolated' resolves to 'none' without emitting a deprecation warning."""
+    import importlib.util, io
+
+    spec = importlib.util.spec_from_file_location("altergo", ROOT / "altergo.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    captured = {}
+
+    def fake_do_config(account, provider="claude", *, keychain_arg=None):
+        captured["keychain_arg"] = keychain_arg
+
+    monkeypatch.setattr(mod, "do_config", fake_do_config)
+
+    accounts_dir = tmp_path / "accounts"
+    accounts_dir.mkdir()
+    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
+
+    stderr_buf = io.StringIO()
+    monkeypatch.setattr(mod.sys, "stderr", stderr_buf)
+    monkeypatch.setattr(mod.sys, "argv", ["altergo", "--config", "work", "--keychain", "isolated"])
+    monkeypatch.setattr(mod.sys.stdin, "isatty", lambda: False)
+
+    with pytest.raises(SystemExit):
+        mod.main()
+
+    assert captured.get("keychain_arg") == "none", (
+        f"--keychain isolated must resolve to 'none'; got {captured.get('keychain_arg')}"
+    )
+    assert "deprecated" not in stderr_buf.getvalue().lower(), (
+        f"--keychain isolated must NOT emit deprecation; got: {stderr_buf.getvalue()!r}"
+    )
+
+
+def test_cli_keychain_private_no_warning(monkeypatch, tmp_path):
+    """--keychain private is the canonical name in v0.45.0 and must pass through without warning."""
+    import importlib.util, io
+
+    spec = importlib.util.spec_from_file_location("altergo", ROOT / "altergo.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    captured = {}
+
+    def fake_do_config(account, provider="claude", *, keychain_arg=None):
+        captured["keychain_arg"] = keychain_arg
+
+    monkeypatch.setattr(mod, "do_config", fake_do_config)
+
+    accounts_dir = tmp_path / "accounts"
+    accounts_dir.mkdir()
+    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
+
+    stderr_buf = io.StringIO()
+    monkeypatch.setattr(mod.sys, "stderr", stderr_buf)
+    monkeypatch.setattr(mod.sys, "argv", ["altergo", "--config", "work", "--keychain", "private"])
+    monkeypatch.setattr(mod.sys.stdin, "isatty", lambda: False)
+
+    with pytest.raises(SystemExit):
+        mod.main()
+
+    assert captured.get("keychain_arg") == "private", (
+        f"--keychain private must pass through unchanged; got {captured.get('keychain_arg')}"
+    )
+    assert "deprecated" not in stderr_buf.getvalue().lower(), (
+        f"--keychain private must NOT emit any warning; got: {stderr_buf.getvalue()!r}"
+    )
+
+
+def test_cli_keychain_none_no_warning(monkeypatch, tmp_path):
+    """--keychain none is the canonical name in v0.45.0 and must pass through without warning."""
+    import importlib.util, io
+
+    spec = importlib.util.spec_from_file_location("altergo", ROOT / "altergo.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    captured = {}
+
+    def fake_do_config(account, provider="claude", *, keychain_arg=None):
+        captured["keychain_arg"] = keychain_arg
+
+    monkeypatch.setattr(mod, "do_config", fake_do_config)
+
+    accounts_dir = tmp_path / "accounts"
+    accounts_dir.mkdir()
+    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
+
+    stderr_buf = io.StringIO()
+    monkeypatch.setattr(mod.sys, "stderr", stderr_buf)
+    monkeypatch.setattr(mod.sys, "argv", ["altergo", "--config", "work", "--keychain", "none"])
+    monkeypatch.setattr(mod.sys.stdin, "isatty", lambda: False)
+
+    with pytest.raises(SystemExit):
+        mod.main()
+
+    assert captured.get("keychain_arg") == "none", (
+        f"--keychain none must pass through unchanged; got {captured.get('keychain_arg')}"
+    )
+    assert "deprecated" not in stderr_buf.getvalue().lower(), (
+        f"--keychain none must NOT emit any warning; got: {stderr_buf.getvalue()!r}"
+    )
+
+
 def test_cli_keychain_invalid_exits_nonzero(monkeypatch, tmp_path):
-    """--keychain garbage exits non-zero and stderr mentions 'isolated' and 'dedicated'."""
+    """--keychain garbage exits non-zero and stderr mentions 'private' and 'none'."""
     import importlib.util, io
 
     spec = importlib.util.spec_from_file_location("altergo", ROOT / "altergo.py")
@@ -1978,17 +2144,20 @@ def test_cli_keychain_invalid_exits_nonzero(monkeypatch, tmp_path):
 
     assert exc_info.value.code != 0, "invalid --keychain value must exit non-zero"
     err = stderr_buf.getvalue()
-    assert "isolated" in err and "dedicated" in err, (
-        f"error message must mention 'isolated' and 'dedicated'; got: {err!r}"
+    assert "private" in err and "none" in err, (
+        f"error message must mention 'private' and 'none'; got: {err!r}"
     )
 
 
-def test_switch_dedicated_to_isolated_removes_unlock_entry(monkeypatch, mod, tmp_account_home):
-    """_apply_keychain_mode(mode='isolated') from a dedicated account removes D but not C."""
-    # Pre-existing dedicated account: A, B, C, D all present.
+def test_switch_private_to_none_removes_unlock_entry(monkeypatch, mod, tmp_account_home):
+    """_apply_keychain_mode(mode='none') from a private account removes D but not C.
+
+    Also tests that legacy mode values 'isolated' and 'dedicated' are accepted silently
+    as backwards-compat aliases for 'none' and 'private' respectively."""
+    # Pre-existing private account: A, B, C, D all present.
     mod._keychain_path(tmp_account_home).parent.mkdir(parents=True, exist_ok=True)
     mod._keychain_path(tmp_account_home).touch()  # C present.
-    prior_meta = {"version": 3, "providers": ["claude"], "default_provider": "claude", "keychain": "dedicated"}
+    prior_meta = {"version": 3, "providers": ["claude"], "default_provider": "claude", "keychain": "private"}
 
     sec_calls = []
 
@@ -2000,39 +2169,69 @@ def test_switch_dedicated_to_isolated_removes_unlock_entry(monkeypatch, mod, tmp
 
     monkeypatch.setattr(mod, "_sec", fake_sec)
 
-    mod._apply_keychain_mode(tmp_account_home, "work", "isolated", prior_meta=prior_meta)
+    # Use new canonical name "none".
+    mod._apply_keychain_mode(tmp_account_home, "work", "none", prior_meta=prior_meta)
 
     subcommands = [args[0] for args, _ in sec_calls]
 
     # D must be removed.
     assert "delete-generic-password" in subcommands, (
-        f"switching to isolated must call delete-generic-password; got {subcommands}"
+        f"switching to none must call delete-generic-password; got {subcommands}"
     )
 
     # C must NOT be deleted (preserve-and-reuse).
     assert "delete-keychain" not in subcommands, (
-        f"switching to isolated must NOT call delete-keychain; got {subcommands}"
+        f"switching to none must NOT call delete-keychain; got {subcommands}"
     )
     assert mod._keychain_path(tmp_account_home).exists(), "C must be preserved on disk"
 
 
-def test_switch_isolated_to_dedicated_reuses_preserved_file(monkeypatch, mod, tmp_account_home):
-    """_apply_keychain_mode(mode='dedicated') when C already exists reuses C (no fresh create)."""
-    # Pre-create C on disk (from a prior dedicated run, preserved through isolated).
+def test_switch_private_to_none_via_isolated_alias(monkeypatch, mod, tmp_account_home):
+    """_apply_keychain_mode accepts legacy mode value 'isolated' as a silent alias for 'none'."""
     mod._keychain_path(tmp_account_home).parent.mkdir(parents=True, exist_ok=True)
     mod._keychain_path(tmp_account_home).touch()  # C present.
-    prior_meta = {"version": 3, "providers": ["claude"], "default_provider": "claude", "keychain": "isolated"}
+    prior_meta = {"version": 3, "providers": ["claude"], "default_provider": "claude", "keychain": "private"}
 
     sec_calls = []
 
     def fake_sec(argv, *, check=True, timeout=10):
         sec_calls.append((list(argv), {"check": check}))
         if argv[0] == "find-generic-password":
-            return _cp(44, "", "not found")  # D absent (was deleted when switching to isolated)
+            return _cp(0, "deadbeef" * 8 + "\n")
         return _cp(0)
 
     monkeypatch.setattr(mod, "_sec", fake_sec)
 
+    # Use legacy alias "isolated" — must behave identically to "none".
+    mod._apply_keychain_mode(tmp_account_home, "work", "isolated", prior_meta=prior_meta)
+
+    # A must be written as "none" (normalised from "isolated").
+    meta = json.loads((tmp_account_home / "account.json").read_text())
+    assert meta.get("keychain") == "none", (
+        f"isolated alias must persist as 'none'; got {meta}"
+    )
+
+
+def test_switch_none_to_private_reuses_preserved_file(monkeypatch, mod, tmp_account_home):
+    """_apply_keychain_mode(mode='private') when C already exists reuses C (no fresh create).
+
+    Also tests that legacy mode value 'dedicated' is accepted as a silent alias for 'private'."""
+    # Pre-create C on disk (from a prior private run, preserved through none).
+    mod._keychain_path(tmp_account_home).parent.mkdir(parents=True, exist_ok=True)
+    mod._keychain_path(tmp_account_home).touch()  # C present.
+    prior_meta = {"version": 3, "providers": ["claude"], "default_provider": "claude", "keychain": "none"}
+
+    sec_calls = []
+
+    def fake_sec(argv, *, check=True, timeout=10):
+        sec_calls.append((list(argv), {"check": check}))
+        if argv[0] == "find-generic-password":
+            return _cp(44, "", "not found")  # D absent (was deleted when switching to none)
+        return _cp(0)
+
+    monkeypatch.setattr(mod, "_sec", fake_sec)
+
+    # Use legacy alias "dedicated" — must behave identically to "private".
     mod._apply_keychain_mode(tmp_account_home, "work", "dedicated", prior_meta=prior_meta)
 
     subcommands = [args[0] for args, _ in sec_calls]
@@ -2040,7 +2239,131 @@ def test_switch_isolated_to_dedicated_reuses_preserved_file(monkeypatch, mod, tm
     # C exists but D is absent → Case 3 (orphan C) → delete-keychain + fresh build.
     # This is expected per spec §6.2 option (a): token loss on re-upgrade is acceptable.
     # The important thing: C is not preserved when D is gone (password mismatch risk).
-    # Alternatively: if the test finds create-keychain was called, that's fine.
     assert "create-keychain" in subcommands or "add-generic-password" in subcommands, (
-        "switching from isolated to dedicated must rebuild the keychain"
+        "switching from none to private must rebuild the keychain"
+    )
+
+    # A must be written as "private" (normalised from "dedicated").
+    meta = json.loads((tmp_account_home / "account.json").read_text())
+    assert meta.get("keychain") == "private", (
+        f"dedicated alias must persist as 'private'; got {meta}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# v0.45.0 required new tests (spec requirements)
+# ---------------------------------------------------------------------------
+
+
+def test_v045_dedicated_and_isolated_cli_parse_as_silent_aliases(monkeypatch, tmp_path):
+    """Spec requirement: --keychain dedicated and --keychain isolated are silently accepted
+    and resolved to 'private' and 'none' respectively without emitting any warning."""
+    import importlib.util, io
+
+    spec = importlib.util.spec_from_file_location("altergo", ROOT / "altergo.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    accounts_dir = tmp_path / "accounts"
+    accounts_dir.mkdir()
+    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
+
+    for old_name, expected_new_name in [("dedicated", "private"), ("isolated", "none")]:
+        captured = {}
+        stderr_buf = io.StringIO()
+
+        def fake_do_config(account, provider="claude", *, keychain_arg=None, _exp=expected_new_name):
+            captured["keychain_arg"] = keychain_arg
+
+        monkeypatch.setattr(mod, "do_config", fake_do_config)
+        monkeypatch.setattr(mod.sys, "stderr", stderr_buf)
+        monkeypatch.setattr(mod.sys, "argv", ["altergo", "--config", "work", "--keychain", old_name])
+        monkeypatch.setattr(mod.sys.stdin, "isatty", lambda: False)
+
+        with pytest.raises(SystemExit):
+            mod.main()
+
+        assert captured.get("keychain_arg") == expected_new_name, (
+            f"--keychain {old_name!r} must resolve to {expected_new_name!r}; "
+            f"got {captured.get('keychain_arg')!r}"
+        )
+        assert "deprecated" not in stderr_buf.getvalue().lower(), (
+            f"--keychain {old_name!r} must NOT emit a deprecation warning; "
+            f"got: {stderr_buf.getvalue()!r}"
+        )
+
+
+def test_v045_account_json_written_with_new_canonical_names(monkeypatch, mod, tmp_path):
+    """Spec requirement: account.json written by v0.45.0 must contain
+    keychain='private' or keychain='none', never the old 'dedicated'/'isolated'."""
+    main_home = tmp_path / "main_home"
+    main_claude = main_home / ".claude"
+    accounts_dir = tmp_path / "accounts"
+
+    main_home.mkdir(parents=True)
+    main_claude.mkdir(parents=True)
+    accounts_dir.mkdir(parents=True)
+    _create_main_claude_sources_for_mod(mod, main_claude)
+
+    monkeypatch.setattr(mod, "MAIN_HOME", main_home)
+    monkeypatch.setattr(mod, "MAIN_CLAUDE", main_claude)
+    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
+    monkeypatch.setattr(mod, "SETTINGS_FILE", tmp_path / "settings.json")
+    monkeypatch.setattr(mod.sys, "platform", "darwin")
+    monkeypatch.setattr(mod.sys.stdin, "isatty", lambda: False)
+    monkeypatch.setattr(mod, "_sec", lambda argv, **kw: _cp(0))
+    monkeypatch.setattr(mod, "show_banner", lambda *a, **kw: None)
+    monkeypatch.setattr(mod, "_status_wrap", lambda msg, fn: fn())
+    monkeypatch.setattr(mod, "load_settings", lambda: {})
+
+    # Test private mode.
+    mod.do_config("work1", keychain_arg="private")
+    meta_private = json.loads((accounts_dir / "work1" / "account.json").read_text())
+    assert meta_private.get("keychain") == "private", (
+        f"keychain_arg='private' must write 'private', got: {meta_private}"
+    )
+    assert meta_private.get("keychain") not in ("dedicated", "isolated"), (
+        "account.json must never contain old vocabulary after v0.45.0 write"
+    )
+
+    # Test none mode.
+    mod.do_config("work2", keychain_arg="none")
+    meta_none = json.loads((accounts_dir / "work2" / "account.json").read_text())
+    assert meta_none.get("keychain") == "none", (
+        f"keychain_arg='none' must write 'none', got: {meta_none}"
+    )
+    assert meta_none.get("keychain") not in ("dedicated", "isolated"), (
+        "account.json must never contain old vocabulary after v0.45.0 write"
+    )
+
+
+def test_v045_default_is_private_when_no_flag_and_no_prior_meta(monkeypatch, mod, tmp_path):
+    """Spec requirement: when no --keychain flag is passed AND no prior meta exists,
+    the default must be 'private' (not 'none' as it was in v0.44.x)."""
+    main_home = tmp_path / "main_home"
+    main_claude = main_home / ".claude"
+    accounts_dir = tmp_path / "accounts"
+
+    main_home.mkdir(parents=True)
+    main_claude.mkdir(parents=True)
+    accounts_dir.mkdir(parents=True)
+    _create_main_claude_sources_for_mod(mod, main_claude)
+
+    monkeypatch.setattr(mod, "MAIN_HOME", main_home)
+    monkeypatch.setattr(mod, "MAIN_CLAUDE", main_claude)
+    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
+    monkeypatch.setattr(mod, "SETTINGS_FILE", tmp_path / "settings.json")
+    monkeypatch.setattr(mod.sys, "platform", "darwin")
+    monkeypatch.setattr(mod.sys.stdin, "isatty", lambda: False)  # non-interactive
+    monkeypatch.setattr(mod, "_sec", lambda argv, **kw: _cp(0))
+    monkeypatch.setattr(mod, "show_banner", lambda *a, **kw: None)
+    monkeypatch.setattr(mod, "_status_wrap", lambda msg, fn: fn())
+    monkeypatch.setattr(mod, "load_settings", lambda: {})
+
+    # Fresh account — no account.json exists yet, no keychain_arg.
+    mod.do_config("freshaccount", keychain_arg=None)
+
+    meta = json.loads((accounts_dir / "freshaccount" / "account.json").read_text())
+    assert meta.get("keychain") == "private", (
+        f"v0.45.0 default must be 'private' for a fresh account with no prior meta; got {meta}"
     )

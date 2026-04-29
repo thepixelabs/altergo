@@ -94,9 +94,12 @@ def full_home(tmp_path):
     altergo.ACCOUNTS_DIR = accounts_dir
     altergo.SETTINGS_FILE = home / ".altergo" / ".altergo.json"
     try:
-        altergo.do_config("default")
-        altergo.do_config("work")
-        altergo.do_config("personal")
+        # Use keychain_arg="none" so the fixture does not attempt to plant
+        # unlock entries in the real macOS keychain during tests.  Integration
+        # tests that exercise keychain behaviour set keychain_arg explicitly.
+        altergo.do_config("default", keychain_arg="none")
+        altergo.do_config("work", keychain_arg="none")
+        altergo.do_config("personal", keychain_arg="none")
         altergo.set_active_account("default")
     finally:
         # Always restore — even if do_config raises.

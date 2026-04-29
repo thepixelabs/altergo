@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Altergo — multi-account session manager for AI coding assistants. Run 'altergo --help' for usage."""
 
-__version__ = "0.44.7"
+__version__ = "0.45.0"
 
 import curses
 import json
@@ -502,7 +502,7 @@ def show_help():
         (
             "altergo --config --keychain",
             f"{kw('altergo --config --keychain')} {arg('<m>')}",
-            "isolated | dedicated (macOS only)",
+            "private | none (macOS only)",
         ),
         ("altergo --use <account>", f"{kw('altergo --use')} {arg('<account>')}", "Set as default account"),
         ("altergo --teardown", f"{kw('altergo --teardown')} {arg('[--name <n>]')}", "Remove account + symlinks"),
@@ -1079,31 +1079,33 @@ def _coerce_meta_v3(data: dict) -> dict:
     out["version"] = 3
     out["providers"] = providers
     out["default_provider"] = default
-    # Keychain mode migration (v0.44.0): normalise legacy values in-memory.
+    # Keychain mode migration: normalise legacy values in-memory.
     # On-disk file is NOT rewritten here; persistence happens at next
     # do_config touch or via _reconcile_keychain_state on launch.
     #
-    # Migration map:
-    #   "system"    → "isolated"   (system mode renamed; behavior unchanged)
-    #   "shared"    → "isolated"   (shared was already deprecated alias for system)
-    #   "isolated"  → "isolated"   (kept as-is; old dedicated accounts will re-opt-in
-    #                               via --config --keychain dedicated on next touch)
-    #   "dedicated" → "dedicated"  (already current vocabulary)
-    #   absent key  → not set      (_is_keychain_isolated handles None as isolated)
+    # Migration map (v0.45.0 — private/none rename):
+    #   "system"    → "none"     (v0.43.x default; silent rename)
+    #   "shared"    → "none"     (deprecated alias for system; silent rename)
+    #   "isolated"  → "none"     (v0.44.x name; silent backwards-compat alias)
+    #   "dedicated" → "private"  (v0.44.x name; silent backwards-compat alias)
+    #   "none"      → "none"     (current vocabulary; pass through)
+    #   "private"   → "private"  (current vocabulary; pass through)
+    #   absent key  → not set    (_is_keychain_none handles None as none/default)
     #
-    # Note: we intentionally do NOT map old "isolated" → "dedicated" here because
+    # Note: we intentionally do NOT map absent key → "private" here because
     # that mapping would create a read-write loop: _coerce_meta_v3 runs on every
-    # load_account_meta call, so writing "isolated" then reading it would give
-    # "dedicated", defeating the isolation. Legacy "isolated" accounts on first
-    # --config touch will be prompted for keychain mode and can opt into dedicated.
+    # load_account_meta call, so writing "none" then reading it would give
+    # "private", changing existing none accounts silently. The absent-key → "private"
+    # default is applied at decision points (_is_keychain_private, do_config,
+    # _reconcile_keychain_state) where context makes the intent clear.
     kc = data.get("keychain")
-    if kc == "system":
-        out["keychain"] = "isolated"  # silent rename: system → isolated
-    elif kc == "shared":
-        out["keychain"] = "isolated"  # silent rename: shared → isolated
-    elif kc in ("isolated", "dedicated"):
+    if kc in ("system", "shared", "isolated"):
+        out["keychain"] = "none"  # silent backwards-compat rename → none
+    elif kc == "dedicated":
+        out["keychain"] = "private"  # silent backwards-compat rename → private
+    elif kc in ("none", "private"):
         out["keychain"] = kc  # pass through current-vocabulary values
-    # else (missing key): do NOT set — _is_keychain_isolated handles None as isolated
+    # else (missing key): do NOT set — _is_keychain_none handles None as none (default)
     return out
 
 
@@ -2701,11 +2703,11 @@ def do_config(account: str = "default", provider: str = "claude", *, keychain_ar
 
     # Surface current keychain mode so the user knows what they're changing.
     if sys.platform == "darwin":
-        current_kc = (meta or {}).get("keychain") or "isolated"  # default = isolated
-        if current_kc == "dedicated":
-            label = "dedicated (per-account keychain)"
+        current_kc = (meta or {}).get("keychain") or "private"  # default = private
+        if current_kc == "private":
+            label = "private (per-account keychain)"
         else:
-            label = "isolated (default)"
+            label = "none (flat files only)"
         print(_c(C("dim"), f"  Current keychain: {label}"))
 
     # 1. Create account home
@@ -2727,31 +2729,33 @@ def do_config(account: str = "default", provider: str = "claude", *, keychain_ar
 
     _status_wrap("Linking shared credentials…", _apply_catalog_entries)
 
-    # 5. Keychain mode (macOS only). Default: isolated (blocks keychain writes).
-    keychain_mode = "isolated"  # new default
+    # 5. Keychain mode (macOS only). Default: private (per-account keychain).
+    keychain_mode = "private"  # new default in v0.45.0
     if sys.platform == "darwin":
         if keychain_arg is not None:
             # Normalise deprecated aliases (CLI parser also does this, but direct
             # callers may bypass the parser so we normalise here too).
-            if keychain_arg in ("system", "shared"):
-                keychain_arg = "isolated"
+            if keychain_arg in ("system", "shared", "isolated"):
+                keychain_arg = "none"
+            elif keychain_arg == "dedicated":
+                keychain_arg = "private"
             keychain_mode = keychain_arg
-        elif meta and meta.get("keychain") == "dedicated":
-            # Re-config of a dedicated account — preserve unless user says otherwise.
-            keychain_mode = "dedicated"
+        elif meta and meta.get("keychain") == "none":
+            # Re-config of a none account — preserve unless user says otherwise.
+            keychain_mode = "none"
         elif sys.stdin.isatty():
-            # Interactive prompt — default depends on existing mode.
+            # Interactive prompt — default is now private (per-account keychain).
             print()
             print(_c(C("header"), "  Keychain mode (macOS)"))
-            print(_c(2, "  Default: isolated — altergo blocks this account from using the macOS keychain;"))
-            print(_c(2, "  providers fall back to flat-file credentials under the account's HOME."))
-            print(_c(2, "  Alternative: dedicated — per-account keychain file, unlocked on session start."))
-            prompt = "  Enable 'dedicated' (per-account keychain)? [y/N] "
+            print(_c(2, "  Default: private — each account gets its own per-account keychain,"))
+            print(_c(2, "  unlocked silently at session start. Tokens stay per-account-isolated."))
+            print(_c(2, "  Alternative: none — no keychain; providers fall back to flat-file credentials."))
+            prompt = "  Enable per-account keychain ('private' mode)? [Y/n] "
             try:
                 answer = input(prompt).strip().lower()
             except (KeyboardInterrupt, EOFError):
                 answer = ""
-            keychain_mode = "dedicated" if answer in ("y", "yes") else "isolated"
+            keychain_mode = "none" if answer in ("n", "no") else "private"
 
         # Repair any pre-existing drift before applying the user's intent.
         # desired=None is cheap when state is consistent (no security calls).
@@ -2766,15 +2770,15 @@ def do_config(account: str = "default", provider: str = "claude", *, keychain_ar
             _apply_keychain_mode(account_home, account, keychain_mode, prior_meta=meta)
         except KeychainError as e:
             print(f"  {_c(33, '⚠')} Keychain setup failed: {e}", file=sys.stderr)
-            print("    Continuing with isolated mode (flat-file credentials).", file=sys.stderr)
-            keychain_mode = "isolated"
+            print("    Continuing with none mode (flat-file credentials).", file=sys.stderr)
+            keychain_mode = "none"
         else:
-            if keychain_mode == "dedicated":
+            if keychain_mode == "private":
                 print(f"  {_c(32, '✓')} Per-account keychain created/verified")
                 print(
                     _c(
                         2,
-                        "  NOTE: dedicated mode requires your login keychain to be unlocked "
+                        "  NOTE: private mode requires your login keychain to be unlocked "
                         "(standard on GUI login; check Keychain Access → Preferences if auto-lock is aggressive)",
                     )
                 )
@@ -2793,7 +2797,7 @@ def do_config(account: str = "default", provider: str = "claude", *, keychain_ar
         "created": (meta.get("created") if meta else None) or datetime.now().isoformat(timespec="seconds"),
     }
     # Always record keychain key so A is never absent after first --config touch.
-    meta_to_save["keychain"] = keychain_mode  # "isolated" or "dedicated"
+    meta_to_save["keychain"] = keychain_mode  # "none" or "private"
     save_account_meta(account_home, meta_to_save)
 
     launch_cmd = f"altergo {account}" if account != "default" else "altergo"
@@ -5904,7 +5908,7 @@ def _sec_create_keychain(kc_path: Path, password: str) -> None:
 def _create_account_keychain(account_home: Path, slug: str, *, plant_unlock_entry: bool = True) -> None:
     """Create (or reconcile) the per-account keychain.
 
-    When plant_unlock_entry=True (dedicated mode):
+    When plant_unlock_entry=True (private mode):
       Explicit case analysis on (C, D) presence so every partial-state the
       failure matrix enumerates falls through to a consistent fresh build:
       Case 1 — C present, D present, unlock succeeds  → reuse (write B, return).
@@ -5913,12 +5917,12 @@ def _create_account_keychain(account_home: Path, slug: str, *, plant_unlock_entr
       Case 4 — C absent,  D present (stale entry)      → delete D,   fall through.
       Case 5 — C absent,  D absent  (fresh)            → build from scratch.
 
-    When plant_unlock_entry=False (isolated mode):
+    When plant_unlock_entry=False (none mode):
       The keychain file exists purely to route Security.framework writes to a
       locked-forever per-account keychain (causing writes to fail, which is the
-      desired behaviour for isolated mode). No unlock entry is planted anywhere.
+      desired behaviour for none mode). No unlock entry is planted anywhere.
       Case 1/2 fast path: if C already exists, leave it alone.
-      Case 4 stale entry: delete D (cleanup from prior dedicated run).
+      Case 4 stale entry: delete D (cleanup from prior private run).
       Case 5 fresh build: create C with a discarded random password, skip D.
 
     After every path B (plist) is written, establishing invariant §5.3.
@@ -5931,10 +5935,10 @@ def _create_account_keychain(account_home: Path, slug: str, *, plant_unlock_entr
     d_present = d_result.returncode == 0
 
     if not plant_unlock_entry:
-        # Isolated mode: we need C present (for Security.framework routing) but no D.
+        # None mode: we need C present (for Security.framework routing) but no D.
         if c_present:
             # C already exists — leave it alone (preserve-and-reuse).
-            # Any stale D from a prior dedicated run will be cleaned up by
+            # Any stale D from a prior private run will be cleaned up by
             # _apply_keychain_mode before we get here, but delete defensively.
             if d_present:
                 _sec(["delete-generic-password", "-s", _KC_SERVICE, "-a", slug], check=False)
@@ -5947,11 +5951,11 @@ def _create_account_keychain(account_home: Path, slug: str, *, plant_unlock_entr
         P = secrets.token_bytes(32).hex()
         _sec_create_keychain(kc_path, P)
         _sec(["set-keychain-settings", str(kc_path)])
-        # Do NOT call add-generic-password — that's the whole point of isolated mode.
+        # Do NOT call add-generic-password — that's the whole point of none mode.
         _write_keychain_prefs(account_home)
         return
 
-    # plant_unlock_entry=True (dedicated mode): full case analysis.
+    # plant_unlock_entry=True (private mode): full case analysis.
     if c_present and d_present:
         # Probe whether D's password actually unlocks C (Case 1 vs Case 2).
         P_probe = d_result.stdout.rstrip("\n")
@@ -6004,12 +6008,20 @@ def _create_account_keychain(account_home: Path, slug: str, *, plant_unlock_entr
 
 
 def _create_account_keychain_dedicated(account_home: Path, slug: str) -> None:
-    """Thin wrapper: create per-account keychain with unlock entry (dedicated mode)."""
+    """Thin wrapper: create per-account keychain with unlock entry (private mode).
+
+    The name retains 'dedicated' for historical reasons; functionally equivalent
+    to the v0.45.0 'private' mode.
+    """
     _create_account_keychain(account_home, slug, plant_unlock_entry=True)
 
 
 def _create_account_keychain_isolated(account_home: Path, slug: str) -> None:
-    """Thin wrapper: create per-account keychain without unlock entry (isolated mode)."""
+    """Thin wrapper: create per-account keychain without unlock entry (none mode).
+
+    The name retains 'isolated' for historical reasons; functionally equivalent
+    to the v0.45.0 'none' mode.
+    """
     _create_account_keychain(account_home, slug, plant_unlock_entry=False)
 
 
@@ -6072,26 +6084,49 @@ def _delete_account_keychain(account_home: Path, slug: str) -> None:
     _keychain_prefs_path(account_home).unlink(missing_ok=True)
 
 
-def _is_keychain_dedicated(meta: dict | None) -> bool:
-    """True if meta requests per-account keychain with unlock on session start (opt-in).
+def _is_keychain_private(meta: dict | None) -> bool:
+    """True if meta requests per-account keychain with unlock on session start.
 
-    Only returns True for explicit "dedicated" — never for None/missing/isolated.
+    Returns True for explicit "private" or the v0.44.x backwards-compat alias
+    "dedicated" (already coerced to "private" by _coerce_meta_v3).
+    Returns True for absent key (the new default since v0.45.0 is private).
     """
-    return bool(meta) and meta.get("keychain") == "dedicated"
+    if not meta:
+        return True  # absent meta → private by default
+    kc = meta.get("keychain")
+    if kc is None:
+        return True  # absent key → private by default
+    return kc == "private"  # "dedicated" already normalised to "private" by coerce
+
+
+def _is_keychain_dedicated(meta: dict | None) -> bool:
+    """Backwards-compat alias for _is_keychain_private (v0.44.x name).
+
+    Retained so existing callers and tests continue to work without change.
+    """
+    return _is_keychain_private(meta)
+
+
+def _is_keychain_none(meta: dict | None) -> bool:
+    """True if meta requests no keychain (flat-file credentials only).
+
+    Returns True only for explicit "none" (or its v0.44.x alias "isolated",
+    already coerced to "none" by _coerce_meta_v3).
+    """
+    if not meta:
+        return False  # absent meta → private by default, not none
+    kc = meta.get("keychain")
+    if kc is None:
+        return False  # absent key → private by default
+    return kc == "none"  # "isolated" already normalised to "none" by coerce
 
 
 def _is_keychain_isolated(meta: dict | None) -> bool:
-    """True if meta requests keychain blocking (the new default, no unlock entry).
+    """Backwards-compat alias for _is_keychain_none (v0.44.x name).
 
-    Treats absent key as isolated — new default so legacy accounts are safe.
-    Note: semantics changed in v0.44.0. All callers in this file have been
-    audited; _build_alt_env now gates on _is_keychain_dedicated instead.
-    This function is kept for tests and future use but no production caller
-    currently acts on it to unlock the keychain.
+    Retained so existing callers and tests continue to work without change.
     """
-    if not meta:
-        return True
-    return meta.get("keychain", "isolated") == "isolated"
+    return _is_keychain_none(meta)
 
 
 def _read_raw_account_keychain_key(account_home: Path) -> str | None:
@@ -6120,17 +6155,26 @@ def _save_meta_keychain(account_home: Path, current_meta: dict | None, new_value
 def _reconcile_keychain_state(account_home: Path, slug: str, desired: str | None = None) -> None:
     """Reconcile (A, B, C, D) to a consistent state.
 
-    desired="dedicated": ensure B+C+D exist and are consistent; write A="dedicated".
-    desired="isolated":  ensure B+C exist, D absent; delete stale D; write A="isolated".
-    desired=None:        launch-time drift repair. Cheap — avoids destructive ops.
-                         Never delete user data at launch time.
+    desired="private": ensure B+C+D exist and are consistent; write A="private".
+    desired="none":    ensure B+C exist, D absent; delete stale D; write A="none".
+    desired=None:      launch-time drift repair. Cheap — avoids destructive ops.
+                       Never delete user data at launch time.
+
+    Accepts legacy desired values "dedicated" (→ "private") and "isolated" (→ "none")
+    so call sites that pre-date v0.45.0 continue to work transparently.
 
     Call sites:
     - _build_alt_env: desired=None (launch-time silent repair).
     - do_config:      _apply_keychain_mode handles do_config transitions.
     - do_delete_account: not needed — destructive by design; presence probe handles it.
     """
-    meta = load_account_meta(account_home)  # already coerced → "isolated"|"dedicated"|missing
+    # Normalise legacy desired values silently.
+    if desired == "dedicated":
+        desired = "private"
+    elif desired == "isolated":
+        desired = "none"
+
+    meta = load_account_meta(account_home)  # already coerced → "none"|"private"|missing
     b_present = _keychain_prefs_path(account_home).exists()
     c_present = _keychain_path(account_home).exists()
     d_result = _sec(["find-generic-password", "-s", _KC_SERVICE, "-a", slug, "-w"], check=False)
@@ -6141,33 +6185,34 @@ def _reconcile_keychain_state(account_home: Path, slug: str, desired: str | None
     a_coerced = (meta or {}).get("keychain")
     a_needs_persist = a_raw != a_coerced
 
-    if desired == "dedicated":
+    if desired == "private":
         _create_account_keychain(account_home, slug, plant_unlock_entry=True)
-        _save_meta_keychain(account_home, meta, "dedicated")
+        _save_meta_keychain(account_home, meta, "private")
         return
 
-    if desired == "isolated":
+    if desired == "none":
         # Ensure plist + empty locked keychain exist.
-        # Remove any leftover unlock entry from a prior dedicated run.
+        # Remove any leftover unlock entry from a prior private run.
         if d_present:
             _sec(["delete-generic-password", "-s", _KC_SERVICE, "-a", slug], check=False)
         _create_account_keychain(account_home, slug, plant_unlock_entry=False)
-        _save_meta_keychain(account_home, meta, "isolated")
+        _save_meta_keychain(account_home, meta, "none")
         return
 
     # desired=None: launch-time drift repair. Must be cheap; no destructive ops.
-    current = a_coerced or "isolated"  # default for legacy/missing
+    # Default is now "private" (v0.45.0): absent key → private behaviour.
+    current = a_coerced or "private"  # default for legacy/missing
 
-    if current == "dedicated":
+    if current == "private":
         # Verify B+C+D consistent; if drift, rebuild (preserves existing behaviour).
         if not b_present:
-            # B missing while A says dedicated — drift. Rebuild silently.
+            # B missing while A says private — drift. Rebuild silently.
             print(
                 _c(2, f"  altergo: repairing keychain state for '{slug}'"),
                 file=sys.stderr,
             )
             _create_account_keychain(account_home, slug, plant_unlock_entry=True)
-            _save_meta_keychain(account_home, meta, "dedicated")
+            _save_meta_keychain(account_home, meta, "private")
             return
         if not c_present or not d_present:
             print(
@@ -6175,7 +6220,7 @@ def _reconcile_keychain_state(account_home: Path, slug: str, desired: str | None
                 file=sys.stderr,
             )
             _create_account_keychain(account_home, slug, plant_unlock_entry=True)
-            _save_meta_keychain(account_home, meta, "dedicated")
+            _save_meta_keychain(account_home, meta, "private")
             return
         # C and D present — probe the unlock to confirm password consistency.
         P_probe = d_result.stdout.rstrip("\n")
@@ -6186,14 +6231,14 @@ def _reconcile_keychain_state(account_home: Path, slug: str, desired: str | None
                 file=sys.stderr,
             )
             _create_account_keychain(account_home, slug, plant_unlock_entry=True)
-            _save_meta_keychain(account_home, meta, "dedicated")
+            _save_meta_keychain(account_home, meta, "private")
             return
         # B+C+D all consistent. Persist migration if needed.
         if a_needs_persist:
-            _save_meta_keychain(account_home, meta, "dedicated")
+            _save_meta_keychain(account_home, meta, "private")
         return
 
-    elif current == "isolated":
+    elif current == "none":
         # Target state: B present, C present, D absent.
         # Drift fixes at launch are non-destructive.
         #   B missing → plant B (no shell-out required).
@@ -6202,47 +6247,56 @@ def _reconcile_keychain_state(account_home: Path, slug: str, desired: str | None
         if not b_present:
             _write_keychain_prefs(account_home)
         # Persist A normalisation if migration just ran.
-        if a_needs_persist or a_coerced != "isolated":
-            _save_meta_keychain(account_home, meta, "isolated")
+        if a_needs_persist or a_coerced != "none":
+            _save_meta_keychain(account_home, meta, "none")
         return
 
     else:
         # Should not reach here — _coerce_meta_v3 normalises everything legal.
-        # Treat as isolated (the safe default).
+        # Treat as private (the default since v0.45.0).
         if not b_present:
             _write_keychain_prefs(account_home)
-        _save_meta_keychain(account_home, meta, "isolated")
+        _save_meta_keychain(account_home, meta, "private")
 
 
 def _apply_keychain_mode(account_home: Path, slug: str, mode: str, *, prior_meta: dict | None) -> None:
-    """Transition the account to `mode` ('isolated' | 'dedicated'), idempotent.
+    """Transition the account to `mode` ('none' | 'private'), idempotent.
+
+    Accepts legacy mode values "dedicated" (→ "private") and "isolated" (→ "none")
+    for call sites that pre-date v0.45.0.
 
     Pre-flight stamps meta["keychain"]=mode BEFORE any security-framework
     mutation so a crash mid-operation is heal-able by the reconciler on next
     launch (invariant §5.1).
 
-    mode="dedicated":
-      - Pre-flight stamp meta["keychain"]="dedicated".
+    mode="private":
+      - Pre-flight stamp meta["keychain"]="private".
       - _create_account_keychain_dedicated → ensures per-account
         login.keychain-db + unlock entry + plist.
 
-    mode="isolated":
-      - Pre-flight stamp meta["keychain"]="isolated".
+    mode="none":
+      - Pre-flight stamp meta["keychain"]="none".
       - If an unlock entry exists in the real login keychain (from a prior
-        dedicated run), remove it. This matches the "zero altergo footprint
-        in your real login keychain" promise of isolated mode. The per-account
+        private run), remove it. This matches the "zero altergo footprint
+        in your real login keychain" promise of none mode. The per-account
         login.keychain-db file is preserved on disk (preserve-and-reuse) so a
-        later switch back to dedicated can reuse it.
+        later switch back to private can reuse it.
       - _create_account_keychain_isolated → ensures plist + empty locked
         per-account keychain (C) exist WITHOUT an unlock entry.
     """
+    # Normalise legacy mode values silently.
+    if mode == "dedicated":
+        mode = "private"
+    elif mode == "isolated":
+        mode = "none"
+
     # Pre-flight stamp so the reconciler can heal a crash mid-operation.
     _save_meta_keychain(account_home, prior_meta, mode)
 
-    if mode == "dedicated":
+    if mode == "private":
         _create_account_keychain_dedicated(account_home, slug)
     else:
-        # isolated: delete any stale unlock entry first, then ensure C+B.
+        # none: delete any stale unlock entry first, then ensure C+B.
         d_result = _sec(["find-generic-password", "-s", _KC_SERVICE, "-a", slug, "-w"], check=False)
         if d_result.returncode == 0:
             _sec(["delete-generic-password", "-s", _KC_SERVICE, "-a", slug], check=False)
@@ -6268,7 +6322,7 @@ def _build_alt_env(account: str = "default") -> dict:
             # Continue — _unlock_account_keychain below will give a better error
             # if isolation is still expected.
     meta = load_account_meta(account_home)
-    if sys.platform == "darwin" and _is_keychain_dedicated(meta):
+    if sys.platform == "darwin" and _is_keychain_private(meta):
         try:
             _unlock_account_keychain(account_home, account)
         except KeychainError as e:
@@ -7070,10 +7124,10 @@ def _run_config_picker(accounts: list, start_cursor: int = 0) -> tuple | None:
                     prov_label = PROVIDERS.get(pid, {}).get("display_name", pid or "")
                     marker = "●" if is_active else " "
                     email_str = email or ""
-                    if kc_mode == "dedicated":
-                        kc_suffix = "  ·  keychain: dedicated"
+                    if kc_mode == "private":
+                        kc_suffix = "  ·  keychain: private"
                     else:
-                        kc_suffix = ""  # isolated is the default — do not clutter rows
+                        kc_suffix = ""  # none is the opt-out — do not clutter rows
                     line = (
                         f"  {marker} {name[:name_w].ljust(name_w)}"
                         f"  {prov_label[:prov_w].ljust(prov_w)}  {email_str}{kc_suffix}"
@@ -7723,11 +7777,11 @@ def main():
         #   altergo --config <name>                             (named, interactive provider picker)
         #   altergo --config <name> --provider claude           (fully specified)
         #   altergo --config --provider gemini                  (interactive name, specified provider)
-        #   altergo --config <name> --keychain isolated|dedicated  (non-interactive keychain mode)
+        #   altergo --config <name> --keychain private|none  (non-interactive keychain mode)
         remaining = args[1:]
         name = None
         provider_arg = None
-        keychain_arg = None  # "isolated", "dedicated", or None (prompt/default)
+        keychain_arg = None  # "private", "none", or None (prompt/default)
         i = 0
         while i < len(remaining):
             if remaining[i] == "--provider" and i + 1 < len(remaining):
@@ -7737,14 +7791,17 @@ def main():
                 keychain_arg = remaining[i + 1]
                 if keychain_arg in ("system", "shared"):
                     print(
-                        f"altergo: --keychain {keychain_arg} is deprecated; use --keychain isolated "
+                        f"altergo: --keychain {keychain_arg} is deprecated; use --keychain none "
                         "(alias will be removed in v0.46.0)",
                         file=sys.stderr,
                     )
-                    keychain_arg = "isolated"
-                elif keychain_arg not in ("isolated", "dedicated"):
+                    keychain_arg = "none"
+                elif keychain_arg in ("isolated", "dedicated"):
+                    # Silent backwards-compat alias (v0.44.x names) — no warning.
+                    keychain_arg = "none" if keychain_arg == "isolated" else "private"
+                elif keychain_arg not in ("private", "none"):
                     print(
-                        f"altergo: --keychain must be 'isolated' or 'dedicated', got '{keychain_arg}'",
+                        f"altergo: --keychain must be 'private' or 'none', got '{keychain_arg}'",
                         file=sys.stderr,
                     )
                     sys.exit(1)

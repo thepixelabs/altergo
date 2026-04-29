@@ -904,11 +904,22 @@ def test_native_build_alt_env_does_not_change_home(monkeypatch):
 
 def test_native_build_alt_env_regular_account_changes_home(tmp_path, monkeypatch):
     """_build_alt_env for a regular account sets HOME to the account dir."""
+    import subprocess, json as _json
+
     mod = _load_altergo()
     accounts_dir = tmp_path / "accounts"
-    accounts_dir.mkdir()
+    account_home = accounts_dir / "work"
+    account_home.mkdir(parents=True)
     monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
     monkeypatch.setenv("HOME", "/original/home")
+
+    # Write none-mode meta so the reconciler does not attempt to create a
+    # per-account keychain (which would call security and require authorization).
+    (account_home / "account.json").write_text(
+        _json.dumps({"version": 3, "providers": ["claude"], "default_provider": "claude", "keychain": "none"})
+    )
+    # Stub _sec to avoid any real security(1) calls in the none-mode reconciler path.
+    monkeypatch.setattr(mod, "_sec", lambda argv, **kw: subprocess.CompletedProcess([], 0, "", ""))
 
     env = mod._build_alt_env("work")
 

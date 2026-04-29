@@ -1,6 +1,34 @@
 # CHANGELOG
 
 
+## v0.45.0 (2026-04-30)
+
+### Features
+
+- **keychain**: Rename modes to `private`/`none` and flip default to `private`
+
+  `dedicated` → `private` (per-account keychain, unlocked at session start).
+  `isolated` → `none` (no keychain; flat-file credentials only).
+
+  Both old names are accepted silently as backwards-compat aliases — no warning,
+  no manual migration required. On-disk values coerce in memory; the canonical
+  name is written on the next `--config` touch.
+
+  Default flipped: absent `keychain` key and `--config` without `--keychain` now
+  default to `private` (was `none`/`isolated` since v0.44.0). The macOS system
+  dialog that appeared when providers tried to write to the permanently-locked
+  isolated keychain is eliminated — `private` mode unlocks silently.
+
+  `--keychain system` and `--keychain shared` remain deprecated with a warning
+  (removal in v0.46.0). `--keychain dedicated` and `--keychain isolated` are
+  now silent backwards-compat aliases (no warning).
+
+  Internal helpers `_is_keychain_dedicated` and `_is_keychain_isolated` remain
+  as backwards-compat wrappers for `_is_keychain_private` and `_is_keychain_none`.
+
+  See [docs/migration.md](docs/migration.md#v0450--keychain-mode-rename-private--none).
+
+
 ## v0.44.7 (2026-04-29)
 
 ### Bug Fixes

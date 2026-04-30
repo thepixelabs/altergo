@@ -1,6 +1,23 @@
 # CHANGELOG
 
 
+## v1.0.1 (2026-04-30)
+
+### Bug Fixes
+
+- **keychain**: Clarify that orphaned keychain rebuild loses tokens
+  ([#44](https://github.com/thepixelabs/altergo/pull/44),
+  [`2a11cce`](https://github.com/thepixelabs/altergo/commit/2a11cce2fdea4af57f43623b965e149f91d37ea7))
+
+When _create_account_keychain hits Case 3 (keychain file present but no unlock entry in real login
+  keychain), it deletes the keychain file and rebuilds. Any tokens stored in the orphan are
+  unrecoverable since we have no way to unlock it.
+
+The previous message ("Orphaned keychain file found — rebuilding") didn't tell the user that
+  re-authentication is needed. Update the message to explicitly call out the data loss so users
+  aren't surprised when their provider asks them to log in again on the next launch.
+
+
 ## v1.0.0 (2026-04-29)
 
 ### Features

@@ -6023,7 +6023,12 @@ def _create_account_keychain(account_home: Path, slug: str, *, plant_unlock_entr
 
     elif c_present and not d_present:
         # Case 3: orphaned keychain file — delete C, rebuild.
-        print(_c(2, "  Orphaned keychain file found — rebuilding"), file=sys.stderr)
+        # Warn that any tokens stored in the orphan are unrecoverable, since
+        # without D we have no way to unlock C and migrate them.
+        print(
+            _c(2, "  Orphaned keychain file found — rebuilding (any tokens inside are lost; re-auth required)"),
+            file=sys.stderr,
+        )
         _sec(["delete-keychain", str(kc_path)], check=False)
 
     elif not c_present and d_present:

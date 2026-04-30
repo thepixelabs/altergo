@@ -1,6 +1,21 @@
 # CHANGELOG
 
 
+## v1.0.2 (2026-04-30)
+
+### Bug Fixes
+
+- **keychain**: Print heads-up before partition list grant prompts user
+  ([#45](https://github.com/thepixelabs/altergo/pull/45),
+  [`438488c`](https://github.com/thepixelabs/altergo/commit/438488c6a70b0e50dbd6b9302c86d13f3c6c401a))
+
+When altergo creates a private-mode account it calls set-generic-password-partition-list, which
+  prompts the user for their login password to authorize the change. Without context, the user sees
+  "security wants to make changes" appear out of nowhere and may be confused about what's being
+  asked. Print a single dim line beforehand when running in a TTY so the user knows the prompt is
+  coming and what to type.
+
+
 ## v1.0.1 (2026-04-30)
 
 ### Bug Fixes

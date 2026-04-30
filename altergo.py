@@ -6054,6 +6054,14 @@ def _create_account_keychain(account_home: Path, slug: str, *, plant_unlock_entr
     # updates, denied prompts). Pin apple-tool: + apple: so /usr/bin/security
     # reads silently. This call may itself prompt for the login keychain
     # password once at creation time — acceptable since --config is interactive.
+    if sys.stdout.isatty():
+        print(
+            _c(
+                2,
+                "  macOS may prompt for your login password to authorize the keychain entry — "
+                "this is normal. Type your Mac login password.",
+            )
+        )
     _sec(
         ["set-generic-password-partition-list", "-S", "apple-tool:,apple:", "-s", _KC_SERVICE, "-a", slug],
         check=False,

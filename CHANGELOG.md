@@ -1,13 +1,23 @@
 # CHANGELOG
 
 
+## v1.1.0 (2026-05-03)
+
+### Features
+
+- Republish v1.x release pipeline after repo recreate
+  ([`c149e21`](https://github.com/thepixelabs/altergo/commit/c149e21bb7c1c53ac4637cf338bfff62b7bd47a9))
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+
+
 ## v1.0.2 (2026-04-30)
 
 ### Bug Fixes
 
 - **keychain**: Print heads-up before partition list grant prompts user
   ([#45](https://github.com/thepixelabs/altergo/pull/45),
-  [`438488c`](https://github.com/thepixelabs/altergo/commit/438488c6a70b0e50dbd6b9302c86d13f3c6c401a))
+  [`47c88d8`](https://github.com/thepixelabs/altergo/commit/47c88d8c083241dfdcffa178717be2421c6f24c5))
 
 When altergo creates a private-mode account it calls set-generic-password-partition-list, which
   prompts the user for their login password to authorize the change. Without context, the user sees
@@ -22,7 +32,7 @@ When altergo creates a private-mode account it calls set-generic-password-partit
 
 - **keychain**: Clarify that orphaned keychain rebuild loses tokens
   ([#44](https://github.com/thepixelabs/altergo/pull/44),
-  [`2a11cce`](https://github.com/thepixelabs/altergo/commit/2a11cce2fdea4af57f43623b965e149f91d37ea7))
+  [`5113fa0`](https://github.com/thepixelabs/altergo/commit/5113fa02f98c9117d567b9c43a0ca450bbd49932))
 
 When _create_account_keychain hits Case 3 (keychain file present but no unlock entry in real login
   keychain), it deletes the keychain file and rebuilds. Any tokens stored in the orphan are
@@ -39,7 +49,7 @@ The previous message ("Orphaned keychain file found — rebuilding") didn't tell
 
 - **keychain**: Drop legacy mode aliases (dedicated/isolated/system/shared) + add Cancel warning
   ([#43](https://github.com/thepixelabs/altergo/pull/43),
-  [`64c4984`](https://github.com/thepixelabs/altergo/commit/64c4984c5076c66a8f12decc64d649d7b6c5ce8f))
+  [`d8e39a6`](https://github.com/thepixelabs/altergo/commit/d8e39a6f311258c010fd241fb4399cdfed85f0a4))
 
 BREAKING CHANGE: --keychain now only accepts 'private' and 'none'. All four legacy aliases
   (dedicated, isolated, system, shared) are rejected with a hard error at the CLI level. Accounts
@@ -70,7 +80,7 @@ BREAKING CHANGE: --keychain now only accepts 'private' and 'none'. All four lega
 
 - **keychain**: Rename modes to private/none, flip default to private
   ([#42](https://github.com/thepixelabs/altergo/pull/42),
-  [`798af23`](https://github.com/thepixelabs/altergo/commit/798af233d8f8a87e49eb8f88ea75007dfd0f36fd))
+  [`ce0fa7a`](https://github.com/thepixelabs/altergo/commit/ce0fa7a78bd1592b46a2ce46b8a630ee5031580f))
 
 - Canonical names: dedicated → private, isolated → none - Silent backwards-compat:
   dedicated/isolated accepted on read (CLI + account.json) without warning, normalised to
@@ -94,7 +104,7 @@ BREAKING CHANGE: --keychain now only accepts 'private' and 'none'. All four lega
 
 - **keychain**: Pin partition list on dedicated unlock entry to prevent re-prompts
   ([#41](https://github.com/thepixelabs/altergo/pull/41),
-  [`5aef7b4`](https://github.com/thepixelabs/altergo/commit/5aef7b4a9284987c5cb11f24679fd3c537e3badf))
+  [`9b6815a`](https://github.com/thepixelabs/altergo/commit/9b6815a916a0200abbc5e3aa7eabf85cc1922182))
 
 When altergo creates a dedicated-mode unlock entry it sets the ACL via 'add-generic-password -T
   /usr/bin/security'. Sierra+ enforces a second layer called the partition list, and without
@@ -124,7 +134,7 @@ Existing dedicated entries created before this fix still need a one-time manual 
 
 - **keychain**: Prevent per-account keychains from polluting real HOME search list
   ([#40](https://github.com/thepixelabs/altergo/pull/40),
-  [`cbd0b5c`](https://github.com/thepixelabs/altergo/commit/cbd0b5c597287ef146607adfeb3cbfa24118bc71))
+  [`6b11c33`](https://github.com/thepixelabs/altergo/commit/6b11c337265c5a8dc8e3f580a49ec6f24b02a02b))
 
 * fix(keychain): prevent per-account keychains from polluting real HOME search list
 
@@ -149,7 +159,7 @@ docs: explain the search list hygiene behaviour in keychain-isolation.md
 
 - **settings**: Clarify catalog sharing intent + fix warn icon visibility
   ([#39](https://github.com/thepixelabs/altergo/pull/39),
-  [`3146747`](https://github.com/thepixelabs/altergo/commit/3146747ece3e1095fc4c021be087499bb0ab3491))
+  [`ccb7cb3`](https://github.com/thepixelabs/altergo/commit/ccb7cb392d0ff48bcf3d56699ac5607896dae40f))
 
 - README + keychain-isolation.md: document that gh/aws/gcloud symlinks are independent of keychain
   mode and shared by design (AI provider credentials are what gets isolated, not dev infrastructure)
@@ -163,7 +173,7 @@ docs: explain the search list hygiene behaviour in keychain-isolation.md
 ### Bug Fixes
 
 - **landing**: Swap stale 'open source' phrasing to fair-code
-  ([`15d8d25`](https://github.com/thepixelabs/altergo/commit/15d8d25be64b1168ddaf7f40c1fd82375c0f1ebd))
+  ([`957758a`](https://github.com/thepixelabs/altergo/commit/957758a7ea2a5f79023c5b1a22532f842a4f2b25))
 
 Two leftover strings on the landing page were still describing altergo as 'open source' —
   technically inaccurate under PolyForm Shield 1.0.0 (which is source-available / fair-code, not OSI
@@ -173,7 +183,7 @@ Two leftover strings on the landing page were still describing altergo as 'open 
 
 - Add keychain repair FAQ and relicense to PolyForm Shield 1.0.0
   ([#37](https://github.com/thepixelabs/altergo/pull/37),
-  [`3fde668`](https://github.com/thepixelabs/altergo/commit/3fde6682b496f4d7869e7c95d097149cb02e05ca))
+  [`1c4a32d`](https://github.com/thepixelabs/altergo/commit/1c4a32d8a0f45e9a6a1cdbe164a8d4a0671484ea))
 
 FAQ - New docs/faq.md with plain-language entries for the three keychain repair stderr messages
   users may see at launch in dedicated keychain mode (repairing keychain state, password mismatch,
@@ -194,7 +204,7 @@ License - Replace prior license with PolyForm Shield 1.0.0 (fair-code, source-av
 
 - --add-provider must not pool credentials into MAIN_HOME
   ([#24](https://github.com/thepixelabs/altergo/pull/24),
-  [`60098cc`](https://github.com/thepixelabs/altergo/commit/60098cc210386a88cf58e77ef28337336d6f5108))
+  [`947456f`](https://github.com/thepixelabs/altergo/commit/947456f5cea383f24c86c62fd97c70744da34779))
 
 _reconcile_orphan_dot_dir was iterating every child of account_home/<dot>/ and moving it into
   MAIN_HOME/<dot>/. That includes auth.json / oauth_creds.json / .credentials.json — the per-account
@@ -214,17 +224,17 @@ Added test_add_provider_preserves_credentials_per_account that asserts auth.json
   stay account-local while sessions/ migrates.
 
 - --resume always launched with hardcoded default account
-  ([`02ba620`](https://github.com/thepixelabs/altergo/commit/02ba620f3b1607f914f7e63843f90fc678e89444))
+  ([`c677ab8`](https://github.com/thepixelabs/altergo/commit/c677ab8c0299842f8a75292c934dde884752caf6))
 
 - Altergo is now a transparent claude wrapper — no more auto-picker
-  ([`599fcc6`](https://github.com/thepixelabs/altergo/commit/599fcc6de4790e3f4dab8a99682a62be77057004))
+  ([`2845e1f`](https://github.com/thepixelabs/altergo/commit/2845e1f3444122a646a8e32e383ede40d51f350a))
 
 - altergo (no args) → claude (starts new session) - altergo [any flags] → claude [any flags] (full
   pass-through) - altergo --resume → opens interactive session picker - altergo --resume <id> →
   resumes session directly - removed 'altergo new' subcommand (redundant, just use altergo)
 
 - Apply all landing page scenario pivot changes correctly
-  ([`d094fe0`](https://github.com/thepixelabs/altergo/commit/d094fe0c573edce87c67e41fd26d1022cdd48778))
+  ([`efbd2bb`](https://github.com/thepixelabs/altergo/commit/efbd2bbb74eef11f28297852381256890bc8c8b1))
 
 Previous commits had copy failures between worktrees — changes weren't persisting. This commit
   applies everything cleanly in one pass:
@@ -240,7 +250,7 @@ Previous commits had copy failures between worktrees — changes weren't persist
 Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
 
 - Apply CEO messaging feedback — tagline, migration output, credential sharing note
-  ([`1d8970a`](https://github.com/thepixelabs/altergo/commit/1d8970a0d8540ef962d58fa74242b46918221fe9))
+  ([`9d87acb`](https://github.com/thepixelabs/altergo/commit/9d87acbbf4d6f5ffc56a9619d1a90737744ffe28))
 
 - Tagline: 'Your other Claude.' → 'Switch Claude identities. Keep your context.' - migrate_legacy():
   print 4-line visible block + write MIGRATED.txt audit file (CEO: silent one-liner is wrong for a
@@ -249,13 +259,13 @@ Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
   test_migrate_legacy_prints_once: update assertion for new multi-line output
 
 - Bump version to 0.4.0, add smoke tests to fix CI no-tests exit 5
-  ([`b34af26`](https://github.com/thepixelabs/altergo/commit/b34af267275eb876e05870e1eea798829498e046))
+  ([`1c6e8b4`](https://github.com/thepixelabs/altergo/commit/1c6e8b418024d459d35b2114e34c3156e7f55802))
 
 - Clarify setup/teardown help text and add Accounts section
-  ([`4b8b26d`](https://github.com/thepixelabs/altergo/commit/4b8b26d365c2c636d0fb04ba2882484ab2ca340f))
+  ([`73d18a1`](https://github.com/thepixelabs/altergo/commit/73d18a14776023acef8f6758e4a84e325de0d889))
 
 - Footer nav element was inheriting nav{position:fixed;top:0} — change to div
-  ([`45ef4e5`](https://github.com/thepixelabs/altergo/commit/45ef4e5c8b58c2d7d16337eaf74b9b60a5e3d1fc))
+  ([`170e83a`](https://github.com/thepixelabs/altergo/commit/170e83ac4a84e4973ddbc37d431d994caa644fac))
 
 The bare 'nav' CSS selector applied to ALL nav elements including the footer's <nav
   class="footer-links">, causing it to teleport to the top of the viewport above the main navigation
@@ -265,7 +275,7 @@ Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
 
 - Remove legacy migration, startup sweep, and --update-check arg
   ([#14](https://github.com/thepixelabs/altergo/pull/14),
-  [`e88160d`](https://github.com/thepixelabs/altergo/commit/e88160d0d600d3ff6d0fedd161acebed63b46206))
+  [`23c16a5`](https://github.com/thepixelabs/altergo/commit/23c16a55b7f0f09f6c5d80853bbb22b0a93cc901))
 
 * fix: remove legacy migration, startup sweep, and --update-check arg
 
@@ -280,10 +290,10 @@ Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
 * test: remove tests for deleted migrate_legacy and --update-check arg
 
 - Rename --setup to --config and add `<name> use <provider>` subcommand
-  ([`8d8eb86`](https://github.com/thepixelabs/altergo/commit/8d8eb86c705621a06871741bfa67535cc8336f74))
+  ([`bc50933`](https://github.com/thepixelabs/altergo/commit/bc50933a26222963aa06f40d7b245c0baa8b3d22))
 
 - Replace tier-implying account names with neutral examples
-  ([`5d85368`](https://github.com/thepixelabs/altergo/commit/5d85368b58e16d14bc6695dde63df2cd6b68d938))
+  ([`89b7b4d`](https://github.com/thepixelabs/altergo/commit/89b7b4dfebc0aef966aa4185b3cfe18b1d8a2e6e))
 
 `altergo pro` and `altergo personal` in CLI snippets accidentally read as altergo product tiers.
   Replace with `altergo backup` (and `work` in multi-example contexts) throughout — hero, features,
@@ -295,21 +305,21 @@ Multi-example listings like `personal, pro, sideproject` (showing that names are
 Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
 
 - Resolve all ruff lint errors (E741, I001, F841, E501)
-  ([`ba7c82e`](https://github.com/thepixelabs/altergo/commit/ba7c82e5cafd3a9e08c134d05a7ef3349fcb67f5))
+  ([`c13e1be`](https://github.com/thepixelabs/altergo/commit/c13e1bec91844af53b1e344844cb66bcd04bac91))
 
 Rename ambiguous variable `l` to `ln` in logo list comprehensions, sort Rich/urllib import blocks,
   remove unused logo_left/logo_width/DIM/project variables, and wrap long lines in help text, nav
   string, and frozenset literal.
 
 - Safer migration backup order, additional edge-case tests
-  ([`199bdce`](https://github.com/thepixelabs/altergo/commit/199bdced3a4bffb25ae2f32fe09306daf430ec3c))
+  ([`d733156`](https://github.com/thepixelabs/altergo/commit/d733156fcee652b26ef7547a5f398d8dbbb9e8d8))
 
 - Show goodbye message after provider exits, not before launch
-  ([`9f0af02`](https://github.com/thepixelabs/altergo/commit/9f0af0224c2ca813d305c10c88d0feed471a5af8))
+  ([`3cbdaa6`](https://github.com/thepixelabs/altergo/commit/3cbdaa6f3557040e92844785176072a9493e70e9))
 
 - Simplify --help divider and drop launcher keys section
   ([#19](https://github.com/thepixelabs/altergo/pull/19),
-  [`9c42309`](https://github.com/thepixelabs/altergo/commit/9c42309052bda60addf14fb36f2b0a43aacb350f))
+  [`4c0a43e`](https://github.com/thepixelabs/altergo/commit/4c0a43e2abecaa2535191826900f3826bd892527))
 
 * fix: simplify --help divider and drop launcher keys section
 
@@ -321,10 +331,10 @@ Remove the shimmering divider animation in show_help() — it blocked the termin
 * style: ruff format
 
 - Slow down card shimmer effect, spread delays to avoid simultaneous triggers
-  ([`3ed55d0`](https://github.com/thepixelabs/altergo/commit/3ed55d03f37cf9020ed9af3560041e1d83492d8c))
+  ([`b793eea`](https://github.com/thepixelabs/altergo/commit/b793eea705b00af141d2f15637445e7790d4b456))
 
 - Smooth gradient on greeting/goodbye messages, add picker search
-  ([`acf8d71`](https://github.com/thepixelabs/altergo/commit/acf8d71d87895912734ec3d08ca06af2465d194b))
+  ([`ce4a4e1`](https://github.com/thepixelabs/altergo/commit/ce4a4e1fa5ccc016e0edb8dbafbb3295540be21c))
 
 - Replace chunked two-color fade with per-character interpolated gradient on greeting text, goodbye
   messages, and onboarding logo - Goodbye messages now show emoji + purple-blue-cyan-green gradient
@@ -332,19 +342,19 @@ Remove the shimmering divider animation in show_help() — it blocked the termin
   with live filtering
 
 - Suppress noisy output when applying settings on quit
-  ([`5409267`](https://github.com/thepixelabs/altergo/commit/540926713d0879a33fe05de50806ef9c94db2246))
+  ([`0a62a45`](https://github.com/thepixelabs/altergo/commit/0a62a451d462d64546b7cfefc8eba4fbdaef876d))
 
 - Sync .claude.json across accounts via symlink_home_files
-  ([`27a82fe`](https://github.com/thepixelabs/altergo/commit/27a82fe2237fcd304357c8a750b31c931484e2cc))
+  ([`3a986a2`](https://github.com/thepixelabs/altergo/commit/3a986a29f3c8cdd963f1361fee36f11cb3f47055))
 
 - Use star spinner for launch animation across all themes
-  ([`ff9c01c`](https://github.com/thepixelabs/altergo/commit/ff9c01c2b2b837e6c55f7fff34049a9cc9618c05))
+  ([`6094339`](https://github.com/thepixelabs/altergo/commit/60943396a435eeb0d9636dc5cc58b9192b847900))
 
 - Wrap long line in home-change notice print
-  ([`90f8e9c`](https://github.com/thepixelabs/altergo/commit/90f8e9c8f456f82d754b6bc88beae3f1c7cf24d4))
+  ([`2759568`](https://github.com/thepixelabs/altergo/commit/275956805559d7fcb50c742fafdfd024e9306639))
 
 - **ci**: Repair release pipeline, homebrew-bump YAML, pip-audit, drop py3.9
-  ([`a4354bd`](https://github.com/thepixelabs/altergo/commit/a4354bd28a99b2257db07a28765fc98284f26f6a))
+  ([`c29be1f`](https://github.com/thepixelabs/altergo/commit/c29be1fbf2f005ee5999c02fb040c1a7afeb1772))
 
 - release.yml: pass GH_TOKEN as checkout token so credentials persist on the origin remote;
   semantic-release's plain 'git push' now auths - homebrew-bump.yml: replace heredocs with { echo; }
@@ -354,25 +364,25 @@ Remove the shimmering divider animation in show_help() — it blocked the termin
   no argument)
 
 - **cli**: Validate arguments before launch and add launch messages
-  ([`8d16eb6`](https://github.com/thepixelabs/altergo/commit/8d16eb6a2e6b828e533209c08602f83a58bd742a))
+  ([`bfd17e5`](https://github.com/thepixelabs/altergo/commit/bfd17e5519f81cf894b418bbbecb0fd7e7461695))
 
 - **footer**: Clean up footer — remove duplicate license text, add ❤️ 👾, make License a proper link
-  ([`af45f7a`](https://github.com/thepixelabs/altergo/commit/af45f7a2b4431db70d4f768a8174088ad1db1024))
+  ([`eac964a`](https://github.com/thepixelabs/altergo/commit/eac964a883112d8232961cdf154b3f0030257c38))
 
 Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
 
 - **footer**: Purple heart, remove duplicate GitHub link, keep PolyForm Shield 1.0.0 License
-  ([`09fc18d`](https://github.com/thepixelabs/altergo/commit/09fc18db3e154fa66bdd86c50d659b052507d448))
+  ([`c4bbe43`](https://github.com/thepixelabs/altergo/commit/c4bbe43ee470cf3eb7919af98821a2f9a53f9b9b))
 
 Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
 
 - **landing**: Point Stay Connected Rover link to dispatch.pixelabs.net/rover
   ([#36](https://github.com/thepixelabs/altergo/pull/36),
-  [`dd87606`](https://github.com/thepixelabs/altergo/commit/dd87606ea45170f495a0beed9fb15dcef3aa41be))
+  [`55ae409`](https://github.com/thepixelabs/altergo/commit/55ae4096a2f0485984ed70d516471545391730da))
 
 - **native**: Pass --yolo-resume through + add --default-provider
   ([#30](https://github.com/thepixelabs/altergo/pull/30),
-  [`e4fa7f8`](https://github.com/thepixelabs/altergo/commit/e4fa7f8cdae2418d8c2c6fef9f686f278cf834b0))
+  [`20b220e`](https://github.com/thepixelabs/altergo/commit/20b220e7e5e31b2123046dbe0dc41f2175f58af7))
 
 * fix(native): pass --yolo-resume through to provider + add --default-provider
 
@@ -408,13 +418,13 @@ pip-audit started failing 2026-04-25 on a newly-published CVE against pip 26.0.1
   to revisit once an upstream fix lands.
 
 - **tmux**: Avoid session name collisions by appending -N suffix
-  ([`ca9f070`](https://github.com/thepixelabs/altergo/commit/ca9f07006ff7b8a34287da6dc1b33464f5662620))
+  ([`18ea91c`](https://github.com/thepixelabs/altergo/commit/18ea91c23829dcd70070951f87fc55c7472b99ad))
 
 - **tmux**: Disable mouse capture so UI scroll works behind terminal
-  ([`78fca30`](https://github.com/thepixelabs/altergo/commit/78fca307cfbe56b0115776a1efa47a65a32d273a))
+  ([`3e1ec13`](https://github.com/thepixelabs/altergo/commit/3e1ec1325249b13d97d76429f7810db66b9e9133))
 
 - **ui**: Comprehensive mobile/tablet responsive fixes for landing page
-  ([`70126c9`](https://github.com/thepixelabs/altergo/commit/70126c98d202f0428cb371da10c67629971f7629))
+  ([`2c92beb`](https://github.com/thepixelabs/altergo/commit/2c92bebc1a13068fabab4aa0fb6d05b6fce4e98c))
 
 - Hero: reduced gap on narrow screens, terminal shrinks gracefully, buttons meet 44px touch target
   minimum - Nav: hamburger and theme toggle bumped to 44×44px, mobile overlay uses safe-area insets
@@ -429,7 +439,7 @@ Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
 
 - **yolo-resume**: Consume any non-flag token as session id; route explicit provider on native
   ([#34](https://github.com/thepixelabs/altergo/pull/34),
-  [`c7e93da`](https://github.com/thepixelabs/altergo/commit/c7e93da95b0e5e3d6dc0c07d88d7fdf87292e299))
+  [`2d7f126`](https://github.com/thepixelabs/altergo/commit/2d7f126edc2023705414497cea5d55fa8210aae4))
 
 * fix(yolo-resume): consume any non-flag token after --yolo-resume as session id
 
@@ -457,7 +467,7 @@ Updated UUID-strict tests to reflect the new "any non-flag token" rule and added
 
 - **yolo-resume**: Defer to portal handler when 'portal' is in args
   ([#33](https://github.com/thepixelabs/altergo/pull/33),
-  [`5579b11`](https://github.com/thepixelabs/altergo/commit/5579b11437902283e0c0cfbbfa7896b47c5f725d))
+  [`e31daca`](https://github.com/thepixelabs/altergo/commit/e31daca303708f369aa56075f68f425891e266e1))
 
 The global --yolo-resume interceptor at the top of main() doesn't know that 'portal' is a
   subcommand. For \`altergo portal native claude --yolo-resume\` it stripped the flag, opened
@@ -474,7 +484,7 @@ Bail out of the global interceptor when 'portal' or 'shell' appears in the args 
 
 - **yolo-resume**: Honor explicit account token
   ([#28](https://github.com/thepixelabs/altergo/pull/28),
-  [`3e833c5`](https://github.com/thepixelabs/altergo/commit/3e833c5462c8b84fd6feaf376fbee737f7242a56))
+  [`f217865`](https://github.com/thepixelabs/altergo/commit/f217865e66f5fd115b02bd40cbb9eee0b0d55b9f))
 
 `altergo <account> --yolo-resume <id>` was silently dropping the leading account token because the
   yolo-resume intercept runs before the normal account-parsing block. Native users hit an
@@ -485,20 +495,20 @@ Bail out of the global interceptor when 'portal' or 'shell' appears in the args 
 ### Documentation
 
 - Add architecture and how-it-works reference pages (need v0.5.0 update)
-  ([`1fe22d4`](https://github.com/thepixelabs/altergo/commit/1fe22d4380db7d2face2844d027e70fe3c2c352d))
+  ([`e103476`](https://github.com/thepixelabs/altergo/commit/e103476232dfcb0e9fc75edf3c255f5dcfe7ed89))
 
 - Add settings TUI guide, update architecture for v0.16
-  ([`e5998c3`](https://github.com/thepixelabs/altergo/commit/e5998c3e7cb85eccfb69f1b5143da6852749c8fc))
+  ([`91b37a9`](https://github.com/thepixelabs/altergo/commit/91b37a95772ce369fa8b800c280461c7e11f2891))
 
 - New docs/settings.md covering the three-page settings TUI - Update docs/architecture.md with
   current code structure, settings schema, and dependency list - Update version references from
   v0.5.0 to v0.16.0+
 
 - Add version badge next to logo in nav
-  ([`88b0c0d`](https://github.com/thepixelabs/altergo/commit/88b0c0dead08ef0e79642a3c07c6c19322158e87))
+  ([`2360d30`](https://github.com/thepixelabs/altergo/commit/2360d300e9dd779b6686f851c45819a13f0dacf2))
 
 - Align tagline, document MCP sync, catch up to v0.37
-  ([`b88c0fe`](https://github.com/thepixelabs/altergo/commit/b88c0fe87b0d77ccb1248ac5f6ba268e799f45e0))
+  ([`b97e611`](https://github.com/thepixelabs/altergo/commit/b97e61160dc6452af6184a0e15346a117b263731))
 
 Three-pass audit (tech-writer + CEO + CTO). Closes an ~18-release doc lag, documents the
   bidirectional MCP-sync model (previously invisible to users), aligns the tagline across all public
@@ -525,10 +535,10 @@ settings.md: remove '--update-check' CLI block (removed v0.35.3), add home-chang
   enumerate package-manager catalog.
 
 - Apply CEO messaging feedback — credential sharing framing, migration output
-  ([`ae570da`](https://github.com/thepixelabs/altergo/commit/ae570da063067e6cbd8f1c7423b2203b375293eb))
+  ([`463126a`](https://github.com/thepixelabs/altergo/commit/463126a713bc13df47b617c60fac5a8ce88ccd91))
 
 - Fix 4K ghost drift in persistent section, drop fixed page-wide ghost
-  ([`e43b106`](https://github.com/thepixelabs/altergo/commit/e43b10607a2d471753adf0ffc8e01adf03734851))
+  ([`8b667e6`](https://github.com/thepixelabs/altergo/commit/8b667e675f0d9975803841e16456d89079196630))
 
 Two independent landing-page fixes:
 
@@ -541,7 +551,7 @@ Two independent landing-page fixes:
   carries the visual weight; the global fixed layer was just noise.
 
 - Inject PyPI count at build time, float why-card icons, add favicon
-  ([`d40ea2d`](https://github.com/thepixelabs/altergo/commit/d40ea2d2b797d37f5be264ab697e6afddc6f4df5))
+  ([`67f9f9e`](https://github.com/thepixelabs/altergo/commit/67f9f9e8c93d12e3d8656267fc26538be56be4a0))
 
 Client-side fetches to pypistats/shields were hitting 429s from shared visitor IPs; moving the
   lookup into the Pages build runs it once per deploy (plus a daily scheduled refresh) and falls
@@ -550,7 +560,7 @@ Client-side fetches to pypistats/shields were hitting 429s from shared visitor I
   pypi-stat pill width so a long injected count can't blow out the header row.
 
 - New altergo wordmark + README rewrite for v0.5.0
-  ([`5bc6fc1`](https://github.com/thepixelabs/altergo/commit/5bc6fc155b6e01ba066176fc445935dd61a08080))
+  ([`cd83e06`](https://github.com/thepixelabs/altergo/commit/cd83e06dc7f38fbfd12ef823c87d33403c9dc3ea))
 
 Add docs/logo-dark.svg and docs/logo-light.svg with the cyan-blade wordmark (alt+r indigo, e+go
   contrast, glowing skewed blade between t and e). Reference them via <picture> at the top of
@@ -563,7 +573,7 @@ Rewrite README to match the landing page (v0.5.0): pipx and safer curl install, 
 Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
 
 - Overhaul for v0.40.0 — multi-provider, recall across 4 providers, cwd-on-recall, bookmark rebind
-  ([`50e3279`](https://github.com/thepixelabs/altergo/commit/50e32790d3749f18a9050823d11567f5764b9298))
+  ([`3eecc76`](https://github.com/thepixelabs/altergo/commit/3eecc76e075199f76421eaa2903389b48baeea1e))
 
 - README: new picker keybindings table (b bookmark, * starred-only); multi-provider recall section;
   add-provider quickstart line; cwd-on-recall mention in features table - architecture.md: corrected
@@ -574,7 +584,7 @@ Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
   settings.md: cross-link to picker keybindings in how-it-works
 
 - Reframe landing copy so account-name examples don't read as subcommands
-  ([`5c75c8e`](https://github.com/thepixelabs/altergo/commit/5c75c8e5b3247986ee4b1213055a73a8d7e2b7dc))
+  ([`2aa8f5d`](https://github.com/thepixelabs/altergo/commit/2aa8f5d19a000dde52f86105a37ceee9310e2bfb))
 
 Renaming the placeholder from 'backup' to 'secondary' wasn't enough — any single word after
   'altergo' parses as a subcommand to a first-time reader. Hero now describes the outcome without
@@ -584,10 +594,10 @@ Renaming the placeholder from 'backup' to 'secondary' wasn't enough — any sing
   wording. Reduced-motion fallback matches the animated scene convention.
 
 - Remove zero-deps/single-file messaging, add keychain-isolation guide
-  ([`aa0597b`](https://github.com/thepixelabs/altergo/commit/aa0597bd30cc8d6e19a806fe0521ad55cf2e14a4))
+  ([`a37c550`](https://github.com/thepixelabs/altergo/commit/a37c550499cc2058ed1740f2499c52f644264a99))
 
 - Rename 'backup' placeholder account to 'secondary' in examples
-  ([`539c626`](https://github.com/thepixelabs/altergo/commit/539c6268eae4fd436e3a15fbd35aaf3075aa3dfc))
+  ([`9c677cf`](https://github.com/thepixelabs/altergo/commit/9c677cff8393fef31fd1a0d0f3b84a6258222791))
 
 The landing page used 'backup' as the example account name throughout (hero, step 3, feature card,
   install block, reference table, static fallback). With altergo being a credentials-management
@@ -595,13 +605,13 @@ The landing page used 'backup' as the example account name throughout (hero, ste
   Renamed to 'secondary' everywhere — clearly a noun, unambiguously an account identifier.
 
 - Rename <name> placeholder to <account> in help and docs
-  ([`c01d1fd`](https://github.com/thepixelabs/altergo/commit/c01d1fd67fa837d89253e9f5fbd8ad10f75a245b))
+  ([`68bfc35`](https://github.com/thepixelabs/altergo/commit/68bfc3524f41ca4c233c0019e5c878744a7db394))
 
 The <name> placeholder in the help menu and documentation was ambiguous ("name of what?"); <account>
   is self-describing. Also rename <name> to <theme> in --theme usage for the same reason.
 
 - Unify why-card layout, swap cross-platform for keychain card, strip em-dashes
-  ([`653e564`](https://github.com/thepixelabs/altergo/commit/653e5643926a203b4c6a8c6ae2ac41c0133c2963))
+  ([`210e906`](https://github.com/thepixelabs/altergo/commit/210e90646114c86e84a34c5771d3d6cfa551f00d))
 
 why-card icons now use the same plain float+margin mechanic as feature-icon instead of the
   shape-outside / display:inline / ::after nbsp / clearfix stack that was there. Cross-platform card
@@ -610,10 +620,10 @@ why-card icons now use the same plain float+margin mechanic as feature-icon inst
   periods depending on context, and cleaned up the comma splices the bulk pass introduced.
 
 - Update all docs for v0.5.0 N-account support
-  ([`f58ac41`](https://github.com/thepixelabs/altergo/commit/f58ac41da6573286dfe9d442629ab5437b747ab4))
+  ([`47d6471`](https://github.com/thepixelabs/altergo/commit/47d64712cbe6943f4cb4fbdc592201019b1330a1))
 
 - Update for v0.5.0 settings TUI and credential sharing
-  ([`52f419b`](https://github.com/thepixelabs/altergo/commit/52f419b23ef53f46ccecf3d2c1b43a404d25cee4))
+  ([`478649f`](https://github.com/thepixelabs/altergo/commit/478649f948060094c314ed43c88f90654e17bc6a))
 
 - Add --settings command to command reference and features section - Document per-tool credential
   sharing (catalog, default-on/off categories) - Reframe altergo shell and altergo -- as power-user
@@ -623,14 +633,14 @@ why-card icons now use the same plain float+margin mechanic as feature-icon inst
 Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
 
 - Update README for v0.5.0 N-account support
-  ([`879615a`](https://github.com/thepixelabs/altergo/commit/879615abd462a3e9b017889aedc7ad2bfeb0a9de))
+  ([`661de28`](https://github.com/thepixelabs/altergo/commit/661de2807756dbd5c31d76b4f1a5bf92146fe1ff))
 
 - Update tagline to 'Switch Claude identities. Keep your context.'
-  ([`8d811d3`](https://github.com/thepixelabs/altergo/commit/8d811d30be4bde7f1cdd92d0e7a2f1fa1bb9318e))
+  ([`e1421c9`](https://github.com/thepixelabs/altergo/commit/e1421c9ef7e579c93939e53e0ba3975f7b360745))
 
 - **keychain**: Lead with meaning, document UX surfaces, reframe ceiling
   ([#27](https://github.com/thepixelabs/altergo/pull/27),
-  [`60e8096`](https://github.com/thepixelabs/altergo/commit/60e80965ebac32b9e260ead228031bf30d2ffa46))
+  [`6a722b9`](https://github.com/thepixelabs/altergo/commit/6a722b928bb248227a758d7a3d76bfe8ccf894a6))
 
 Clarity pass on the keychain isolation docs (README section + docs/keychain-isolation.md). Triggered
   by a review loop — the original docs were technically correct but opened with implementation
@@ -655,7 +665,7 @@ Changes: - Open with plain-English framing of system vs isolated; add a minimal 
 
 - **landing**: Re-pitch Stay Connected around Rover + altergo
   ([#35](https://github.com/thepixelabs/altergo/pull/35),
-  [`03f6674`](https://github.com/thepixelabs/altergo/commit/03f6674a78f3ae941a6669de1518da837da8ac43))
+  [`0c8811c`](https://github.com/thepixelabs/altergo/commit/0c8811c1e6dca372f636a498b8d9aa8ffa4f91dd))
 
 Rework the persistent sessions section to feature Rover as the way you get back into a tmux-backed
   altergo session, replacing the old "type tmux attach" framing. Adds a cyan link to
@@ -671,7 +681,7 @@ Rework the persistent sessions section to feature Rover as the way you get back 
 
 - **landing**: Tmux + stale-claim fixes, plus GA4 with GDPR consent
   ([#32](https://github.com/thepixelabs/altergo/pull/32),
-  [`672ee73`](https://github.com/thepixelabs/altergo/commit/672ee736131992110a0ebaf9fe8ba22ab93e33ae))
+  [`cc73720`](https://github.com/thepixelabs/altergo/commit/cc7372071fb1380822c8305e69432efd3839a7ef))
 
 * docs(landing): fix tmux 'always on' framing and several stale claims
 
@@ -695,7 +705,7 @@ Rework the persistent sessions section to feature Rover as the way you get back 
 ### Features
 
 - Accept session ID with --yolo-resume ([#18](https://github.com/thepixelabs/altergo/pull/18),
-  [`a10d6e1`](https://github.com/thepixelabs/altergo/commit/a10d6e1092fe0b486b1ee5482e6052d89f1624fb))
+  [`fb9fa7a`](https://github.com/thepixelabs/altergo/commit/fb9fa7a0a6ba81db2c6987e91a51771209556566))
 
 Previously `altergo --yolo-resume <uuid>` silently passed the UUID through as a positional arg, so
   providers received it as the first user prompt of the resumed session instead of using it to pick
@@ -710,7 +720,7 @@ When an ID is provided, it is substituted into each provider's resume_by_id temp
   prompts passed on the command line still work.
 
 - Add --yolo/--yolo-resume flags and rename --list to --recall
-  ([`1c155b0`](https://github.com/thepixelabs/altergo/commit/1c155b0f66e683ed6b2cf0b4ea8303c1af12868b))
+  ([`458d31a`](https://github.com/thepixelabs/altergo/commit/458d31a889e613291ec366f07a25635b055ec161))
 
 - --yolo translates to provider-native skip-permissions flag (claude:
   --dangerously-skip-permissions, gemini/copilot: --yolo, codex:
@@ -721,7 +731,7 @@ When an ID is provided, it is substituted into each provider's resume_by_id temp
   Tests cover flag translation per provider and updated smoke suite.
 
 - Add color themes with live launcher cycle
-  ([`febbdb5`](https://github.com/thepixelabs/altergo/commit/febbdb57b651c23a8a3f134dc7bbfacd69820e35))
+  ([`292b52c`](https://github.com/thepixelabs/altergo/commit/292b52c6b6018f472b0c4b53ca1e6abebbd8a62a))
 
 Introduces a THEMES catalog (ocean, forest, lavender, sunset, mono, rainbow) that drives every
   colored surface: help, list, settings, session picker, launcher, banner, and shell prompt. Themes
@@ -733,7 +743,7 @@ Also shows the altergo banner on --list, --setup, --settings and --theme so the 
   banner shows the active account directly under the logo.
 
 - Add shell + passthrough commands, custom SVG icons, docs section
-  ([`ef7abb1`](https://github.com/thepixelabs/altergo/commit/ef7abb1b9d98c8ed8cb976e9c86210a0a2a0c90e))
+  ([`92e261b`](https://github.com/thepixelabs/altergo/commit/92e261b282161335bcd40d5a936a28aaee085c8e))
 
 - altergo shell: opens an interactive $SHELL with HOME=~/.altergo so users can run gh auth login,
   git config, ssh-keygen, etc. in the alt account context; credentials persist across sessions -
@@ -746,20 +756,20 @@ Also shows the altergo banner on --list, --setup, --settings and --theme so the 
 Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
 
 - Add tmux session persistence section to landing page
-  ([`ce847e2`](https://github.com/thepixelabs/altergo/commit/ce847e20eeff021be4209a2c51ef53cb8b935165))
+  ([`3ed58ff`](https://github.com/thepixelabs/altergo/commit/3ed58ff3c5a5c9e05d3e81789b25a8b3a387f5a3))
 
 - Bidirectional mcpServers sync across accounts, preserves per-account oauthAccount
-  ([`0bf4cff`](https://github.com/thepixelabs/altergo/commit/0bf4cff9d7bef641ac51569cd71a8d76c1fb4bd3))
+  ([`ab6692e`](https://github.com/thepixelabs/altergo/commit/ab6692eea747f7aed5e90b4157d7311d4dc7449c))
 
 - Colored --help with OSC 8 links, pixelabs branding, bump pyproject to v0.5.0
-  ([`c1f9666`](https://github.com/thepixelabs/altergo/commit/c1f966645f49d45a1701f81a47c423a06c44e185))
+  ([`8a69572`](https://github.com/thepixelabs/altergo/commit/8a69572a709eed7354da5a90aa0527765d09dac7))
 
 - Replace print(__doc__) with show_help() — colored output via existing _c() helper, clickable OSC 8
   hyperlinks to pixelabs.net and claude.ai/code - Attribution footer: non-affiliation disclaimer +
   Claude trademark notice - Bump pyproject.toml version to 0.5.0 to match altergo.py
 
 - Colored CLI output, clickable pixelabs.net link, fix docs
-  ([`965832c`](https://github.com/thepixelabs/altergo/commit/965832cf92b9a5d414245a3fd39f3b6f7e29d72d))
+  ([`d094040`](https://github.com/thepixelabs/altergo/commit/d09404078a39d949ceb1dfaea79c6e20b14b31ed))
 
 - ANSI colors in --setup, --teardown, --list (TTY-only, pipes unaffected) - OSC 8 clickable
   hyperlink to pixelabs.net in setup/teardown header - Fix README and migration.md: remove 'altergo
@@ -767,14 +777,14 @@ Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
 
 - Expand greetings bank + banner above the launcher
   ([#17](https://github.com/thepixelabs/altergo/pull/17),
-  [`3dabf0a`](https://github.com/thepixelabs/altergo/commit/3dabf0aff40bfe79e0c6cef3197fa5908a691d5a))
+  [`45e2f6d`](https://github.com/thepixelabs/altergo/commit/45e2f6d43ceb488154a243c198fd5ea3be9de3a1))
 
 - Grow greetings bank 80 → 400 (10 → 50 per window across 8 time windows); update the panel-lock
   test accordingly. - interactive_launcher() now calls show_banner() at the top of each loop
   iteration so the picker is framed by the themed figlet, matching interactive_settings().
 
 - Full-text conversation search with project filtering and quoted phrases
-  ([`33622ef`](https://github.com/thepixelabs/altergo/commit/33622ef87549b4b99a90ecb77b97e1221cebc399))
+  ([`9b5ea1c`](https://github.com/thepixelabs/altergo/commit/9b5ea1c77a879760f910e523f4c5f94b790d3e11))
 
 - Add `altergo --search` for searching across all session conversation history - Three-phase TUI:
   project filter → search input → scrollable results - Case-insensitive matching, "quoted phrases"
@@ -783,13 +793,13 @@ Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
   help text navigation section
 
 - Initial release of altergo v0.1.0
-  ([`6c8fad9`](https://github.com/thepixelabs/altergo/commit/6c8fad9504392a6801e9e6087bfdff0c314c57f5))
+  ([`2280977`](https://github.com/thepixelabs/altergo/commit/2280977673028c5bba89202db86ac377a8ce0a0e))
 
 Your other Claude — switch Claude Code identities without losing a thought. Zero dependencies,
   interactive TUI, symlink-based session sharing.
 
 - Interactive provider picker and default-provider resolution
-  ([`105f273`](https://github.com/thepixelabs/altergo/commit/105f2739e2ae64fc98c58bbb02747993d5274b05))
+  ([`704902f`](https://github.com/thepixelabs/altergo/commit/704902ff53328bc8124b8cdd6943690816e9ad56))
 
 Replace the numbered-checkbox provider prompt with a curses-based arrow/ radio picker (Space
   toggles, d sets default, Enter/s saves). Persist the chosen default in account.json via a new
@@ -800,7 +810,7 @@ Replace the numbered-checkbox provider prompt with a curses-based arrow/ radio p
   white text.
 
 - Multi-page settings TUI with live theme preview
-  ([`355ce3a`](https://github.com/thepixelabs/altergo/commit/355ce3acf971b2f25970e692bcf7cd08ffc8769c))
+  ([`2145d07`](https://github.com/thepixelabs/altergo/commit/2145d07d5d4187638a1cdd33706d8940d362976e))
 
 Replace the single-page credentials settings screen with a three-page TUI accessed via altergo
   --settings:
@@ -813,7 +823,7 @@ Navigation via arrow keys, h/l, Tab between pages. Themes auto-select on cursor 
   instant color recoloring. All settings saved in a single atomic write to .altergo.json.
 
 - Multi-provider altergo accounts ([#23](https://github.com/thepixelabs/altergo/pull/23),
-  [`b1c2a1d`](https://github.com/thepixelabs/altergo/commit/b1c2a1dd20d4259e4d3a519de2aa092e7a712b00))
+  [`112c57e`](https://github.com/thepixelabs/altergo/commit/112c57edd551c1291ec2abe75b97effe2de0970b))
 
 * fix: launch resumed sessions in the session's saved cwd
 
@@ -863,7 +873,7 @@ Launcher renders a multi-provider account under each of its providers; picking a
 No UX regression for existing single-provider accounts — opt-in and additive.
 
 - Multi-provider rebrand, messaging cleanup, site polish
-  ([`cd0f874`](https://github.com/thepixelabs/altergo/commit/cd0f8746554d769b35d6160fe3abe3b7269927a4))
+  ([`ac0c27a`](https://github.com/thepixelabs/altergo/commit/ac0c27adeb7bd6b123fed8e0027b2cdd5fcd4de4))
 
 - Reposition from Claude-only to multi-provider (Claude Code, Gemini CLI, Codex, Copilot) - New
   tagline: 'Switch AI identities. Keep your context.' - Replace work/personal account examples with
@@ -877,7 +887,7 @@ No UX regression for existing single-provider accounts — opt-in and additive.
   keywords for all providers
 
 - N-account support — named accounts, auto-migration, --setup --name
-  ([`33d5705`](https://github.com/thepixelabs/altergo/commit/33d5705a7c4d0cdfe06e7c7ed2afdee91ca143b9))
+  ([`1a7b126`](https://github.com/thepixelabs/altergo/commit/1a7b12675b82d9031830465fbabcd67bf153c92c))
 
 - ACCOUNTS_DIR layout: ~/.altergo/accounts/<name>/ replaces single ~/.altergo/ - resolve_account(),
   validate_account_name(), list_accounts() helpers - Auto-migration: detects legacy
@@ -889,17 +899,17 @@ No UX regression for existing single-provider accounts — opt-in and additive.
   created at account_home level - show_help() updated with named account examples
 
 - One account one provider — remove multi-provider bundling (v0.22.0)
-  ([`8778e11`](https://github.com/thepixelabs/altergo/commit/8778e11850f40596d5f59765657a62f5616ef910))
+  ([`ff0c845`](https://github.com/thepixelabs/altergo/commit/ff0c8455977a1fc09059603fd4f05679f147a252))
 
 - Strip providers list from account.json; each account now has exactly one provider - Replace
   multi-select provider TUI with single-select picker - Remove 'use' subcommand (replaced with clear
   error pointing to --config) - v2 account.json schema: {"version": 2, "provider": "<id>"} -
   Auto-upgrade legacy accounts (no account.json) on first launch - Per-provider sweep in
   _sweep_existing_accounts using v2 single-provider metadata - Restore _sync_claude_mcps for
-  bidirectional MCP server sync (from 0bf4cff) - Version bump to 0.22.0
+  bidirectional MCP server sync (from ab6692e) - Version bump to 0.22.0
 
 - Opt-out version checker, hourly greetings, launch-handoff spinners
-  ([`d2fc5c2`](https://github.com/thepixelabs/altergo/commit/d2fc5c2af2ec15dfe645d2740e0aaa0fd66b2a0b))
+  ([`f0acfce`](https://github.com/thepixelabs/altergo/commit/f0acfce2b4b8a0e3e5f4c89dbcbaa0e2d0d0d53b))
 
 Adds three features designed as a panel (CEO, product, system-architect, security, creative) and
   implemented in a single pass:
@@ -934,13 +944,13 @@ Also drops the redundant hardcoded curses palette in _picker_attrs — previous 
   per-minute stability, and theme→spinner coverage.
 
 - Per-message emoji, gradient greetings, left-aligned banner, first-run onboarding
-  ([`394f0ba`](https://github.com/thepixelabs/altergo/commit/394f0ba9004a9cda4f8d6a3dc7482cc1a42ed728))
+  ([`754eb9f`](https://github.com/thepixelabs/altergo/commit/754eb9f9a11bff47782a3a359a7480c18aa4efdf))
 
 - Per-provider sweep in _sweep_existing_accounts, fix --provider help text
-  ([`accae07`](https://github.com/thepixelabs/altergo/commit/accae0760153c5aea36ea731fd8781ba12133b2a))
+  ([`5f3c529`](https://github.com/thepixelabs/altergo/commit/5f3c5298a9fc3dfbdd5d741dbb2ba0fe317fe884))
 
 - Pivot landing page to flow-continuity hooks
-  ([`cd50e07`](https://github.com/thepixelabs/altergo/commit/cd50e070154307af56f453d9edce7249a7ca2d08))
+  ([`e9760f9`](https://github.com/thepixelabs/altergo/commit/e9760f90af455a219a5ac1cf411afa4c0da4c70b))
 
 Lead with rate-limit continuity as the #1 scenario hook — the moment you hit a wall mid-session and
   need to keep going without losing context. Add thinker/executor and client isolation as secondary
@@ -955,7 +965,7 @@ Lead with rate-limit continuity as the #1 scenario hook — the moment you hit a
 Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
 
 - Positional provider syntax, gradient help titles, theme-aware goodbye
-  ([`0babe77`](https://github.com/thepixelabs/altergo/commit/0babe77505b4aaf3369f798494905d61533c3953))
+  ([`110d622`](https://github.com/thepixelabs/altergo/commit/110d62226ec591ac74014552b1e762bd680f9915))
 
 - Replace `altergo <account> --provider <name>` with positional `altergo <account> <provider>` for
   simpler launch-time provider selection - Add _gradient_ansi() helper for True Color per-character
@@ -965,7 +975,7 @@ Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
   banner gradient like the greeting
 
 - Provider filter+sort in --resume, per-page gradient nav
-  ([`8158649`](https://github.com/thepixelabs/altergo/commit/8158649478bcb02b03c28b631959610fc7bd3adf))
+  ([`75d4167`](https://github.com/thepixelabs/altergo/commit/75d4167fa2d0bbeb1f389ab3e4049c8595234594))
 
 Feature 1 — resume TUI: - `get_sessions()` now tags each session dict with a `provider` field by
   scanning ACCOUNTS_DIR accounts via `_build_provider_map()`, which resolves each account's provider
@@ -986,7 +996,7 @@ Feature 2 — per-page gradient nav tint: - Added `_PAGE_TINTS` dict mapping pag
 Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
 
 - Random theme rotation, settings UX polish
-  ([`5152869`](https://github.com/thepixelabs/altergo/commit/51528693fb56dda84c002ef077c1267f3373df42))
+  ([`1db17f3`](https://github.com/thepixelabs/altergo/commit/1db17f33cd559bf80937a3d41cdcf318ef29a8e2))
 
 - Add random theme toggle with frequency slider (often↔rarely) to Appearance settings page — rotates
   theme automatically every N sessions - Fix theme auto-select: cursor movement now updates
@@ -996,7 +1006,7 @@ Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
   nav hints with vim keybindings
 
 - Rich-pyfiglet banner, redesigned help/TUI, provider launcher, goodbye messages
-  ([`5b97389`](https://github.com/thepixelabs/altergo/commit/5b97389dd6dd00b729c1d5ed888aae56f595789b))
+  ([`870d42b`](https://github.com/thepixelabs/altergo/commit/870d42b4f9f632362e119986ed9a561171b4f6f9))
 
 - Add show_banner() with smslant font gradient (#00d7ff→#005fd7) via rich-pyfiglet - Standardize
   color tokens (_C_COMMAND, _C_ARG, _C_HEADER, _C_DIM, etc.) - Rewrite show_help() with new palette,
@@ -1007,7 +1017,7 @@ Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
   (amber 220) to _picker_attrs
 
 - Settings TUI for configuring shared CLI credentials
-  ([`8efb55c`](https://github.com/thepixelabs/altergo/commit/8efb55c7acb8950ee55fa40c7efa058d04854e39))
+  ([`cbc2ba3`](https://github.com/thepixelabs/altergo/commit/cbc2ba3e346d753e5c9f874d1c6458342e558746))
 
 Add interactive --settings screen (curses, arrow keys + space to toggle) organised by category:
   Cloud Providers, Containers, Infrastructure, VCS, Package Managers, and Identity. Settings persist
@@ -1025,7 +1035,7 @@ Also: - Migrate from hardcoded SYMLINK_HOME_DIRS to the catalog in setup/teardow
 Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
 
 - Show account email in banner, add package manager catalog entries, home change notice
-  ([`b6d149f`](https://github.com/thepixelabs/altergo/commit/b6d149fe46d8bdbf0ff4da16d8784ec6474fbf58))
+  ([`fc50ca3`](https://github.com/thepixelabs/altergo/commit/fc50ca3c0b9724106d1bb8b6e980a5bf170dbbab))
 
 - Display email address next to account name in the banner (reads from .claude.json, Codex JWT, or
   Gemini oauth_creds) - Add pip, cargo, gem, yarn, pnpm, composer, go modules, Maven, Gradle,
@@ -1033,21 +1043,21 @@ Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
   shown on first launch
 
 - Show altergo logo with account name above each launch
-  ([`f4c4f60`](https://github.com/thepixelabs/altergo/commit/f4c4f60208293100a3372af30653757fd7bbf88b))
+  ([`f68f354`](https://github.com/thepixelabs/altergo/commit/f68f354b2b1aced8128d86fa01be981feee01c8a))
 
 Render the gradient figlet banner before handing off to the provider CLI or account shell, with the
   active account name centered directly beneath the logo and framed by ASCII stars in the same blue
   palette. Makes the current identity visible at a glance on every session start.
 
 - Show short version tag to the right of the banner logo
-  ([`d09b028`](https://github.com/thepixelabs/altergo/commit/d09b028d366ce4684d20dde58f55c1aa9bad746d))
+  ([`fd08a8f`](https://github.com/thepixelabs/altergo/commit/fd08a8f847bc689da405fe8eb076849f51c468b9))
 
 Renders v<version> vertically centered against the figlet block, in the theme's mid gradient stop so
   it reads as part of the logo. Pinned to the logo's natural width so it hugs the figlet rather than
   drifting to the terminal's right edge.
 
 - Tmux session persistence for SSH workflows ([#11](https://github.com/thepixelabs/altergo/pull/11),
-  [`37bbc80`](https://github.com/thepixelabs/altergo/commit/37bbc8086fd14f0bab45e3fc7ffe8eecb02d68f9))
+  [`dc63df2`](https://github.com/thepixelabs/altergo/commit/dc63df236ad7b4f72300895150f9544a36912eab))
 
 * feat: tmux session persistence for SSH workflows
 
@@ -1064,7 +1074,7 @@ Add a tmux_session setting (default off) that wraps every provider session in a 
 
 - Two-column help, looping launcher, share commands/skills
   ([#15](https://github.com/thepixelabs/altergo/pull/15),
-  [`3dacca2`](https://github.com/thepixelabs/altergo/commit/3dacca29377869fa1ab33712095fb9687c931add))
+  [`5c83a74`](https://github.com/thepixelabs/altergo/commit/5c83a74d8f70e40fbd70d24dc96aa7165858a43c))
 
 - Redesign --help into a two-column layout with a shimmering divider, terminal-width aware (fallback
   to single column below 118 cols). - Launcher loops back to the menu after each session exits;
@@ -1076,13 +1086,13 @@ Add a tmux_session setting (default off) that wraps every provider session in a 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 
 - Update landing page for v0.5.0 N-account support
-  ([`3484c88`](https://github.com/thepixelabs/altergo/commit/3484c88eada95e478c3c846852e36a08cd1d239f))
+  ([`3443366`](https://github.com/thepixelabs/altergo/commit/3443366fbd5431bf9f10a7cf1ce7a8c1061b3207))
 
 - Update landing page for v0.5.0 N-account support
-  ([`466d1d2`](https://github.com/thepixelabs/altergo/commit/466d1d2863440253e8fcff28b6dd7d8d16d1c083))
+  ([`6a06e43`](https://github.com/thepixelabs/altergo/commit/6a06e43f1d6e8946fd744617349fa72ea6eb7243))
 
 - V0.9.0 — active account pointer, wire launcher, restructure help
-  ([`d0d428f`](https://github.com/thepixelabs/altergo/commit/d0d428ffbcfe3f1c228bcf3f57d82a067f45e039))
+  ([`225a54f`](https://github.com/thepixelabs/altergo/commit/225a54f62533d15ad0bee0d35b1705fd051e1242))
 
 - Add --use <name> to persist active account in ~/.altergo/.altergo.json - Bare altergo now
   resolves: explicit arg → active_account → single account → launcher → error - Wire
@@ -1095,7 +1105,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
   'default'
 
 - **account**: Add native passthrough account that launches with real $HOME
-  ([`6381e87`](https://github.com/thepixelabs/altergo/commit/6381e87cb1a8e328b12559d9f8a79d6cc990a03a))
+  ([`af956f4`](https://github.com/thepixelabs/altergo/commit/af956f4c359751aed3d4ae0d293d4c36bb4efa27))
 
 * feat(account): add native passthrough account that launches with real \$HOME
 
@@ -1117,7 +1127,7 @@ Key behaviours: - resolve_account('native') returns (MAIN_HOME, MAIN_CLAUDE) -
 * fix(lint): apply ruff format
 
 - **cli**: Add --rename command and make account name positional in --config
-  ([`cf883a9`](https://github.com/thepixelabs/altergo/commit/cf883a97687c90df07e54d9d07c7ddb97ae081c6))
+  ([`e96f27e`](https://github.com/thepixelabs/altergo/commit/e96f27e1006e3bce2927afae93aa90765aa9971e))
 
 * feat(cli): add --rename command and make account name positional in --config
 
@@ -1128,10 +1138,10 @@ Key behaviours: - resolve_account('native') returns (MAIN_HOME, MAIN_CLAUDE) -
 * test: update tmux session name and --config syntax assertions
 
 - **docs**: Add ghost_duality image and update landing page
-  ([`8fde66c`](https://github.com/thepixelabs/altergo/commit/8fde66c31d59c028b48c45206b88d965bde8adfb))
+  ([`38ed179`](https://github.com/thepixelabs/altergo/commit/38ed17923cd805660e4fb555d250606668723ac6))
 
 - **docs**: Ghost in the Shell landing page redesign
-  ([`bce239b`](https://github.com/thepixelabs/altergo/commit/bce239b76008892a9d067dab9bb7d25a8cd424d8))
+  ([`8b0d1a3`](https://github.com/thepixelabs/altergo/commit/8b0d1a3ac3b523419f2f65bc5149beb1ba79095d))
 
 Complete visual overhaul of docs/index.html with GITS anime aesthetic: - Dark navy/cyan/indigo
   palette with neural mesh canvas background - AI-generated GITS-style scene images for hero,
@@ -1143,7 +1153,7 @@ Complete visual overhaul of docs/index.html with GITS anime aesthetic: - Dark na
 
 - **keychain**: Flip default to isolated (blocking) + rename old isolated → dedicated
   ([#29](https://github.com/thepixelabs/altergo/pull/29),
-  [`e4cbe84`](https://github.com/thepixelabs/altergo/commit/e4cbe84f13974e0dd06596e295467ac820900af5))
+  [`301bd2b`](https://github.com/thepixelabs/altergo/commit/301bd2b41385ad3fe4970c991285e58b7f35850c))
 
 * feat(keychain): flip default to isolated (blocking) + rename old isolated → dedicated
 
@@ -1169,7 +1179,7 @@ Complete visual overhaul of docs/index.html with GITS anime aesthetic: - Dark na
 
 - **keychain**: Preserve-and-reuse downgrade + reconciler state machine
   ([#26](https://github.com/thepixelabs/altergo/pull/26),
-  [`f5da264`](https://github.com/thepixelabs/altergo/commit/f5da2641490ea3d89bed1bf8e106b53d8810e124))
+  [`3e49c2f`](https://github.com/thepixelabs/altergo/commit/3e49c2f04865a0c65a68795505126b98c9803159))
 
 * feat(keychain): preserve-and-reuse downgrade + reconciler state machine
 
@@ -1197,7 +1207,7 @@ do_delete_account's file-presence probe calls _sec before the _delete_account_ke
   before reaching the intended assertion.
 
 - **resume**: Rich session picker with preview pane and animated nav
-  ([`ca782ad`](https://github.com/thepixelabs/altergo/commit/ca782adf4669d78cd13a57b7e4bc194b243384d5))
+  ([`8ed9798`](https://github.com/thepixelabs/altergo/commit/8ed9798d028f36fe4bd7138d31e84a33085e94d6))
 
 Replace the minimal resume picker with a richer TUI:
 
@@ -1219,7 +1229,7 @@ Replace the minimal resume picker with a richer TUI:
 Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
 
 - **setup**: Interactive account name + multi-provider selection
-  ([`a48cc65`](https://github.com/thepixelabs/altergo/commit/a48cc657dd5874f511d88f8e36f775b52eaa8961))
+  ([`d4b1609`](https://github.com/thepixelabs/altergo/commit/d4b1609e469cf343863a0d6d6c38d3664722790c))
 
 --setup now prompts for account name when no --name is given (TTY), shows a numbered provider
   checklist with installed binaries pre-checked, and wires only the selected providers'
@@ -1234,7 +1244,7 @@ Provider manifests (claude, gemini) drive all setup/teardown/launch logic. Accou
 ### Refactoring
 
 - Altergo.py code-quality overhaul ([#25](https://github.com/thepixelabs/altergo/pull/25),
-  [`d338964`](https://github.com/thepixelabs/altergo/commit/d338964f726994225fd380a0570a8f736a63ade5))
+  [`dc3836d`](https://github.com/thepixelabs/altergo/commit/dc3836d37522e31a5ea2a43a124dfe707d8b4758))
 
 - Strip all section-banner comments (# --- X ---, # ── X ──────) throughout; labels with non-obvious
   content converted to plain comments - Trim verbose multi-paragraph docstrings to single-sentence
@@ -1243,14 +1253,14 @@ Provider manifests (claude, gemini) drive all setup/teardown/launch logic. Accou
   _is_enabled (private helper, no public callers) - Net reduction: ~530 lines; 256/256 tests pass
 
 - Remove work/employer framing, replace with personal/pro/sideproject
-  ([`dc84d82`](https://github.com/thepixelabs/altergo/commit/dc84d8257ad0f1d6c12eed07f4c7785397882fb2))
+  ([`faa8479`](https://github.com/thepixelabs/altergo/commit/faa847923beaf0d82644d79a3de5d42eac420d60))
 
 Removes all "work account" and employer-related copy to avoid implying users can mix company-paid
   sessions with personal ones. Examples now use personal, pro, and sideproject — framing that fits
   individual makers and tinkerers.
 
 - Reposition copy for makers/tinkerers, replace corporate account examples
-  ([`57e9407`](https://github.com/thepixelabs/altergo/commit/57e9407452052efbe3d7c963afc9665f37b2c7d8))
+  ([`2e56771`](https://github.com/thepixelabs/altergo/commit/2e56771a4b690ec63ea94fcc66904f10a5cd2642))
 
 Switch all example account names from mine/acme/clientco to personal/work/sideproject. Rewrite hero
   subtitle and Why section to speak to individual devs rather than businesses. Replace "accidentally
@@ -1258,7 +1268,7 @@ Switch all example account names from mine/acme/clientco to personal/work/sidepr
   until you hit a rate limit.
 
 - Unify goodbye bank into altergo_greetings + add test coverage
-  ([`b9ba5ac`](https://github.com/thepixelabs/altergo/commit/b9ba5ac6e8da3d36556011b2ab9471a5526c850a))
+  ([`450b4a6`](https://github.com/thepixelabs/altergo/commit/450b4a6f609e765726ebbc745cb983e163339676))
 
 Move the _GOODBYE list from altergo.py into altergo_greetings.GOODBYES (alongside GREETINGS — both
   are session-message copy sharing the same voice rules). Expose pick_goodbye(). altergo.py now

@@ -1,6 +1,23 @@
 # CHANGELOG
 
 
+## v1.1.1 (2026-05-04)
+
+### Bug Fixes
+
+- **release**: Bump to v1.1.1 to work around PyPI filename reuse block
+  ([`a82dc6d`](https://github.com/thepixelabs/altergo/commit/a82dc6dbac11af0423841190de74ab098be8c8e3))
+
+v1.1.0 was partially uploaded to PyPI and then deleted (likely during the repo-recreate migration).
+  PyPI permanently blacklists filenames once deleted; the 2026-05-03 release workflow failed with:
+
+400 Bad Request — This filename was previously used by a file that has since been deleted. Use a
+  different version.
+
+Pushing a fix: commit to trigger semantic-release to produce v1.1.1, which will use new filenames
+  and succeed on PyPI.
+
+
 ## v1.1.0 (2026-05-03)
 
 ### Features

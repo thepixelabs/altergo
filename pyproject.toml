@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "altergo"
-version = "1.1.0"
+version = "1.1.1"
 description = "Don't break flow. Switch accounts. — N-account session manager for Claude Code, Gemini CLI, Codex, and Copilot"
 readme = "README.md"
 license = { file = "LICENSE" }

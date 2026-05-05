@@ -365,6 +365,34 @@ def test_create_account_keychain_writes_plist(mod, tmp_account_home, mock_sec_su
     assert prefs_path.exists()
 
 
+def test_create_account_keychain_does_not_pin_partition_list(monkeypatch, mod, tmp_account_home):
+    """_create_account_keychain must NOT call `set-generic-password-partition-list`.
+
+    That command requires the user's macOS login password (interactive prompt
+    from /usr/bin/security itself, with a 10s subprocess timeout that crashes
+    on slow input). The trade-off without it: first launch from the desktop
+    may show a one-time 'Always Allow' dialog. SSH access uses the OAuth
+    token bridge, which bypasses the keychain entirely (and so doesn't need
+    the partition pin). See `_build_alt_env`'s `has_oauth_token` skip."""
+    sec_calls = []
+
+    def fake_sec(argv, *, check=True, timeout=10):
+        sec_calls.append(list(argv))
+        if argv[0] == "find-generic-password":
+            return _cp(44, "", "The specified item could not be found in the keychain.")
+        return _cp(0)
+
+    monkeypatch.setattr(mod, "_sec", fake_sec)
+
+    mod._create_account_keychain(tmp_account_home, "work")
+
+    subcommands = [args[0] for args in sec_calls]
+    assert "set-generic-password-partition-list" not in subcommands, (
+        "set-generic-password-partition-list must NOT be called — that command "
+        "requires the user's macOS login password and crashes on slow input"
+    )
+
+
 def test_create_account_keychain_add_password_uses_service_and_slug(mod, tmp_account_home, mock_sec_success):
     """add-generic-password is called with -s _KC_SERVICE and -a <slug>."""
     mod._create_account_keychain(tmp_account_home, "work")
@@ -735,6 +763,93 @@ def test_build_alt_env_legacy_meta_no_unlock_sec_calls(monkeypatch, mod, tmp_pat
     }
     bad_calls = [args for args in sec_calls if args[0] in disallowed]
     assert bad_calls == [], f"Expected no unlock/build/delete _sec calls for none meta={meta!r}; got {bad_calls}"
+
+
+# ---------------------------------------------------------------------------
+# Gating test 6b: keychain mode + OAuth token present → skip unlock
+#
+# When a keychain-mode account has an .oauth-token file, claude reads the
+# token from env and never touches the keychain. _build_alt_env must skip
+# _unlock_account_keychain in that case — the unlock would either prompt
+# for partition-list approval (over SSH: fail) or do unnecessary work.
+# This is the load-bearing reason we removed the partition-list pin: with
+# OAuth tokens for SSH, the unlock step is bypassable.
+# ---------------------------------------------------------------------------
+
+
+def test_build_alt_env_keychain_mode_with_oauth_token_skips_unlock(
+    monkeypatch, mod, tmp_path, account_meta_dedicated
+):
+    """A keychain-mode account with a per-account .oauth-token file must NOT
+    trigger _unlock_account_keychain in _build_alt_env. The token in env is
+    sufficient for claude auth and the keychain doesn't need to be touched."""
+    accounts_dir = tmp_path / "accounts"
+    account_home = accounts_dir / "work"
+    account_home.mkdir(parents=True)
+    (account_home / "Library" / "Preferences").mkdir(parents=True)
+    (account_home / "Library" / "Keychains").mkdir(parents=True)
+
+    # Plant a per-account OAuth token. Should bypass keychain unlock.
+    token_file = account_home / ".claude" / ".oauth-token"
+    token_file.parent.mkdir(parents=True)
+    token_file.write_text("sk-ant-oat01-fake-token-for-test\n")
+
+    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
+    monkeypatch.setattr(mod.sys, "platform", "darwin")
+    monkeypatch.setattr(mod, "load_account_meta", lambda path: account_meta_dedicated)
+
+    unlock_calls: list[tuple[Path, str]] = []
+
+    def spy_unlock(account_home_arg, slug):
+        unlock_calls.append((account_home_arg, slug))
+
+    monkeypatch.setattr(mod, "_unlock_account_keychain", spy_unlock)
+    # Stub _sec so the reconcile pass doesn't shell out.
+    monkeypatch.setattr(mod, "_sec", lambda *a, **kw: _cp(0))
+
+    env = mod._build_alt_env("work")
+
+    assert unlock_calls == [], (
+        f"keychain-mode account with OAuth token must skip _unlock_account_keychain; "
+        f"got calls: {unlock_calls}"
+    )
+    assert env.get("CLAUDE_CODE_OAUTH_TOKEN") == "sk-ant-oat01-fake-token-for-test", (
+        "the per-account token must still be exported to the subprocess env"
+    )
+
+
+def test_build_alt_env_keychain_mode_without_oauth_token_does_unlock(
+    monkeypatch, mod, tmp_path, account_meta_dedicated
+):
+    """The complement: when keychain mode is set AND no OAuth token file is
+    present, _unlock_account_keychain MUST run (otherwise claude can't read
+    its credentials at the desk)."""
+    accounts_dir = tmp_path / "accounts"
+    account_home = accounts_dir / "work"
+    account_home.mkdir(parents=True)
+    (account_home / "Library" / "Preferences").mkdir(parents=True)
+    (account_home / "Library" / "Keychains").mkdir(parents=True)
+    # No .oauth-token file planted.
+
+    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
+    monkeypatch.setattr(mod.sys, "platform", "darwin")
+    monkeypatch.setattr(mod, "load_account_meta", lambda path: account_meta_dedicated)
+
+    unlock_calls: list[tuple[Path, str]] = []
+
+    def spy_unlock(account_home_arg, slug):
+        unlock_calls.append((account_home_arg, slug))
+
+    monkeypatch.setattr(mod, "_unlock_account_keychain", spy_unlock)
+    monkeypatch.setattr(mod, "_sec", lambda *a, **kw: _cp(0))
+
+    mod._build_alt_env("work")
+
+    assert len(unlock_calls) == 1, (
+        f"keychain-mode account without OAuth token must call _unlock_account_keychain; "
+        f"got calls: {unlock_calls}"
+    )
+    assert unlock_calls[0] == (account_home, "work")
 
 
 # ---------------------------------------------------------------------------
@@ -1152,12 +1267,13 @@ def test_interactive_reconfig_existing_keychain_can_switch_to_none(monkeypatch, 
 
 def test_interactive_keychain_prompt_includes_ssh_context_and_link(monkeypatch, mod, tmp_path, capsys):
     """The keychain-mode prompt must explain BOTH modes' actual SSH behaviour
-    accurately (the original prompt had popup-direction inverted) plus link
-    to docs/ssh-auth.md — so the user picks with full context, one prompt.
+    accurately and link to docs/ssh-auth.md — so the user picks with full
+    context, in one prompt.
 
     Truth being asserted:
-      - keychain: no popups at runtime (altergo handles unlock silently);
-        OAuth token bridge needed for SSH.
+      - keychain: at-rest encryption; one-time 'Always Allow' dialog at the
+        desk on first launch (no upfront macOS password prompt during
+        --config); OAuth token bridge offered for SSH.
       - none: macOS popup IS expected (locked keychain causes a write to
         prompt for a password that doesn't exist); user must click Cancel
         and never 'Reset To Defaults'."""
@@ -1167,12 +1283,12 @@ def test_interactive_keychain_prompt_includes_ssh_context_and_link(monkeypatch, 
     mod.configure_account("work", "claude")
 
     out = capsys.readouterr().out
-    # keychain-mode reality: silent unlock, no popups during normal use,
-    # OAuth bridge needed for SSH.
+    # keychain-mode reality: encrypted at rest, one-time desk Always-Allow
+    # dialog (NOT an upfront password prompt), OAuth bridge for SSH.
     assert "encrypted at rest" in out, "keychain mode must mention at-rest encryption"
-    assert "no popups" in out, (
-        "keychain mode must explicitly say there are no popups during normal use "
-        "(the unlock password lives in the main login keychain and altergo handles it)"
+    assert "Always Allow" in out, (
+        "keychain mode must mention the one-time desk 'Always Allow' dialog "
+        "so users aren't surprised the first time it appears"
     )
     assert "OAuth token bridge" in out, "keychain mode must reference the SSH OAuth bridge"
     # none-mode reality: popup DOES happen, user clicks Cancel.

@@ -2806,9 +2806,9 @@ def configure_account(account: str = "default", provider: str = "claude", *, key
             print()
             print(_c(2, "    keychain  per-account macOS keychain. Tokens encrypted at rest."))
             print(_c(2, "             altergo stores the unlock password in your main login"))
-            print(_c(2, "             keychain and handles unlock silently — no popups at the"))
-            print(_c(2, "             desk during normal use. Over SSH the keychain can't be"))
-            print(_c(2, "             unlocked silently in all cases, so altergo will offer"))
+            print(_c(2, "             keychain. First launch at the desk may show a one-time"))
+            print(_c(2, "             'Always Allow' macOS dialog — click Always Allow once"))
+            print(_c(2, "             and you won't see it again. Over SSH, altergo will offer"))
             print(_c(2, "             to set up an OAuth token bridge after this prompt."))
             print()
             print(_c(2, "    none     flat files in the account home (mode 0600). The"))
@@ -6090,69 +6090,27 @@ def _create_account_keychain(account_home: Path, slug: str, *, plant_unlock_entr
 
     # Store unlock password in the real login keychain. -T /usr/bin/security
     # grants the security binary ACL access so unlock-keychain works in
-    # non-GUI contexts (SSH, tmux, cron) without a GUI authorization prompt.
+    # non-GUI contexts without an *ACL* prompt.
     _sec(["add-generic-password", "-s", _KC_SERVICE, "-a", slug, "-w", P, "-T", SECURITY_CMD])
 
-    # macOS Sierra+ enforces a "partition list" on top of the ACL. Without
-    # explicit pinning, future find-generic-password -w calls re-prompt the user
-    # whenever cached partition state is invalidated (search-list changes, OS
-    # updates, denied prompts). Pin apple-tool: + apple: so /usr/bin/security
-    # reads silently. This call must prompt for the login keychain password
-    # once at creation time — `/usr/bin/security` issues that prompt itself
-    # (it shows up as `password to unlock default:`).
+    # NOTE: We deliberately do NOT call `set-generic-password-partition-list`
+    # here. That command is the only way to pin the entry to the apple-tool:
+    # partition so /usr/bin/security can read it silently from any process
+    # context (incl. SSH). But the call itself requires the user's macOS
+    # login password to authorize — interactive prompt, 10s subprocess
+    # timeout, and a hard crash on slow/empty input. Bad UX for what's
+    # supposed to be a transparent --config step.
     #
-    # Failure mode: if the user presses Enter (no password) or types a wrong
-    # one, the partition list pin silently fails and future keychain reads
-    # over SSH will trigger GUI prompts the user can't service. We detect the
-    # failure here and surface a clear recovery instruction — re-running
-    # --config gives them another chance to enter the password.
-    if sys.stdout.isatty():
-        print()
-        print(
-            _c(
-                C("header"),
-                "  macOS will now ask for your Mac login password",
-            )
-        )
-        print(_c(2, "  Prompt looks like: 'password to unlock default:'  (this is from macOS,"))
-        print(_c(2, "  not altergo). Type the same password you use to log into your Mac at the"))
-        print(_c(2, "  desk. It's needed once, to authorize the new keychain entry; subsequent"))
-        print(_c(2, "  altergo launches will not re-prompt."))
-    pin_result = _sec(
-        ["set-generic-password-partition-list", "-S", "apple-tool:,apple:", "-s", _KC_SERVICE, "-a", slug],
-        check=False,
-    )
-    if pin_result.returncode != 0:
-        # Partition list pin failed (most commonly: user hit Enter at the
-        # macOS prompt without typing a password, or typed a wrong one). The
-        # keychain unlock entry exists, but without partition pinning future
-        # reads from non-GUI contexts (SSH) will still pop dialogs. Tell the
-        # user how to recover.
-        print(file=sys.stderr)
-        print(
-            _c(33, "  ⚠  Could not pin the keychain entry's partition list."),
-            file=sys.stderr,
-        )
-        print(
-            _c(2, "     This usually means the Mac login password prompt was skipped or"),
-            file=sys.stderr,
-        )
-        print(
-            _c(2, "     mistyped. The account will still work at the desk, but SSH access"),
-            file=sys.stderr,
-        )
-        print(
-            _c(2, "     may trigger keychain dialogs that can't be answered remotely."),
-            file=sys.stderr,
-        )
-        print(
-            _c(2, f"     To retry, re-run:  {_c(0, f'altergo --config {slug}')}"),
-            file=sys.stderr,
-        )
-        print(
-            _c(2, "     and type your Mac login password when prompted."),
-            file=sys.stderr,
-        )
+    # Trade-off without the pin:
+    #   - Desktop first launch: macOS may show one "Always Allow security
+    #     to access this entry?" dialog. User clicks Always Allow once and
+    #     never sees it again from any context, including SSH.
+    #   - SSH first launch *before* the desktop dialog has been answered:
+    #     keychain unlock fails. The user is expected to use the OAuth
+    #     token bridge (`altergo --setup-token <account>`), which we
+    #     auto-prompt right after this in `configure_account` for keychain
+    #     mode accounts. With a token in place, `_build_alt_env` skips the
+    #     keychain unlock entirely, so the partition pin is moot.
 
     # Write B last: B present implies C+D present (invariant §5.3).
     _write_keychain_prefs(account_home)
@@ -6675,7 +6633,14 @@ def _build_alt_env(account: str = "default") -> dict:
             # Continue — _unlock_account_keychain below will give a better error
             # if isolation is still expected.
     meta = load_account_meta(account_home)
-    if sys.platform == "darwin" and _uses_keychain(meta):
+    # Skip the keychain unlock when an OAuth token is present: the token
+    # bypasses the keychain entirely (claude reads CLAUDE_CODE_OAUTH_TOKEN
+    # from env), so there's nothing to unlock. This is what makes the
+    # "no partition list pin" trade-off (see _create_account_keychain) safe
+    # for SSH — over SSH, users are expected to have a token, and we never
+    # touch the keychain.
+    has_oauth_token = _load_oauth_token(account, account_home) is not None
+    if sys.platform == "darwin" and _uses_keychain(meta) and not has_oauth_token:
         try:
             _unlock_account_keychain(account_home, account)
         except KeychainError as e:

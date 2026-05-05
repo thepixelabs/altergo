@@ -50,7 +50,7 @@ def full_home(tmp_path):
               personal/
                 .claude/ ...               (same symlinks)
 
-    The accounts are set up by calling altergo.do_config() with module globals
+    The accounts are set up by calling altergo.configure_account() with module globals
     temporarily pointed at this tree.  Globals are restored before the fixture
     yields so that the test body sees the original (real) globals — subprocess
     tests drive altergo via HOME env, not via Python globals.
@@ -72,7 +72,7 @@ def full_home(tmp_path):
     main_claude = home / ".claude"
     accounts_dir = home / ".altergo" / "accounts"
 
-    # Build the MAIN_HOME/.claude/ sources that do_config() will symlink from.
+    # Build the MAIN_HOME/.claude/ sources that configure_account() will symlink from.
     for name in altergo.SYMLINK_DIRS:
         (main_claude / name).mkdir(parents=True, exist_ok=True)
     for name in altergo.SYMLINK_FILES:
@@ -80,7 +80,7 @@ def full_home(tmp_path):
 
     accounts_dir.mkdir(parents=True, exist_ok=True)
 
-    # Temporarily redirect module globals so do_config() operates on our tree.
+    # Temporarily redirect module globals so configure_account() operates on our tree.
     # We save and restore manually (rather than using monkeypatch) so that
     # globals are clean when the fixture yields and the test body runs.
     _saved = {
@@ -97,12 +97,12 @@ def full_home(tmp_path):
         # Use keychain_arg="none" so the fixture does not attempt to plant
         # unlock entries in the real macOS keychain during tests.  Integration
         # tests that exercise keychain behaviour set keychain_arg explicitly.
-        altergo.do_config("default", keychain_arg="none")
-        altergo.do_config("work", keychain_arg="none")
-        altergo.do_config("personal", keychain_arg="none")
+        altergo.configure_account("default", keychain_arg="none")
+        altergo.configure_account("work", keychain_arg="none")
+        altergo.configure_account("personal", keychain_arg="none")
         altergo.set_active_account("default")
     finally:
-        # Always restore — even if do_config raises.
+        # Always restore — even if configure_account raises.
         for attr, val in _saved.items():
             setattr(altergo, attr, val)
 

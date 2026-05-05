@@ -160,7 +160,7 @@ def test_list_accounts_populated(fake_home):
 
 
 def _create_main_claude_sources(main_claude: Path):
-    """Create the source dirs/files in MAIN_CLAUDE that do_config() will symlink."""
+    """Create the source dirs/files in MAIN_CLAUDE that configure_account() will symlink."""
     for name in altergo.SYMLINK_DIRS:
         (main_claude / name).mkdir(parents=True, exist_ok=True)
     for name in altergo.SYMLINK_FILES:
@@ -177,12 +177,12 @@ def _create_catalog_sources(main_home: Path):
 
 
 def test_setup_creates_claude_symlinks(fake_home):
-    """do_config() creates symlinks for SYMLINK_DIRS inside account_home/.claude/."""
+    """configure_account() creates symlinks for SYMLINK_DIRS inside account_home/.claude/."""
     main_claude = fake_home["main_claude"]
     accounts_dir = fake_home["accounts_dir"]
     _create_main_claude_sources(main_claude)
 
-    altergo.do_config("work")
+    altergo.configure_account("work")
 
     account_claude = accounts_dir / "work" / ".claude"
     for name in altergo.SYMLINK_DIRS:
@@ -192,12 +192,12 @@ def test_setup_creates_claude_symlinks(fake_home):
 
 
 def test_setup_creates_claude_file_symlinks(fake_home):
-    """do_config() creates symlinks for SYMLINK_FILES inside account_home/.claude/."""
+    """configure_account() creates symlinks for SYMLINK_FILES inside account_home/.claude/."""
     main_claude = fake_home["main_claude"]
     accounts_dir = fake_home["accounts_dir"]
     _create_main_claude_sources(main_claude)
 
-    altergo.do_config("work")
+    altergo.configure_account("work")
 
     account_claude = accounts_dir / "work" / ".claude"
     for name in altergo.SYMLINK_FILES:
@@ -207,13 +207,13 @@ def test_setup_creates_claude_file_symlinks(fake_home):
 
 
 def test_setup_creates_home_dir_symlinks(fake_home):
-    """do_config() creates CATALOG symlinks at account_home level pointing into MAIN_HOME."""
+    """configure_account() creates CATALOG symlinks at account_home level pointing into MAIN_HOME."""
     main_home = fake_home["main_home"]
     accounts_dir = fake_home["accounts_dir"]
     _create_main_claude_sources(fake_home["main_claude"])
     _create_catalog_sources(main_home)
 
-    altergo.do_config("work")
+    altergo.configure_account("work")
 
     account_home = accounts_dir / "work"
     for entry in altergo.CATALOG:
@@ -232,7 +232,7 @@ def test_symlinks_no_escape(fake_home):
     accounts_dir = fake_home["accounts_dir"]
     _create_main_claude_sources(main_claude)
 
-    altergo.do_config("work")
+    altergo.configure_account("work")
 
     account_claude = accounts_dir / "work" / ".claude"
     for link in account_claude.iterdir():
@@ -249,14 +249,14 @@ def test_symlinks_no_escape(fake_home):
 
 
 def test_teardown_removes_symlinks(fake_home):
-    """do_teardown() removes all symlinks that do_config() created."""
+    """do_teardown() removes all symlinks that configure_account() created."""
     main_home = fake_home["main_home"]
     main_claude = fake_home["main_claude"]
     accounts_dir = fake_home["accounts_dir"]
     _create_main_claude_sources(main_claude)
     _create_catalog_sources(main_home)
 
-    altergo.do_config("work")
+    altergo.configure_account("work")
     altergo.do_teardown("work")
 
     account_claude = accounts_dir / "work" / ".claude"
@@ -284,7 +284,7 @@ def test_teardown_removes_symlinks(fake_home):
 
 
 def test_mcp_sync_from_main_to_account(fake_home):
-    """do_config() syncs mcpServers from MAIN_HOME/.claude.json into account."""
+    """configure_account() syncs mcpServers from MAIN_HOME/.claude.json into account."""
     main_home = fake_home["main_home"]
     accounts_dir = fake_home["accounts_dir"]
     _create_main_claude_sources(fake_home["main_claude"])
@@ -295,7 +295,7 @@ def test_mcp_sync_from_main_to_account(fake_home):
         "oauthAccount": {"email": "main@example.com"},
     }))
 
-    altergo.do_config("work")
+    altergo.configure_account("work")
 
     acct_cfg = accounts_dir / "work" / ".claude.json"
     assert acct_cfg.exists(), "account must have its own .claude.json"
@@ -305,7 +305,7 @@ def test_mcp_sync_from_main_to_account(fake_home):
 
 
 def test_mcp_sync_from_account_to_main(fake_home):
-    """do_config() pushes account-only mcpServers back to MAIN_HOME/.claude.json."""
+    """configure_account() pushes account-only mcpServers back to MAIN_HOME/.claude.json."""
     main_home = fake_home["main_home"]
     accounts_dir = fake_home["accounts_dir"]
     _create_main_claude_sources(fake_home["main_claude"])
@@ -318,14 +318,14 @@ def test_mcp_sync_from_account_to_main(fake_home):
         "mcpServers": {"local-tool": {"command": "npx", "args": ["tool"]}},
     }))
 
-    altergo.do_config("work")
+    altergo.configure_account("work")
 
     main_data = json.loads((main_home / ".claude.json").read_text())
     assert "local-tool" in main_data.get("mcpServers", {}), "account MCP must propagate to main home"
 
 
 def test_mcp_sync_bidirectional_merge(fake_home):
-    """do_config() merges mcpServers from both sides; account wins on conflict."""
+    """configure_account() merges mcpServers from both sides; account wins on conflict."""
     main_home = fake_home["main_home"]
     accounts_dir = fake_home["accounts_dir"]
     _create_main_claude_sources(fake_home["main_claude"])
@@ -345,7 +345,7 @@ def test_mcp_sync_bidirectional_merge(fake_home):
         },
     }))
 
-    altergo.do_config("work")
+    altergo.configure_account("work")
 
     main_data = json.loads((main_home / ".claude.json").read_text())
     acct_data = json.loads((account_home / ".claude.json").read_text())
@@ -378,7 +378,7 @@ def test_mcp_sync_preserves_oauth_per_account(fake_home):
         "oauthAccount": {"email": "work@example.com"},
     }))
 
-    altergo.do_config("work")
+    altergo.configure_account("work")
 
     acct_data = json.loads((account_home / ".claude.json").read_text())
     assert acct_data["oauthAccount"]["email"] == "work@example.com", \
@@ -404,7 +404,7 @@ def test_mcp_sync_unsymlinks_migration(fake_home):
     acct_cfg = account_home / ".claude.json"
     acct_cfg.symlink_to(main_cfg)
 
-    altergo.do_config("work")
+    altergo.configure_account("work")
 
     assert not acct_cfg.is_symlink(), ".claude.json must be unsymlinked after migration"
     assert acct_cfg.exists(), ".claude.json must exist as a real file"
@@ -497,7 +497,7 @@ def test_list_then_resume_roundtrip(sweep_home):
     accounts_dir = sweep_home["accounts_dir"]
 
     # Set up a properly-symlinked default account.
-    altergo.do_config("default")
+    altergo.configure_account("default")
 
     account_home = accounts_dir / "default"
     account_claude = account_home / ".claude"
@@ -634,7 +634,7 @@ def test_setup_creates_provider_symlinks(fake_home, provider_id):
     for name in prov["symlink_files"]:
         (main_dot_dir / name).touch()
 
-    altergo.do_config("work", provider_id)
+    altergo.configure_account("work", provider_id)
 
     account_dot_dir = fake_home["accounts_dir"] / "work" / prov["dot_dir"]
 
@@ -662,7 +662,7 @@ def test_teardown_removes_provider_symlinks(fake_home):
     for name in prov["symlink_files"]:
         (main_dot_dir / name).touch()
 
-    altergo.do_config("work", "gemini")
+    altergo.configure_account("work", "gemini")
 
     account_dot_dir = fake_home["accounts_dir"] / "work" / ".gemini"
     created_symlinks = [account_dot_dir / name for name in prov["symlink_dirs"] if (account_dot_dir / name).is_symlink()]

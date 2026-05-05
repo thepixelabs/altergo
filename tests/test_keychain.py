@@ -3,15 +3,14 @@
 Covers: SECURITY_CMD, _KC_SERVICE, _KC_GUID, _KC_SUBSERVICE_TYPE, KeychainError,
 _sec, _keychain_path, _keychain_prefs_path, _write_keychain_prefs,
 _create_account_keychain, _unlock_account_keychain, _delete_account_keychain,
-_is_keychain_private, _is_keychain_none, _is_keychain_isolated (internal alias),
-_is_keychain_dedicated (internal alias), _build_alt_env (unlock path),
-do_config (keychain_arg), do_delete_account (keychain teardown).
+_uses_keychain, _is_keychain_none, _build_alt_env (unlock path),
+configure_account (keychain_arg), do_delete_account (keychain teardown).
 
-v0.46.0 vocabulary:
-  - "private" : per-account keychain, unlocked at launch — only canonical name
-  - "none"    : no keychain; flat-file credentials only — only canonical name
-  All legacy aliases (dedicated, isolated, system, shared) removed in v0.46.0.
-  Default since v0.45.0: private
+Vocabulary (canonical):
+  - "keychain" : per-account keychain, unlocked at launch — only canonical name
+  - "none"     : no keychain; flat-file credentials only
+  All legacy aliases (private, dedicated, isolated, system, shared) removed.
+  Default: keychain
 
 Patching boundary: _sec only. No real /usr/bin/security calls. Ever.
 """
@@ -146,16 +145,16 @@ def mock_sec_auth_failed(monkeypatch, mod):
 
 @pytest.fixture()
 def account_meta_dedicated():
-    """In-memory v3 shape for a private-mode account (v0.45.0 name; v0.44.x called it 'dedicated').
+    """In-memory v3 shape for a keychain-mode account (v0.45.0 name; v0.44.x called it 'dedicated').
 
-    Uses the new canonical name "private".  Tests that need the old on-disk value
+    Uses the new canonical name "keychain".  Tests that need the old on-disk value
     "dedicated" should write account.json directly.
     """
     return {
         "version": 3,
         "providers": ["claude"],
         "default_provider": "claude",
-        "keychain": "private",
+        "keychain": "keychain",
     }
 
 
@@ -178,7 +177,7 @@ def account_meta_isolated():
 def account_meta_legacy():
     """In-memory v3 shape with no keychain key (legacy pre-v0.44.0 system account).
 
-    Since v0.45.0 the absent key → private by default.
+    Since v0.45.0 the absent key → keychain by default.
     """
     return {
         "version": 3,
@@ -603,32 +602,33 @@ def test_delete_account_keychain_idempotent_when_both_fail(monkeypatch, mod, tmp
 
 
 # ---------------------------------------------------------------------------
-# _is_keychain_isolated — truth table (internal alias)
+# _is_keychain_none — truth table
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
     "meta,expected",
     [
-        # v0.46.0: absent key / None / empty → private by default → _is_keychain_none=False.
+        # Absent key / None / empty → keychain by default → _is_keychain_none=False.
         (None, False),
         ({}, False),
         ({"version": 2, "provider": "claude"}, False),
-        # Explicit "none" (current canonical name) → True.
+        # Explicit "none" → True.
         ({"version": 2, "provider": "claude", "keychain": "none"}, True),
-        # "private" → NOT none.
+        # "keychain" → NOT none.
+        ({"keychain": "keychain"}, False),
+        # Unrecognized values (legacy or malformed) → fall through to default → False.
         ({"keychain": "private"}, False),
-        # Wrong-case / unknown values → False.
         ({"keychain": "ISOLATED"}, False),
         ({"keychain": "Isolated"}, False),
     ],
 )
-def test_is_keychain_isolated_truth_table(mod, meta, expected):
-    """_is_keychain_isolated is the internal alias for _is_keychain_none.
-    In v0.46.0, absent key / None → private by default, so _is_keychain_none returns False
-    for those cases.  Legacy values on disk are coerced to 'private' by _coerce_meta_v3
-    (with a warning), so this function only sees 'private' or 'none' in practice."""
-    assert mod._is_keychain_isolated(meta) is expected
+def test_is_keychain_none_truth_table(mod, meta, expected):
+    """The default mode is keychain; _is_keychain_none returns True only for
+    the literal 'none' value. Anything else (absent key, unrecognized legacy
+    value, wrong case) falls through to keychain mode and the function
+    returns False."""
+    assert mod._is_keychain_none(meta) is expected
 
 
 # ---------------------------------------------------------------------------
@@ -759,20 +759,20 @@ def test_build_alt_env_native_never_calls_sec(monkeypatch, mod):
 
 
 # ---------------------------------------------------------------------------
-# Gating test 4: do_config non-TTY none mode (Invariant 9)
+# Gating test 4: configure_account non-TTY none mode (Invariant 9)
 # ---------------------------------------------------------------------------
 
 
 def _create_main_claude_sources_for_mod(mod, main_claude: Path):
-    """Create the source dirs/files in MAIN_CLAUDE that do_config() will symlink."""
+    """Create the source dirs/files in MAIN_CLAUDE that configure_account() will symlink."""
     for name in mod.SYMLINK_DIRS:
         (main_claude / name).mkdir(parents=True, exist_ok=True)
     for name in mod.SYMLINK_FILES:
         (main_claude / name).touch()
 
 
-def test_do_config_non_tty_none_writes_meta_and_plist(monkeypatch, mod, tmp_path):
-    """do_config with keychain_arg='none' on non-TTY writes meta with keychain=none
+def test_configure_account_non_tty_none_writes_meta_and_plist(monkeypatch, mod, tmp_path):
+    """configure_account with keychain_arg='none' on non-TTY writes meta with keychain=none
     and creates the plist file."""
     main_home = tmp_path / "main_home"
     main_claude = main_home / ".claude"
@@ -797,7 +797,7 @@ def test_do_config_non_tty_none_writes_meta_and_plist(monkeypatch, mod, tmp_path
     monkeypatch.setattr(mod, "_status_wrap", lambda msg, fn: fn())
     monkeypatch.setattr(mod, "load_settings", lambda: {})
 
-    mod.do_config("work", keychain_arg="none")
+    mod.configure_account("work", keychain_arg="none")
 
     account_home = accounts_dir / "work"
     meta_path = account_home / "account.json"
@@ -809,8 +809,8 @@ def test_do_config_non_tty_none_writes_meta_and_plist(monkeypatch, mod, tmp_path
     assert plist_path.exists(), "plist must exist for none-mode account"
 
 
-def test_do_config_non_tty_none_sec_is_called(monkeypatch, mod, tmp_path):
-    """do_config with keychain_arg='none' on non-TTY calls _sec (creates the keychain)."""
+def test_configure_account_non_tty_none_sec_is_called(monkeypatch, mod, tmp_path):
+    """configure_account with keychain_arg='none' on non-TTY calls _sec (creates the keychain)."""
     main_home = tmp_path / "main_home"
     main_claude = main_home / ".claude"
     accounts_dir = tmp_path / "accounts"
@@ -834,20 +834,20 @@ def test_do_config_non_tty_none_sec_is_called(monkeypatch, mod, tmp_path):
     monkeypatch.setattr(mod, "_status_wrap", lambda msg, fn: fn())
     monkeypatch.setattr(mod, "load_settings", lambda: {})
 
-    mod.do_config("work", keychain_arg="none")
+    mod.configure_account("work", keychain_arg="none")
 
     assert len(sec_calls) > 0, "_sec must be called when keychain_arg='none'"
 
 
 # ---------------------------------------------------------------------------
-# Gating test 5: do_config non-TTY no flag (Invariant 10)
+# Gating test 5: configure_account non-TTY no flag (Invariant 10)
 # ---------------------------------------------------------------------------
 
 
-def test_do_config_non_tty_no_flag_creates_private_mode(monkeypatch, mod, tmp_path):
-    """do_config with keychain_arg=None on non-TTY defaults to private mode (v0.45.0 default).
-    Private mode creates plist (B), keychain file (C), and plants the unlock entry (D).
-    meta must have keychain='private'."""
+def test_configure_account_non_tty_no_flag_creates_keychain_mode(monkeypatch, mod, tmp_path):
+    """configure_account with keychain_arg=None on non-TTY defaults to keychain mode (v0.45.0 default).
+    Keychain mode creates plist (B), keychain file (C), and plants the unlock entry (D).
+    meta must have keychain='keychain'."""
     main_home = tmp_path / "main_home"
     main_claude = main_home / ".claude"
     accounts_dir = tmp_path / "accounts"
@@ -871,25 +871,25 @@ def test_do_config_non_tty_no_flag_creates_private_mode(monkeypatch, mod, tmp_pa
     monkeypatch.setattr(mod, "_status_wrap", lambda msg, fn: fn())
     monkeypatch.setattr(mod, "load_settings", lambda: {})
 
-    mod.do_config("work", keychain_arg=None)
+    mod.configure_account("work", keychain_arg=None)
 
     account_home = accounts_dir / "work"
     meta_path = account_home / "account.json"
     assert meta_path.exists()
     meta = json.loads(meta_path.read_text())
-    assert meta.get("keychain") == "private", f"v0.45.0 default is 'private'; got {meta}"
+    assert meta.get("keychain") == "keychain", f"v0.45.0 default is 'keychain'; got {meta}"
 
-    # private mode: plist must exist (routes Security.framework to per-account keychain).
+    # keychain mode: plist must exist (routes Security.framework to per-account keychain).
     plist_path = account_home / "Library" / "Preferences" / "com.apple.security.plist"
-    assert plist_path.exists(), "plist must exist for private mode (required for Security.framework routing)"
+    assert plist_path.exists(), "plist must exist for keychain mode (required for Security.framework routing)"
 
-    # private mode: add-generic-password MUST be called (unlock entry planted).
+    # keychain mode: add-generic-password MUST be called (unlock entry planted).
     add_calls = [args for args in sec_calls if args[0] == "add-generic-password"]
-    assert add_calls != [], f"private mode must call add-generic-password; sec_calls={sec_calls}"
+    assert add_calls != [], f"keychain mode must call add-generic-password; sec_calls={sec_calls}"
 
 
-def test_do_config_non_tty_no_flag_does_not_hang(monkeypatch, mod, tmp_path):
-    """do_config with keychain_arg=None on non-TTY returns without blocking on input()."""
+def test_configure_account_non_tty_no_flag_does_not_hang(monkeypatch, mod, tmp_path):
+    """configure_account with keychain_arg=None on non-TTY returns without blocking on input()."""
     import builtins
 
     main_home = tmp_path / "main_home"
@@ -919,7 +919,7 @@ def test_do_config_non_tty_no_flag_does_not_hang(monkeypatch, mod, tmp_path):
     monkeypatch.setattr(mod, "load_settings", lambda: {})
 
     # Should complete without raising.
-    mod.do_config("work", keychain_arg=None)
+    mod.configure_account("work", keychain_arg=None)
 
 
 # ---------------------------------------------------------------------------
@@ -927,8 +927,8 @@ def test_do_config_non_tty_no_flag_does_not_hang(monkeypatch, mod, tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_do_config_non_darwin_no_sec_no_plist(monkeypatch, mod, tmp_path):
-    """On non-darwin platforms, do_config with keychain_arg='none' does not
+def test_configure_account_non_darwin_no_sec_no_plist(monkeypatch, mod, tmp_path):
+    """On non-darwin platforms, configure_account with keychain_arg='none' does not
     call _sec and does not create Library/Keychains/. Documents current behavior."""
     main_home = tmp_path / "main_home"
     main_claude = main_home / ".claude"
@@ -953,7 +953,7 @@ def test_do_config_non_darwin_no_sec_no_plist(monkeypatch, mod, tmp_path):
     monkeypatch.setattr(mod, "_status_wrap", lambda msg, fn: fn())
     monkeypatch.setattr(mod, "load_settings", lambda: {})
 
-    mod.do_config("work", keychain_arg="none")
+    mod.configure_account("work", keychain_arg="none")
 
     account_home = accounts_dir / "work"
     keychains_dir = account_home / "Library" / "Keychains"
@@ -983,10 +983,10 @@ def test_build_alt_env_non_darwin_never_calls_sec(monkeypatch, mod, tmp_path, ac
 # ---------------------------------------------------------------------------
 
 
-def test_do_config_reconfig_preserves_none(monkeypatch, mod, tmp_path):
-    """Re-running do_config on an account that already has keychain='none' keeps none mode
+def test_configure_account_reconfig_preserves_none(monkeypatch, mod, tmp_path):
+    """Re-running configure_account on an account that already has keychain='none' keeps none mode
     when keychain_arg is None on non-TTY.  On non-TTY without keychain_arg, if the existing
-    meta says 'none', do_config preserves 'none' (user opted out of private mode)."""
+    meta says 'none', configure_account preserves 'none' (user opted out of keychain mode)."""
     main_home = tmp_path / "main_home"
     main_claude = main_home / ".claude"
     accounts_dir = tmp_path / "accounts"
@@ -1020,11 +1020,174 @@ def test_do_config_reconfig_preserves_none(monkeypatch, mod, tmp_path):
     monkeypatch.setattr(mod, "_status_wrap", lambda msg, fn: fn())
     monkeypatch.setattr(mod, "load_settings", lambda: {})
 
-    mod.do_config("work", keychain_arg=None)
+    mod.configure_account("work", keychain_arg=None)
 
     meta = json.loads((account_home / "account.json").read_text())
     assert meta.get("keychain") == "none", (
         f"Re-config with keychain_arg=None on non-TTY must preserve 'none' mode; got {meta}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Interactive re-config: existing accounts must always re-prompt
+#
+# The prior behaviour silently preserved a 'none' account on re-config — users
+# couldn't switch to keychain without passing --keychain explicitly. The new
+# behaviour: in interactive (TTY) mode, --config always re-prompts so the user
+# can change their mind, with the current mode as the default answer.
+# ---------------------------------------------------------------------------
+
+
+def _setup_interactive_reconfig_env(monkeypatch, mod, tmp_path, *, current_keychain: str):
+    """Stand up an account with the given keychain mode in account.json + a TTY stdin."""
+    main_home = tmp_path / "main_home"
+    main_claude = main_home / ".claude"
+    accounts_dir = tmp_path / "accounts"
+    account_home = accounts_dir / "work"
+    main_home.mkdir(parents=True)
+    main_claude.mkdir(parents=True)
+    accounts_dir.mkdir(parents=True)
+    account_home.mkdir(parents=True)
+    (account_home / "Library" / "Preferences").mkdir(parents=True)
+    (account_home / "Library" / "Keychains").mkdir(parents=True)
+    _create_main_claude_sources_for_mod(mod, main_claude)
+    (account_home / "account.json").write_text(
+        json.dumps({"version": 3, "providers": ["claude"], "default_provider": "claude", "keychain": current_keychain})
+    )
+
+    monkeypatch.setattr(mod, "MAIN_HOME", main_home)
+    monkeypatch.setattr(mod, "MAIN_CLAUDE", main_claude)
+    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
+    monkeypatch.setattr(mod, "SETTINGS_FILE", tmp_path / "settings.json")
+    monkeypatch.setattr(mod.sys, "platform", "darwin")
+    monkeypatch.setattr(mod.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(mod, "_sec", lambda *a, **kw: _cp(0))
+    monkeypatch.setattr(mod, "show_banner", lambda *a, **kw: None)
+    monkeypatch.setattr(mod, "_status_wrap", lambda msg, fn: fn())
+    monkeypatch.setattr(mod, "load_settings", lambda: {})
+    # Suppress the SSH-token offer; we're testing the keychain-mode prompt only.
+    monkeypatch.setattr(mod, "_maybe_offer_oauth_token_setup", lambda *a, **kw: False)
+    return account_home
+
+
+def test_interactive_reconfig_existing_none_account_prompts_user(monkeypatch, mod, tmp_path):
+    """The fix: an existing 'none' account that runs --config in interactive mode
+    must SEE the keychain prompt — previously it was silently preserved.
+
+    We capture the prompt text via the input() argument rather than capsys
+    because monkeypatching `builtins.input` with a lambda never writes the
+    prompt to stdout (Python writes it before reading from stdin, but the
+    lambda short-circuits the whole function)."""
+    _setup_interactive_reconfig_env(monkeypatch, mod, tmp_path, current_keychain="none")
+
+    captured_prompts: list[str] = []
+
+    def fake_input(prompt=""):
+        captured_prompts.append(prompt)
+        return ""  # Enter → accept default
+
+    monkeypatch.setattr("builtins.input", fake_input)
+
+    mod.configure_account("work", "claude")
+
+    # The keychain-mode prompt must have been issued.
+    assert any("Switch to keychain mode?" in p for p in captured_prompts), (
+        f"for an existing 'none' account, prompt must offer to switch to "
+        f"keychain (with default=stay). got prompts: {captured_prompts!r}"
+    )
+
+
+def test_interactive_reconfig_existing_none_can_switch_to_keychain(monkeypatch, mod, tmp_path):
+    """User explicitly types 'y' on a 'none' account → switches to keychain mode."""
+    account_home = _setup_interactive_reconfig_env(monkeypatch, mod, tmp_path, current_keychain="none")
+    monkeypatch.setattr("builtins.input", lambda prompt="": "y")
+
+    mod.configure_account("work", "claude")
+
+    meta = json.loads((account_home / "account.json").read_text())
+    assert meta.get("keychain") == "keychain", (
+        f"interactive re-config of none + 'y' answer must switch to keychain mode; got {meta}"
+    )
+
+
+def test_interactive_reconfig_existing_none_default_preserves_none(monkeypatch, mod, tmp_path):
+    """User accepts default (Enter) on a 'none' account → stays none.
+    The default-answer convention for [y/N] is the highlighted-uppercase letter."""
+    account_home = _setup_interactive_reconfig_env(monkeypatch, mod, tmp_path, current_keychain="none")
+    monkeypatch.setattr("builtins.input", lambda prompt="": "")
+
+    mod.configure_account("work", "claude")
+
+    meta = json.loads((account_home / "account.json").read_text())
+    assert meta.get("keychain") == "none", (
+        f"empty answer on a 'none' account must preserve none (default); got {meta}"
+    )
+
+
+def test_interactive_reconfig_existing_keychain_default_preserves_keychain(monkeypatch, mod, tmp_path):
+    """User accepts default (Enter) on a 'keychain' account → stays in keychain mode."""
+    account_home = _setup_interactive_reconfig_env(monkeypatch, mod, tmp_path, current_keychain="keychain")
+    monkeypatch.setattr("builtins.input", lambda prompt="": "")
+
+    mod.configure_account("work", "claude")
+
+    meta = json.loads((account_home / "account.json").read_text())
+    assert meta.get("keychain") == "keychain", (
+        f"empty answer on a 'keychain' account must preserve keychain (default); got {meta}"
+    )
+
+
+def test_interactive_reconfig_existing_keychain_can_switch_to_none(monkeypatch, mod, tmp_path):
+    """User explicitly types 'n' on a 'keychain' account → switches to none."""
+    account_home = _setup_interactive_reconfig_env(monkeypatch, mod, tmp_path, current_keychain="keychain")
+    monkeypatch.setattr("builtins.input", lambda prompt="": "n")
+
+    mod.configure_account("work", "claude")
+
+    meta = json.loads((account_home / "account.json").read_text())
+    assert meta.get("keychain") == "none", (
+        f"interactive re-config of keychain + 'n' answer must switch to none; got {meta}"
+    )
+
+
+def test_interactive_keychain_prompt_includes_ssh_context_and_link(monkeypatch, mod, tmp_path, capsys):
+    """The keychain-mode prompt must explain BOTH modes' actual SSH behaviour
+    accurately (the original prompt had popup-direction inverted) plus link
+    to docs/ssh-auth.md — so the user picks with full context, one prompt.
+
+    Truth being asserted:
+      - keychain: no popups at runtime (altergo handles unlock silently);
+        OAuth token bridge needed for SSH.
+      - none: macOS popup IS expected (locked keychain causes a write to
+        prompt for a password that doesn't exist); user must click Cancel
+        and never 'Reset To Defaults'."""
+    _setup_interactive_reconfig_env(monkeypatch, mod, tmp_path, current_keychain="keychain")
+    monkeypatch.setattr("builtins.input", lambda prompt="": "")
+
+    mod.configure_account("work", "claude")
+
+    out = capsys.readouterr().out
+    # keychain-mode reality: silent unlock, no popups during normal use,
+    # OAuth bridge needed for SSH.
+    assert "encrypted at rest" in out, "keychain mode must mention at-rest encryption"
+    assert "no popups" in out, (
+        "keychain mode must explicitly say there are no popups during normal use "
+        "(the unlock password lives in the main login keychain and altergo handles it)"
+    )
+    assert "OAuth token bridge" in out, "keychain mode must reference the SSH OAuth bridge"
+    # none-mode reality: popup DOES happen, user clicks Cancel.
+    assert "flat files" in out, "none mode must mention flat-file storage"
+    assert "Allow access" in out and "Cancel" in out, (
+        "none mode must warn that macOS will pop the 'Allow access' dialog "
+        "and that the user must click Cancel"
+    )
+    assert "Reset To Defaults" in out, (
+        "none mode must warn against the 'Reset To Defaults' button "
+        "(destroys real login keychain — unrelated, very destructive)"
+    )
+    # link to long-form docs
+    assert "github.com/thepixelabs/altergo/blob/main/docs/ssh-auth.md" in out, (
+        "must link to the long-form SSH auth doc"
     )
 
 
@@ -1148,12 +1311,12 @@ def test_do_delete_account_sec_calls_use_check_false(monkeypatch, mod, tmp_path,
 
 
 # ---------------------------------------------------------------------------
-# Fix D — End-to-end: do_config → _build_alt_env (seam test)
+# Fix D — End-to-end: configure_account → _build_alt_env (seam test)
 # ---------------------------------------------------------------------------
 
 
-def _setup_do_config_env(monkeypatch, mod, tmp_path):
-    """Shared environment wiring for do_config integration tests."""
+def _setup_configure_account_env(monkeypatch, mod, tmp_path):
+    """Shared environment wiring for configure_account integration tests."""
     main_home = tmp_path / "main_home"
     main_claude = main_home / ".claude"
     accounts_dir = tmp_path / "accounts"
@@ -1176,13 +1339,13 @@ def _setup_do_config_env(monkeypatch, mod, tmp_path):
     return accounts_dir
 
 
-def test_do_config_then_build_alt_env_calls_find_generic_password(monkeypatch, mod, tmp_path):
-    """do_config('work', keychain_arg='none') followed by _build_alt_env('work') must
+def test_configure_account_then_build_alt_env_calls_find_generic_password(monkeypatch, mod, tmp_path):
+    """configure_account('work', keychain_arg='none') followed by _build_alt_env('work') must
     result in _sec being called with find-generic-password during the _build_alt_env phase.
-    Catches seam bugs where do_config writes a meta key that _build_alt_env doesn't read."""
-    accounts_dir = _setup_do_config_env(monkeypatch, mod, tmp_path)
+    Catches seam bugs where configure_account writes a meta key that _build_alt_env doesn't read."""
+    accounts_dir = _setup_configure_account_env(monkeypatch, mod, tmp_path)
 
-    # Phase 1: do_config — spy on _sec, always succeed.
+    # Phase 1: configure_account — spy on _sec, always succeed.
     config_sec_calls = []
 
     def fake_sec_config(argv, *, check=True, timeout=10):
@@ -1192,7 +1355,7 @@ def test_do_config_then_build_alt_env_calls_find_generic_password(monkeypatch, m
         return _cp(0)
 
     monkeypatch.setattr(mod, "_sec", fake_sec_config)
-    mod.do_config("work", keychain_arg="none")
+    mod.configure_account("work", keychain_arg="none")
 
     # Phase 2: _build_alt_env — replace spy to capture only calls from this phase.
     build_sec_calls = []
@@ -1218,12 +1381,12 @@ def test_do_config_then_build_alt_env_calls_find_generic_password(monkeypatch, m
 # ---------------------------------------------------------------------------
 
 
-def test_do_config_existing_system_account_normalizes_to_private(monkeypatch, mod, tmp_path):
+def test_configure_account_existing_system_account_normalizes_to_keychain(monkeypatch, mod, tmp_path):
     """Given an account.json with no 'keychain' key (legacy system/shared account),
-    calling do_config(..., keychain_arg=None) on non-TTY must save meta with
-    keychain='private' (the new default since v0.45.0) and must plant an unlock entry (D).
-    Private mode creates plist (B), keychain file (C), and stores unlock entry (D)."""
-    accounts_dir = _setup_do_config_env(monkeypatch, mod, tmp_path)
+    calling configure_account(..., keychain_arg=None) on non-TTY must save meta with
+    keychain='keychain' (the new default since v0.45.0) and must plant an unlock entry (D).
+    Keychain mode creates plist (B), keychain file (C), and stores unlock entry (D)."""
+    accounts_dir = _setup_configure_account_env(monkeypatch, mod, tmp_path)
     account_home = accounts_dir / "work"
     account_home.mkdir(parents=True)
     (account_home / "Library" / "Preferences").mkdir(parents=True)
@@ -1236,14 +1399,14 @@ def test_do_config_existing_system_account_normalizes_to_private(monkeypatch, mo
     sec_calls = []
     monkeypatch.setattr(mod, "_sec", lambda argv, **kw: (sec_calls.append(list(argv)), _cp(0))[-1])
 
-    mod.do_config("work", keychain_arg=None)
+    mod.configure_account("work", keychain_arg=None)
 
     meta = json.loads((account_home / "account.json").read_text())
-    assert meta.get("keychain") == "private", f"v0.45.0 default is 'private'; got {meta}"
+    assert meta.get("keychain") == "keychain", f"v0.45.0 default is 'keychain'; got {meta}"
 
-    # private mode MUST plant unlock entry (D).
+    # keychain mode MUST plant unlock entry (D).
     add_calls = [args for args in sec_calls if args[0] == "add-generic-password"]
-    assert add_calls != [], f"private mode must call add-generic-password; sec_calls={sec_calls}"
+    assert add_calls != [], f"keychain mode must call add-generic-password; sec_calls={sec_calls}"
 
 
 # ---------------------------------------------------------------------------
@@ -1321,22 +1484,22 @@ def test_create_account_keychain_case1_probe_succeeds_also_writes_plist(monkeypa
 
 
 # ---------------------------------------------------------------------------
-# Fix G — do_config downgrade: private → none preserve-and-reuse
+# Fix G — configure_account downgrade: keychain → none preserve-and-reuse
 # ---------------------------------------------------------------------------
 
 
-def test_do_config_private_to_none_removes_unlock_entry(monkeypatch, mod, tmp_path):
-    """do_config('work', keychain_arg='none') on a private account must:
+def test_configure_account_keychain_to_none_removes_unlock_entry(monkeypatch, mod, tmp_path):
+    """configure_account('work', keychain_arg='none') on a keychain-mode account must:
     (a) call delete-generic-password to remove the unlock entry D (zero-footprint promise),
     (b) NOT call delete-keychain (C preserved for re-enable — preserve-and-reuse),
     (c) save meta with keychain='none'."""
-    accounts_dir = _setup_do_config_env(monkeypatch, mod, tmp_path)
+    accounts_dir = _setup_configure_account_env(monkeypatch, mod, tmp_path)
     account_home = accounts_dir / "work"
     (account_home / "Library" / "Preferences").mkdir(parents=True)
     (account_home / "Library" / "Keychains").mkdir(parents=True)
 
-    # Pre-existing private account: A=private, B+C present.
-    existing_meta = {"version": 2, "provider": "claude", "keychain": "private", "created": "2025-01-01T00:00:00"}
+    # Pre-existing keychain account: A=keychain, B+C present.
+    existing_meta = {"version": 2, "provider": "claude", "keychain": "keychain", "created": "2025-01-01T00:00:00"}
     (account_home / "account.json").write_text(json.dumps(existing_meta))
     plist_path = account_home / "Library" / "Preferences" / "com.apple.security.plist"
     plist_path.touch()  # B present.
@@ -1353,7 +1516,7 @@ def test_do_config_private_to_none_removes_unlock_entry(monkeypatch, mod, tmp_pa
 
     monkeypatch.setattr(mod, "_sec", fake_sec)
 
-    mod.do_config("work", keychain_arg="none")
+    mod.configure_account("work", keychain_arg="none")
 
     subcommands = [args[0] for args in sec_calls]
 
@@ -1471,14 +1634,14 @@ def test_create_account_keychain_case4_stale_d_rebuild(monkeypatch, mod, tmp_acc
 
 
 def test_reconcile_desired_none_state1_crash_recovery_rebuilds(monkeypatch, mod, tmp_account_home):
-    """State #1 crash-recovery: A=private + B/C/D all absent (process crashed after
+    """State #1 crash-recovery: A=keychain + B/C/D all absent (process crashed after
     writing meta but before creating B/C/D).
     _reconcile_keychain_state(desired=None) must detect the missing B and trigger a rebuild.
 
-    v0.46.0: legacy on-disk value "dedicated" is coerced to "private" with a warning;
-    after rebuild A is persisted with the canonical name "private"."""
-    # A=private on disk (canonical v0.46.0 value); B/C/D all absent (crash scenario).
-    (tmp_account_home / "account.json").write_text(json.dumps({"keychain": "private"}))
+    v0.46.0: legacy on-disk value "dedicated" is coerced to "keychain" with a warning;
+    after rebuild A is persisted with the canonical name "keychain"."""
+    # A=keychain on disk (canonical v0.46.0 value); B/C/D all absent (crash scenario).
+    (tmp_account_home / "account.json").write_text(json.dumps({"keychain": "keychain"}))
     assert not mod._keychain_prefs_path(tmp_account_home).exists()
     assert not mod._keychain_path(tmp_account_home).exists()
 
@@ -1497,12 +1660,12 @@ def test_reconcile_desired_none_state1_crash_recovery_rebuilds(monkeypatch, mod,
     # Rebuild must have fired — create-keychain is the signal.
     subcommands = [args[0] for args, _ in sec_calls]
     assert "create-keychain" in subcommands, (
-        f"State #1 private crash-recovery: reconciler must rebuild when B absent; got {subcommands}"
+        f"State #1 keychain crash-recovery: reconciler must rebuild when B absent; got {subcommands}"
     )
 
-    # A must be updated to 'private' after rebuild (new canonical name).
+    # A must be updated to 'keychain' after rebuild (new canonical name).
     meta = json.loads((tmp_account_home / "account.json").read_text())
-    assert meta.get("keychain") == "private", f"State #1 repair: A must be 'private' after rebuild; got {meta}"
+    assert meta.get("keychain") == "keychain", f"State #1 repair: A must be 'keychain' after rebuild; got {meta}"
 
 
 # ---------------------------------------------------------------------------
@@ -1513,9 +1676,9 @@ def test_reconcile_desired_none_state1_crash_recovery_rebuilds(monkeypatch, mod,
 def test_reconcile_desired_none_state13_wrong_password_drift_rebuilds(monkeypatch, mod, tmp_account_home):
     """State #13: B+C+D all present but unlock probe fails (password mismatch drift).
     _reconcile_keychain_state(desired=None) must trigger _create_account_keychain
-    (rebuild) and write A='private'."""
-    # Set up B, C present on disk; A=private (v0.45.0 canonical name).
-    (tmp_account_home / "account.json").write_text(json.dumps({"keychain": "private"}))
+    (rebuild) and write A='keychain'."""
+    # Set up B, C present on disk; A=keychain (v0.45.0 canonical name).
+    (tmp_account_home / "account.json").write_text(json.dumps({"keychain": "keychain"}))
     mod._keychain_prefs_path(tmp_account_home).parent.mkdir(parents=True, exist_ok=True)
     mod._keychain_prefs_path(tmp_account_home).touch()  # B present.
     mod._keychain_path(tmp_account_home).parent.mkdir(parents=True, exist_ok=True)
@@ -1541,10 +1704,10 @@ def test_reconcile_desired_none_state13_wrong_password_drift_rebuilds(monkeypatc
     assert "create-keychain" in subcommands, "State #13: reconciler must trigger rebuild when unlock probe fails"
     assert "add-generic-password" in subcommands, "State #13: rebuild must store a fresh unlock entry"
 
-    # A must be written as 'private' after successful rebuild (new canonical name).
+    # A must be written as 'keychain' after successful rebuild (new canonical name).
     meta = json.loads((tmp_account_home / "account.json").read_text())
-    assert meta.get("keychain") == "private", (
-        f"State #13 rebuild: A must be written as 'private' after repair; got {meta}"
+    assert meta.get("keychain") == "keychain", (
+        f"State #13 rebuild: A must be written as 'keychain' after repair; got {meta}"
     )
 
 
@@ -1696,7 +1859,7 @@ def test_isolated_mode_keychain_is_unusable_by_provider(monkeypatch, mod, tmp_pa
     monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
     monkeypatch.setattr(mod.sys, "platform", "darwin")
 
-    # Isolated meta: _is_keychain_dedicated returns False → no unlock.
+    # Isolated meta: _uses_keychain returns False → no unlock.
     monkeypatch.setattr(mod, "load_account_meta", lambda path: account_meta_isolated)
 
     unlock_calls = []
@@ -1730,9 +1893,9 @@ def test_build_alt_env_dedicated_mode_unlocks(monkeypatch, mod, tmp_path, accoun
     assert len(unlock_calls) == 1, f"dedicated mode must call _unlock_account_keychain once; got {unlock_calls}"
 
 
-def test_migration_system_to_private_on_load_with_warning(tmp_account_home, capsys):
+def test_migration_system_to_keychain_on_load_with_warning(tmp_account_home, capsys):
     """v0.46.0: load_account_meta with keychain='system' on disk returns in-memory
-    keychain='private' (all legacy values → 'private') AND emits a warning to stderr.
+    keychain='keychain' (all legacy values → 'keychain') AND emits a warning to stderr.
     On-disk file is unchanged."""
     import json as _json
     import importlib.util
@@ -1746,7 +1909,7 @@ def test_migration_system_to_private_on_load_with_warning(tmp_account_home, caps
     )
 
     meta = mod.load_account_meta(tmp_account_home)
-    assert meta.get("keychain") == "private", f"system → private (v0.46.0); got {meta}"
+    assert meta.get("keychain") == "keychain", f"system → keychain (v0.46.0); got {meta}"
 
     captured = capsys.readouterr()
     assert "legacy keychain mode" in captured.err, (
@@ -1759,9 +1922,9 @@ def test_migration_system_to_private_on_load_with_warning(tmp_account_home, caps
     assert raw.get("keychain") == "system", "on-disk value must not be changed by load alone"
 
 
-def test_migration_shared_to_private_on_load_with_warning(tmp_account_home, capsys):
+def test_migration_shared_to_keychain_on_load_with_warning(tmp_account_home, capsys):
     """v0.46.0: load_account_meta with keychain='shared' on disk returns in-memory
-    keychain='private' AND emits a warning to stderr."""
+    keychain='keychain' AND emits a warning to stderr."""
     import json as _json
     import importlib.util
 
@@ -1774,7 +1937,7 @@ def test_migration_shared_to_private_on_load_with_warning(tmp_account_home, caps
     )
 
     meta = mod.load_account_meta(tmp_account_home)
-    assert meta.get("keychain") == "private", f"shared → private (v0.46.0); got {meta}"
+    assert meta.get("keychain") == "keychain", f"shared → keychain (v0.46.0); got {meta}"
 
     captured = capsys.readouterr()
     assert "legacy keychain mode" in captured.err
@@ -1784,9 +1947,9 @@ def test_migration_shared_to_private_on_load_with_warning(tmp_account_home, caps
     assert raw.get("keychain") == "shared", "on-disk value must not be changed by load alone"
 
 
-def test_migration_old_isolated_to_private_on_load_with_warning(tmp_account_home, capsys):
+def test_migration_old_isolated_to_keychain_on_load_with_warning(tmp_account_home, capsys):
     """v0.46.0: load_account_meta with keychain='isolated' on disk returns in-memory
-    keychain='private' AND emits a warning. (Was 'none' in v0.45.0; removed alias in v0.46.0.)"""
+    keychain='keychain' AND emits a warning. (Was 'none' in v0.45.0; removed alias in v0.46.0.)"""
     import json as _json
     import importlib.util
 
@@ -1799,7 +1962,7 @@ def test_migration_old_isolated_to_private_on_load_with_warning(tmp_account_home
     )
 
     meta = mod.load_account_meta(tmp_account_home)
-    assert meta.get("keychain") == "private", f"isolated → private (v0.46.0); got {meta}"
+    assert meta.get("keychain") == "keychain", f"isolated → keychain (v0.46.0); got {meta}"
 
     captured = capsys.readouterr()
     assert "legacy keychain mode" in captured.err
@@ -1810,9 +1973,9 @@ def test_migration_old_isolated_to_private_on_load_with_warning(tmp_account_home
     assert raw.get("keychain") == "isolated", "on-disk value must not be changed by load alone"
 
 
-def test_migration_old_dedicated_to_private_on_load_with_warning(tmp_account_home, capsys):
+def test_migration_old_dedicated_to_keychain_on_load_with_warning(tmp_account_home, capsys):
     """v0.46.0: load_account_meta with keychain='dedicated' on disk returns in-memory
-    keychain='private' AND emits a warning. (Was silent in v0.45.0; removed alias in v0.46.0.)"""
+    keychain='keychain' AND emits a warning. (Was silent in v0.45.0; removed alias in v0.46.0.)"""
     import json as _json
     import importlib.util
 
@@ -1825,7 +1988,7 @@ def test_migration_old_dedicated_to_private_on_load_with_warning(tmp_account_hom
     )
 
     meta = mod.load_account_meta(tmp_account_home)
-    assert meta.get("keychain") == "private", f"dedicated → private (v0.46.0); got {meta}"
+    assert meta.get("keychain") == "keychain", f"dedicated → keychain (v0.46.0); got {meta}"
 
     captured = capsys.readouterr()
     assert "legacy keychain mode" in captured.err
@@ -1836,9 +1999,9 @@ def test_migration_old_dedicated_to_private_on_load_with_warning(tmp_account_hom
     assert raw.get("keychain") == "dedicated", "on-disk value must not be changed by load alone"
 
 
-def test_migration_legacy_no_keychain_key_treated_as_private(tmp_account_home):
-    """load_account_meta with no keychain key → _is_keychain_private returns True.
-    Default is private (since v0.45.0)."""
+def test_migration_legacy_no_keychain_key_defaults_to_keychain(tmp_account_home):
+    """load_account_meta with no keychain key → _uses_keychain returns True.
+    Default mode is `keychain` (per-account macOS keychain) since v0.45.0."""
     import json as _json
     import importlib.util
 
@@ -1851,17 +2014,14 @@ def test_migration_legacy_no_keychain_key_treated_as_private(tmp_account_home):
     )
 
     meta = mod.load_account_meta(tmp_account_home)
-    assert mod._is_keychain_private(meta) is True, "no keychain key → private (default)"
+    assert mod._uses_keychain(meta) is True, "no keychain key → keychain mode (default)"
     assert mod._is_keychain_none(meta) is False, "no keychain key → not none"
-    # Internal aliases still work
-    assert mod._is_keychain_dedicated(meta) is True, "_is_keychain_dedicated → same as _is_keychain_private"
-    assert mod._is_keychain_isolated(meta) is False, "_is_keychain_isolated → same as _is_keychain_none"
 
 
 def test_reconcile_persists_migrated_key_on_launch(monkeypatch, tmp_account_home):
     """v0.46.0: _reconcile_keychain_state(desired=None) with 'system' on disk
-    coerces to 'private' (with warning) and persists 'private' to disk.
-    (v0.45.0 mapped system → none; v0.46.0 maps all legacy values → private.)"""
+    coerces to 'keychain' (with warning) and persists 'keychain' to disk.
+    (v0.45.0 mapped system → none; v0.46.0 maps all legacy values → keychain.)"""
     import json as _json
     import importlib.util
 
@@ -1883,14 +2043,14 @@ def test_reconcile_persists_migrated_key_on_launch(monkeypatch, tmp_account_home
     mod._reconcile_keychain_state(tmp_account_home, "work", desired=None)
 
     raw = _json.loads((tmp_account_home / "account.json").read_text())
-    # v0.46.0: all legacy values coerce to 'private'; reconciler persists 'private'.
-    assert raw.get("keychain") == "private", (
-        f"reconciler must persist 'private' for legacy 'system' on disk; got {raw}"
+    # v0.46.0: all legacy values coerce to 'keychain'; reconciler persists 'keychain'.
+    assert raw.get("keychain") == "keychain", (
+        f"reconciler must persist 'keychain' for legacy 'system' on disk; got {raw}"
     )
 
 
-def test_reconcile_preserves_private_on_launch_with_prior_state(monkeypatch, tmp_account_home):
-    """_reconcile_keychain_state(desired=None) with 'private' account + B+C+D consistent:
+def test_reconcile_preserves_keychain_mode_on_launch_with_prior_state(monkeypatch, tmp_account_home):
+    """_reconcile_keychain_state(desired=None) with 'keychain' account + B+C+D consistent:
     leaves everything unchanged, no files deleted."""
     import json as _json
     import importlib.util
@@ -1899,9 +2059,9 @@ def test_reconcile_preserves_private_on_launch_with_prior_state(monkeypatch, tmp
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
 
-    # Write canonical 'private' on disk.
+    # Write canonical 'keychain' on disk.
     (tmp_account_home / "account.json").write_text(
-        _json.dumps({"version": 3, "providers": ["claude"], "default_provider": "claude", "keychain": "private"})
+        _json.dumps({"version": 3, "providers": ["claude"], "default_provider": "claude", "keychain": "keychain"})
     )
     # B present.
     mod._keychain_prefs_path(tmp_account_home).parent.mkdir(parents=True, exist_ok=True)
@@ -1921,9 +2081,9 @@ def test_reconcile_preserves_private_on_launch_with_prior_state(monkeypatch, tmp
 
     # C must still exist (not deleted).
     assert mod._keychain_path(tmp_account_home).exists(), "C must be preserved"
-    # A must remain 'private'.
+    # A must remain 'keychain'.
     raw = _json.loads((tmp_account_home / "account.json").read_text())
-    assert raw.get("keychain") == "private", f"A must remain 'private'; got {raw}"
+    assert raw.get("keychain") == "keychain", f"A must remain 'keychain'; got {raw}"
 
 
 @pytest.mark.parametrize("old_name", ["system", "shared", "dedicated", "isolated"])
@@ -1950,13 +2110,13 @@ def test_cli_keychain_legacy_alias_rejected(monkeypatch, tmp_path, old_name):
 
     assert exc_info.value.code != 0, f"--keychain {old_name!r} must exit non-zero"
     err = stderr_buf.getvalue()
-    assert "private" in err and "none" in err, (
-        f"error for --keychain {old_name!r} must mention 'private' and 'none'; got: {err!r}"
+    assert "keychain" in err and "none" in err, (
+        f"error for --keychain {old_name!r} must mention 'keychain' and 'none'; got: {err!r}"
     )
 
 
-def test_cli_keychain_private_no_warning(monkeypatch, tmp_path):
-    """--keychain private is the canonical name in v0.45.0 and must pass through without warning."""
+def test_cli_keychain_keychain_no_warning(monkeypatch, tmp_path):
+    """--keychain keychain is the canonical name in v0.45.0 and must pass through without warning."""
     import importlib.util, io
 
     spec = importlib.util.spec_from_file_location("altergo", ROOT / "altergo.py")
@@ -1965,10 +2125,10 @@ def test_cli_keychain_private_no_warning(monkeypatch, tmp_path):
 
     captured = {}
 
-    def fake_do_config(account, provider="claude", *, keychain_arg=None):
+    def fake_configure_account(account, provider="claude", *, keychain_arg=None):
         captured["keychain_arg"] = keychain_arg
 
-    monkeypatch.setattr(mod, "do_config", fake_do_config)
+    monkeypatch.setattr(mod, "configure_account", fake_configure_account)
 
     accounts_dir = tmp_path / "accounts"
     accounts_dir.mkdir()
@@ -1976,17 +2136,17 @@ def test_cli_keychain_private_no_warning(monkeypatch, tmp_path):
 
     stderr_buf = io.StringIO()
     monkeypatch.setattr(mod.sys, "stderr", stderr_buf)
-    monkeypatch.setattr(mod.sys, "argv", ["altergo", "--config", "work", "--keychain", "private"])
+    monkeypatch.setattr(mod.sys, "argv", ["altergo", "--config", "work", "--keychain", "keychain"])
     monkeypatch.setattr(mod.sys.stdin, "isatty", lambda: False)
 
     with pytest.raises(SystemExit):
         mod.main()
 
-    assert captured.get("keychain_arg") == "private", (
-        f"--keychain private must pass through unchanged; got {captured.get('keychain_arg')}"
+    assert captured.get("keychain_arg") == "keychain", (
+        f"--keychain keychain must pass through unchanged; got {captured.get('keychain_arg')}"
     )
     assert "deprecated" not in stderr_buf.getvalue().lower(), (
-        f"--keychain private must NOT emit any warning; got: {stderr_buf.getvalue()!r}"
+        f"--keychain keychain must NOT emit any warning; got: {stderr_buf.getvalue()!r}"
     )
 
 
@@ -2000,10 +2160,10 @@ def test_cli_keychain_none_no_warning(monkeypatch, tmp_path):
 
     captured = {}
 
-    def fake_do_config(account, provider="claude", *, keychain_arg=None):
+    def fake_configure_account(account, provider="claude", *, keychain_arg=None):
         captured["keychain_arg"] = keychain_arg
 
-    monkeypatch.setattr(mod, "do_config", fake_do_config)
+    monkeypatch.setattr(mod, "configure_account", fake_configure_account)
 
     accounts_dir = tmp_path / "accounts"
     accounts_dir.mkdir()
@@ -2026,7 +2186,7 @@ def test_cli_keychain_none_no_warning(monkeypatch, tmp_path):
 
 
 def test_cli_keychain_invalid_exits_nonzero(monkeypatch, tmp_path):
-    """--keychain garbage exits non-zero and stderr mentions 'private' and 'none'."""
+    """--keychain garbage exits non-zero and stderr mentions 'keychain' and 'none'."""
     import importlib.util, io
 
     spec = importlib.util.spec_from_file_location("altergo", ROOT / "altergo.py")
@@ -2047,17 +2207,17 @@ def test_cli_keychain_invalid_exits_nonzero(monkeypatch, tmp_path):
 
     assert exc_info.value.code != 0, "invalid --keychain value must exit non-zero"
     err = stderr_buf.getvalue()
-    assert "private" in err and "none" in err, (
-        f"error message must mention 'private' and 'none'; got: {err!r}"
+    assert "keychain" in err and "none" in err, (
+        f"error message must mention 'keychain' and 'none'; got: {err!r}"
     )
 
 
-def test_switch_private_to_none_removes_unlock_entry(monkeypatch, mod, tmp_account_home):
-    """_apply_keychain_mode(mode='none') from a private account removes D but not C."""
-    # Pre-existing private account: A, B, C, D all present.
+def test_switch_keychain_to_none_removes_unlock_entry(monkeypatch, mod, tmp_account_home):
+    """_apply_keychain_mode(mode='none') from a keychain-mode account removes D but not C."""
+    # Pre-existing keychain account: A, B, C, D all present.
     mod._keychain_path(tmp_account_home).parent.mkdir(parents=True, exist_ok=True)
     mod._keychain_path(tmp_account_home).touch()  # C present.
-    prior_meta = {"version": 3, "providers": ["claude"], "default_provider": "claude", "keychain": "private"}
+    prior_meta = {"version": 3, "providers": ["claude"], "default_provider": "claude", "keychain": "keychain"}
 
     sec_calls = []
 
@@ -2086,10 +2246,10 @@ def test_switch_private_to_none_removes_unlock_entry(monkeypatch, mod, tmp_accou
     assert mod._keychain_path(tmp_account_home).exists(), "C must be preserved on disk"
 
 
-def test_switch_none_to_private_reuses_preserved_file(monkeypatch, mod, tmp_account_home):
-    """_apply_keychain_mode(mode='private') when C already exists (from a prior private run
+def test_switch_none_to_keychain_reuses_preserved_file(monkeypatch, mod, tmp_account_home):
+    """_apply_keychain_mode(mode='keychain') when C already exists (from a prior keychain run
     preserved through none) rebuilds the keychain since D is absent."""
-    # Pre-create C on disk (from a prior private run, preserved through none).
+    # Pre-create C on disk (from a prior keychain run, preserved through none).
     mod._keychain_path(tmp_account_home).parent.mkdir(parents=True, exist_ok=True)
     mod._keychain_path(tmp_account_home).touch()  # C present.
     prior_meta = {"version": 3, "providers": ["claude"], "default_provider": "claude", "keychain": "none"}
@@ -2104,19 +2264,19 @@ def test_switch_none_to_private_reuses_preserved_file(monkeypatch, mod, tmp_acco
 
     monkeypatch.setattr(mod, "_sec", fake_sec)
 
-    mod._apply_keychain_mode(tmp_account_home, "work", "private", prior_meta=prior_meta)
+    mod._apply_keychain_mode(tmp_account_home, "work", "keychain", prior_meta=prior_meta)
 
     subcommands = [args[0] for args, _ in sec_calls]
 
     # C exists but D is absent → Case 3 (orphan C) → delete-keychain + fresh build.
     assert "create-keychain" in subcommands or "add-generic-password" in subcommands, (
-        "switching from none to private must rebuild the keychain"
+        "switching from none to keychain must rebuild the keychain"
     )
 
-    # A must be written as "private".
+    # A must be written as "keychain".
     meta = json.loads((tmp_account_home / "account.json").read_text())
-    assert meta.get("keychain") == "private", (
-        f"mode='private' must persist as 'private'; got {meta}"
+    assert meta.get("keychain") == "keychain", (
+        f"mode='keychain' must persist as 'keychain'; got {meta}"
     )
 
 
@@ -2127,7 +2287,7 @@ def test_switch_none_to_private_reuses_preserved_file(monkeypatch, mod, tmp_acco
 
 def test_v046_legacy_cli_aliases_all_rejected(monkeypatch, tmp_path):
     """v0.46.0 spec requirement: --keychain dedicated, isolated, system, and shared are
-    all rejected with a non-zero exit — no silent normalisation, no do_config call."""
+    all rejected with a non-zero exit — no silent normalisation, no configure_account call."""
     import importlib.util, io
 
     spec = importlib.util.spec_from_file_location("altergo", ROOT / "altergo.py")
@@ -2139,13 +2299,13 @@ def test_v046_legacy_cli_aliases_all_rejected(monkeypatch, tmp_path):
     monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
 
     for old_name in ("dedicated", "isolated", "system", "shared"):
-        do_config_called = []
+        configure_account_called = []
         stderr_buf = io.StringIO()
 
-        def fake_do_config(account, provider="claude", *, keychain_arg=None):
-            do_config_called.append(keychain_arg)
+        def fake_configure_account(account, provider="claude", *, keychain_arg=None):
+            configure_account_called.append(keychain_arg)
 
-        monkeypatch.setattr(mod, "do_config", fake_do_config)
+        monkeypatch.setattr(mod, "configure_account", fake_configure_account)
         monkeypatch.setattr(mod.sys, "stderr", stderr_buf)
         monkeypatch.setattr(mod.sys, "argv", ["altergo", "--config", "work", "--keychain", old_name])
         monkeypatch.setattr(mod.sys.stdin, "isatty", lambda: False)
@@ -2156,18 +2316,18 @@ def test_v046_legacy_cli_aliases_all_rejected(monkeypatch, tmp_path):
         assert exc_info.value.code != 0, (
             f"--keychain {old_name!r} must exit non-zero in v0.46.0"
         )
-        assert not do_config_called, (
-            f"do_config must NOT be called when --keychain {old_name!r} is given"
+        assert not configure_account_called, (
+            f"configure_account must NOT be called when --keychain {old_name!r} is given"
         )
         err = stderr_buf.getvalue()
-        assert "private" in err and "none" in err, (
+        assert "keychain" in err and "none" in err, (
             f"error for --keychain {old_name!r} must name valid choices; got: {err!r}"
         )
 
 
 def test_v046_account_json_written_with_canonical_names(monkeypatch, mod, tmp_path):
     """Spec requirement: account.json written by v0.46.0 must contain
-    keychain='private' or keychain='none', never any legacy value."""
+    keychain='keychain' or keychain='none', never any legacy value."""
     main_home = tmp_path / "main_home"
     main_claude = main_home / ".claude"
     accounts_dir = tmp_path / "accounts"
@@ -2188,18 +2348,18 @@ def test_v046_account_json_written_with_canonical_names(monkeypatch, mod, tmp_pa
     monkeypatch.setattr(mod, "_status_wrap", lambda msg, fn: fn())
     monkeypatch.setattr(mod, "load_settings", lambda: {})
 
-    # Test private mode.
-    mod.do_config("work1", keychain_arg="private")
-    meta_private = json.loads((accounts_dir / "work1" / "account.json").read_text())
-    assert meta_private.get("keychain") == "private", (
-        f"keychain_arg='private' must write 'private', got: {meta_private}"
+    # Test keychain mode.
+    mod.configure_account("work1", keychain_arg="keychain")
+    meta_keychain = json.loads((accounts_dir / "work1" / "account.json").read_text())
+    assert meta_keychain.get("keychain") == "keychain", (
+        f"keychain_arg='keychain' must write 'keychain', got: {meta_keychain}"
     )
-    assert meta_private.get("keychain") not in ("dedicated", "isolated"), (
+    assert meta_keychain.get("keychain") not in ("dedicated", "isolated"), (
         "account.json must never contain old vocabulary after v0.45.0 write"
     )
 
     # Test none mode.
-    mod.do_config("work2", keychain_arg="none")
+    mod.configure_account("work2", keychain_arg="none")
     meta_none = json.loads((accounts_dir / "work2" / "account.json").read_text())
     assert meta_none.get("keychain") == "none", (
         f"keychain_arg='none' must write 'none', got: {meta_none}"
@@ -2209,9 +2369,9 @@ def test_v046_account_json_written_with_canonical_names(monkeypatch, mod, tmp_pa
     )
 
 
-def test_v046_default_is_private_when_no_flag_and_no_prior_meta(monkeypatch, mod, tmp_path):
+def test_v046_default_is_keychain_when_no_flag_and_no_prior_meta(monkeypatch, mod, tmp_path):
     """Spec requirement: when no --keychain flag is passed AND no prior meta exists,
-    the default must be 'private'."""
+    the default must be 'keychain'."""
     main_home = tmp_path / "main_home"
     main_claude = main_home / ".claude"
     accounts_dir = tmp_path / "accounts"
@@ -2233,9 +2393,831 @@ def test_v046_default_is_private_when_no_flag_and_no_prior_meta(monkeypatch, mod
     monkeypatch.setattr(mod, "load_settings", lambda: {})
 
     # Fresh account — no account.json exists yet, no keychain_arg.
-    mod.do_config("freshaccount", keychain_arg=None)
+    mod.configure_account("freshaccount", keychain_arg=None)
 
     meta = json.loads((accounts_dir / "freshaccount" / "account.json").read_text())
-    assert meta.get("keychain") == "private", (
-        f"v0.45.0 default must be 'private' for a fresh account with no prior meta; got {meta}"
+    assert meta.get("keychain") == "keychain", (
+        f"v0.45.0 default must be 'keychain' for a fresh account with no prior meta; got {meta}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Per-account OAuth token plumbing
+#
+# claude reads CLAUDE_CODE_OAUTH_TOKEN from env in preference to any keychain
+# entry, which is the only auth path that survives SSH (where keychain access
+# is gated behind a GUI prompt). Storing the token per-account in a flat file
+# under <account_home>/.claude/.oauth-token lets each account carry its own
+# Anthropic identity, and forcing the env var per-subprocess prevents a
+# global shell export from cross-contaminating accounts.
+#
+# These tests cover the four-cell behaviour matrix:
+#                    │ token file present │ token file absent
+#   ────────────────┼────────────────────┼────────────────────
+#   native          │ env := file token  │ inherited env preserved
+#   non-native      │ env := file token  │ env var stripped
+# ---------------------------------------------------------------------------
+
+
+def test_oauth_token_path_native_uses_main_home(monkeypatch, mod, tmp_path):
+    """Native account's canonical token path is $MAIN_HOME/.claude/.oauth-token."""
+    monkeypatch.setattr(mod, "MAIN_HOME", tmp_path)
+    p = mod._oauth_token_path("native")
+    assert p == tmp_path / ".claude" / ".oauth-token"
+
+
+def test_oauth_token_path_non_native_uses_account_home(monkeypatch, mod, tmp_path):
+    """Non-native account's token path lives under <account_home>/.claude/.oauth-token."""
+    accounts_dir = tmp_path / "accounts"
+    (accounts_dir / "work").mkdir(parents=True)
+    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
+    p = mod._oauth_token_path("work", account_home=accounts_dir / "work")
+    assert p == accounts_dir / "work" / ".claude" / ".oauth-token"
+
+
+def test_oauth_token_path_resolves_account_home_when_omitted(monkeypatch, mod, tmp_path):
+    """When account_home is not passed, _oauth_token_path resolves it via resolve_account."""
+    accounts_dir = tmp_path / "accounts"
+    (accounts_dir / "work").mkdir(parents=True)
+    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
+    p = mod._oauth_token_path("work")
+    assert p == accounts_dir / "work" / ".claude" / ".oauth-token"
+
+
+def test_load_oauth_token_returns_none_when_missing(monkeypatch, mod, tmp_path):
+    """No file → None (callers fall back to keychain or strip the env var)."""
+    monkeypatch.setattr(mod, "MAIN_HOME", tmp_path)
+    assert mod._load_oauth_token("native") is None
+
+
+def test_load_oauth_token_returns_none_when_empty(monkeypatch, mod, tmp_path):
+    """Empty file is treated as no token (avoid setting env to '')."""
+    monkeypatch.setattr(mod, "MAIN_HOME", tmp_path)
+    token_file = tmp_path / ".claude" / ".oauth-token"
+    token_file.parent.mkdir(parents=True)
+    token_file.write_text("")
+    assert mod._load_oauth_token("native") is None
+
+
+def test_load_oauth_token_strips_whitespace(monkeypatch, mod, tmp_path):
+    """Trailing newline (from `claude setup-token | tee`) must not poison the token."""
+    monkeypatch.setattr(mod, "MAIN_HOME", tmp_path)
+    token_file = tmp_path / ".claude" / ".oauth-token"
+    token_file.parent.mkdir(parents=True)
+    token_file.write_text("sk-ant-oat01-fake\n  \n")
+    assert mod._load_oauth_token("native") == "sk-ant-oat01-fake"
+
+
+def test_load_oauth_token_whitespace_only_returns_none(monkeypatch, mod, tmp_path):
+    """A file that's non-empty on disk but strips to '' must yield None,
+    not an empty-string env value (which would silently break claude auth
+    in confusing ways)."""
+    monkeypatch.setattr(mod, "MAIN_HOME", tmp_path)
+    token_file = tmp_path / ".claude" / ".oauth-token"
+    token_file.parent.mkdir(parents=True)
+    token_file.write_text("   \n\t  \n")
+    assert mod._load_oauth_token("native") is None
+
+
+def test_load_oauth_token_oserror_falls_through(monkeypatch, mod, tmp_path):
+    """If read_text raises OSError mid-read (permissions, FS error, racy
+    delete), _load_oauth_token must skip that candidate and try the next —
+    not propagate the exception up to crash _build_alt_env at launch time."""
+    monkeypatch.setattr(mod, "MAIN_HOME", tmp_path)
+    canonical = tmp_path / ".claude" / ".oauth-token"
+    legacy = tmp_path / ".claude" / "rover-native-token"
+    canonical.parent.mkdir(parents=True)
+    canonical.write_text("sk-ant-oat01-canonical\n")
+    legacy.write_text("sk-ant-oat01-legacy\n")
+
+    real_read = mod.Path.read_text
+    def flaky_read(self, *args, **kwargs):
+        if self == canonical:
+            raise OSError("simulated permissions failure on canonical")
+        return real_read(self, *args, **kwargs)
+    monkeypatch.setattr(mod.Path, "read_text", flaky_read)
+
+    # Canonical path raises → _load_oauth_token must continue to legacy fallback.
+    assert mod._load_oauth_token("native") == "sk-ant-oat01-legacy"
+
+
+def test_load_oauth_token_native_falls_back_to_legacy_rover_path(monkeypatch, mod, tmp_path):
+    """Users who set up the rover-native-token before the per-account model
+    existed should not have to migrate their file manually."""
+    monkeypatch.setattr(mod, "MAIN_HOME", tmp_path)
+    legacy = tmp_path / ".claude" / "rover-native-token"
+    legacy.parent.mkdir(parents=True)
+    legacy.write_text("sk-ant-oat01-legacy\n")
+    # Canonical path absent; legacy path used as fallback.
+    assert mod._load_oauth_token("native") == "sk-ant-oat01-legacy"
+
+
+def test_load_oauth_token_native_canonical_takes_precedence_over_legacy(monkeypatch, mod, tmp_path):
+    """When both files exist, the canonical .oauth-token wins (legacy is fallback only)."""
+    monkeypatch.setattr(mod, "MAIN_HOME", tmp_path)
+    canonical = tmp_path / ".claude" / ".oauth-token"
+    legacy = tmp_path / ".claude" / "rover-native-token"
+    canonical.parent.mkdir(parents=True)
+    canonical.write_text("sk-ant-oat01-canonical\n")
+    legacy.write_text("sk-ant-oat01-legacy\n")
+    assert mod._load_oauth_token("native") == "sk-ant-oat01-canonical"
+
+
+def test_load_oauth_token_non_native_does_not_check_legacy_path(monkeypatch, mod, tmp_path):
+    """The rover-native-token fallback is native-only — non-native accounts
+    must NEVER read from MAIN_HOME's legacy path (would re-introduce the
+    cross-account token leak this whole mechanism is designed to prevent)."""
+    monkeypatch.setattr(mod, "MAIN_HOME", tmp_path)
+    legacy = tmp_path / ".claude" / "rover-native-token"
+    legacy.parent.mkdir(parents=True)
+    legacy.write_text("sk-ant-oat01-native-token\n")
+    accounts_dir = tmp_path / ".altergo" / "accounts"
+    (accounts_dir / "work").mkdir(parents=True)
+    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
+    # No per-account .oauth-token file → must return None, ignoring native legacy.
+    assert mod._load_oauth_token("work", account_home=accounts_dir / "work") is None
+
+
+def test_apply_oauth_token_sets_env_when_file_present(monkeypatch, mod, tmp_path):
+    """File present → env gets that token (overrides any inherited value)."""
+    monkeypatch.setattr(mod, "MAIN_HOME", tmp_path)
+    token_file = tmp_path / ".claude" / ".oauth-token"
+    token_file.parent.mkdir(parents=True)
+    token_file.write_text("sk-ant-oat01-fromfile\n")
+
+    env = {"CLAUDE_CODE_OAUTH_TOKEN": "sk-ant-oat01-stale-shell-export"}
+    mod._apply_oauth_token_to_env(env, "native")
+    assert env["CLAUDE_CODE_OAUTH_TOKEN"] == "sk-ant-oat01-fromfile"
+
+
+def test_apply_oauth_token_native_no_file_preserves_inherited_env(monkeypatch, mod, tmp_path):
+    """Native + no token file → leave whatever the shell exported alone.
+
+    Native runs with the real $HOME, so a shell-level CLAUDE_CODE_OAUTH_TOKEN
+    is the user's intentional choice (e.g. .zshrc on SSH login) and altergo
+    must honour it."""
+    monkeypatch.setattr(mod, "MAIN_HOME", tmp_path)
+    env = {"CLAUDE_CODE_OAUTH_TOKEN": "sk-ant-oat01-from-zshrc"}
+    mod._apply_oauth_token_to_env(env, "native")
+    assert env["CLAUDE_CODE_OAUTH_TOKEN"] == "sk-ant-oat01-from-zshrc"
+
+
+def test_apply_oauth_token_non_native_no_file_strips_env(monkeypatch, mod, tmp_path):
+    """Non-native + no token file → strip the env var.
+
+    This is the cross-account-leak fix: without this strip, a global token
+    set in the user's .zshrc (intended for native) would silently auth claude
+    as the wrong identity under a non-native account's $HOME, corrupting that
+    account's credential state on every launch."""
+    accounts_dir = tmp_path / "accounts"
+    (accounts_dir / "work").mkdir(parents=True)
+    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
+
+    env = {"CLAUDE_CODE_OAUTH_TOKEN": "sk-ant-oat01-leaked-from-shell"}
+    mod._apply_oauth_token_to_env(env, "work", account_home=accounts_dir / "work")
+    assert "CLAUDE_CODE_OAUTH_TOKEN" not in env
+
+
+def test_apply_oauth_token_non_native_no_file_no_env_is_noop(monkeypatch, mod, tmp_path):
+    """Stripping a non-existent key must not raise — pop with default."""
+    accounts_dir = tmp_path / "accounts"
+    (accounts_dir / "work").mkdir(parents=True)
+    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
+
+    env = {}  # no CLAUDE_CODE_OAUTH_TOKEN to begin with
+    mod._apply_oauth_token_to_env(env, "work", account_home=accounts_dir / "work")
+    assert "CLAUDE_CODE_OAUTH_TOKEN" not in env
+
+
+def test_apply_oauth_token_non_native_with_file_overrides_inherited(monkeypatch, mod, tmp_path):
+    """Per-account file beats whatever the user's shell exported. This is the
+    case that lets a user have one CLAUDE_CODE_OAUTH_TOKEN in .zshrc for
+    native, while also using altergo work-acct with a *different* identity
+    stored under work-acct's home."""
+    accounts_dir = tmp_path / "accounts"
+    (accounts_dir / "work").mkdir(parents=True)
+    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
+    token_file = accounts_dir / "work" / ".claude" / ".oauth-token"
+    token_file.parent.mkdir(parents=True)
+    token_file.write_text("sk-ant-oat01-work-identity\n")
+
+    env = {"CLAUDE_CODE_OAUTH_TOKEN": "sk-ant-oat01-native-from-zshrc"}
+    mod._apply_oauth_token_to_env(env, "work", account_home=accounts_dir / "work")
+    assert env["CLAUDE_CODE_OAUTH_TOKEN"] == "sk-ant-oat01-work-identity"
+
+
+def test_build_alt_env_native_no_file_preserves_shell_token(monkeypatch, mod, tmp_path):
+    """Integration: _build_alt_env('native') with no token file forwards
+    CLAUDE_CODE_OAUTH_TOKEN from os.environ unchanged."""
+    monkeypatch.setattr(mod, "MAIN_HOME", tmp_path)
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-shell-only")
+
+    env = mod._build_alt_env("native")
+    assert env["CLAUDE_CODE_OAUTH_TOKEN"] == "sk-ant-oat01-shell-only"
+
+
+def test_build_alt_env_native_with_file_overrides_shell_token(monkeypatch, mod, tmp_path):
+    """Integration: _build_alt_env('native') with a token file overrides
+    whatever the shell had exported."""
+    monkeypatch.setattr(mod, "MAIN_HOME", tmp_path)
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-shell-export")
+    token_file = tmp_path / ".claude" / ".oauth-token"
+    token_file.parent.mkdir(parents=True)
+    token_file.write_text("sk-ant-oat01-fromfile\n")
+
+    env = mod._build_alt_env("native")
+    assert env["CLAUDE_CODE_OAUTH_TOKEN"] == "sk-ant-oat01-fromfile"
+
+
+def test_build_alt_env_non_native_strips_shell_token_when_no_file(monkeypatch, mod, tmp_path, account_meta_isolated):
+    """Integration regression: a CLAUDE_CODE_OAUTH_TOKEN exported by the user's
+    shell must NOT propagate into a non-native subprocess unless that account
+    has its own token file."""
+    accounts_dir = tmp_path / "accounts"
+    account_home = accounts_dir / "work"
+    account_home.mkdir(parents=True)
+    (account_home / "Library" / "Preferences").mkdir(parents=True)
+    (account_home / "Library" / "Keychains").mkdir(parents=True)
+    (account_home / "account.json").write_text(json.dumps(account_meta_isolated))
+    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
+    monkeypatch.setattr(mod.sys, "platform", "darwin")
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-shell-leak")
+    # Stub _sec so the keychain reconcile doesn't shell out.
+    monkeypatch.setattr(mod, "_sec", lambda *a, **kw: subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr=""))
+
+    env = mod._build_alt_env("work")
+    assert "CLAUDE_CODE_OAUTH_TOKEN" not in env, (
+        "non-native subprocess must NOT inherit a shell-level CLAUDE_CODE_OAUTH_TOKEN "
+        "when no per-account token file exists — that would cross-contaminate identities"
+    )
+
+
+def test_build_alt_env_non_native_with_file_uses_account_token(monkeypatch, mod, tmp_path, account_meta_isolated):
+    """Integration: a per-account .oauth-token file is read and exported."""
+    accounts_dir = tmp_path / "accounts"
+    account_home = accounts_dir / "work"
+    account_home.mkdir(parents=True)
+    (account_home / "Library" / "Preferences").mkdir(parents=True)
+    (account_home / "Library" / "Keychains").mkdir(parents=True)
+    (account_home / "account.json").write_text(json.dumps(account_meta_isolated))
+    token_file = account_home / ".claude" / ".oauth-token"
+    token_file.parent.mkdir(parents=True)
+    token_file.write_text("sk-ant-oat01-work-identity\n")
+
+    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
+    monkeypatch.setattr(mod.sys, "platform", "darwin")
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-shell-other-identity")
+    monkeypatch.setattr(mod, "_sec", lambda *a, **kw: subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr=""))
+
+    env = mod._build_alt_env("work")
+    assert env["CLAUDE_CODE_OAUTH_TOKEN"] == "sk-ant-oat01-work-identity"
+
+
+# ---------------------------------------------------------------------------
+# OAuth token setup flow (interactive + CLI)
+# ---------------------------------------------------------------------------
+
+
+# -- _write_oauth_token_file -------------------------------------------------
+
+
+def test_write_oauth_token_file_native_uses_main_home(monkeypatch, mod, tmp_path):
+    """For the native account, the token is written to $MAIN_HOME/.claude/.oauth-token."""
+    monkeypatch.setattr(mod, "MAIN_HOME", tmp_path)
+    path = mod._write_oauth_token_file("native", None, "sk-ant-oat01-abc")
+    assert path == tmp_path / ".claude" / ".oauth-token"
+    assert path.read_text(encoding="utf-8") == "sk-ant-oat01-abc"
+
+
+def test_write_oauth_token_file_non_native_uses_account_home(mod, tmp_path):
+    """For a named account, the token is written to <account_home>/.claude/.oauth-token."""
+    account_home = tmp_path / "accounts" / "work"
+    account_home.mkdir(parents=True)
+    path = mod._write_oauth_token_file("work", account_home, "sk-ant-oat01-xyz")
+    assert path == account_home / ".claude" / ".oauth-token"
+    assert path.read_text(encoding="utf-8") == "sk-ant-oat01-xyz"
+
+
+def test_write_oauth_token_file_creates_parent_dir(mod, tmp_path):
+    """The .claude/ parent directory is created if it does not yet exist."""
+    account_home = tmp_path / "fresh"
+    account_home.mkdir()
+    # .claude/ is deliberately absent
+    path = mod._write_oauth_token_file("work", account_home, "sk-ant-oat01-new")
+    assert path.parent.is_dir()
+    assert path.exists()
+
+
+def test_write_oauth_token_file_mode_is_0600(mod, tmp_path):
+    """Token file is created with mode 0600 (owner read/write only)."""
+    account_home = tmp_path / "sectest"
+    account_home.mkdir()
+    path = mod._write_oauth_token_file("work", account_home, "sk-ant-oat01-sec")
+    assert (path.stat().st_mode & 0o777) == 0o600
+
+
+def test_write_oauth_token_file_returns_path(mod, tmp_path):
+    """Return value is the Path that was written."""
+    account_home = tmp_path / "rettest"
+    account_home.mkdir()
+    result = mod._write_oauth_token_file("work", account_home, "sk-ant-oat01-ret")
+    assert isinstance(result, mod.Path)
+    assert result.exists()
+
+
+# -- _run_oauth_token_setup --------------------------------------------------
+
+
+def test_run_oauth_token_setup_missing_claude_returns_false(monkeypatch, mod, tmp_path, capsys):
+    """When claude is not on PATH, returns False and emits an error to stderr."""
+    monkeypatch.setattr(mod, "ACCOUNTS_DIR", tmp_path / "accounts")
+    monkeypatch.setattr(mod.shutil, "which", lambda name: None)
+    account_home = tmp_path / "accounts" / "work"
+    account_home.mkdir(parents=True)
+
+    result = mod._run_oauth_token_setup("work", account_home)
+
+    assert result is False
+    captured = capsys.readouterr()
+    assert "not found" in captured.err.lower() or "claude" in captured.err.lower()
+    # No token file should have been written.
+    assert not (account_home / ".claude" / ".oauth-token").exists()
+
+
+def test_run_oauth_token_setup_happy_path_writes_token(monkeypatch, mod, tmp_path):
+    """Happy path: subprocess succeeds, user pastes a valid token; returns True and file is written."""
+    account_home = tmp_path / "accounts" / "work"
+    account_home.mkdir(parents=True)
+
+    monkeypatch.setattr(mod.shutil, "which", lambda name: "/usr/local/bin/claude")
+    subprocess_calls = []
+
+    def fake_run(cmd, **kw):
+        subprocess_calls.append(cmd)
+        return subprocess.CompletedProcess(args=cmd, returncode=0)
+
+    monkeypatch.setattr(mod.subprocess, "run", fake_run)
+    monkeypatch.setattr("builtins.input", lambda prompt="": "sk-ant-oat01-goodtoken")
+    monkeypatch.delenv("SSH_CONNECTION", raising=False)
+
+    result = mod._run_oauth_token_setup("work", account_home)
+
+    assert result is True
+    assert subprocess_calls[0] == ["/usr/local/bin/claude", "setup-token"]
+    token_file = account_home / ".claude" / ".oauth-token"
+    assert token_file.exists()
+    assert token_file.read_text(encoding="utf-8") == "sk-ant-oat01-goodtoken"
+    assert (token_file.stat().st_mode & 0o777) == 0o600
+
+
+def test_run_oauth_token_setup_rejects_bad_prefix(monkeypatch, mod, tmp_path, capsys):
+    """A pasted token without the sk-ant-oat01- prefix is rejected; returns False, no file written."""
+    account_home = tmp_path / "accounts" / "work"
+    account_home.mkdir(parents=True)
+
+    monkeypatch.setattr(mod.shutil, "which", lambda name: "/usr/local/bin/claude")
+    monkeypatch.setattr(mod.subprocess, "run", lambda cmd, **kw: subprocess.CompletedProcess(args=cmd, returncode=0))
+    monkeypatch.setattr("builtins.input", lambda prompt="": "not-a-real-token")
+    monkeypatch.delenv("SSH_CONNECTION", raising=False)
+
+    result = mod._run_oauth_token_setup("work", account_home)
+
+    assert result is False
+    captured = capsys.readouterr()
+    assert "sk-ant-oat01-" in captured.err
+    assert not (account_home / ".claude" / ".oauth-token").exists()
+
+
+def test_run_oauth_token_setup_strips_whitespace(monkeypatch, mod, tmp_path):
+    """Leading/trailing whitespace and newlines are stripped from the pasted token."""
+    account_home = tmp_path / "accounts" / "work"
+    account_home.mkdir(parents=True)
+
+    monkeypatch.setattr(mod.shutil, "which", lambda name: "/usr/local/bin/claude")
+    monkeypatch.setattr(mod.subprocess, "run", lambda cmd, **kw: subprocess.CompletedProcess(args=cmd, returncode=0))
+    monkeypatch.setattr("builtins.input", lambda prompt="": "  sk-ant-oat01-foo \n")
+    monkeypatch.delenv("SSH_CONNECTION", raising=False)
+
+    result = mod._run_oauth_token_setup("work", account_home)
+
+    assert result is True
+    token_file = account_home / ".claude" / ".oauth-token"
+    assert token_file.read_text(encoding="utf-8") == "sk-ant-oat01-foo"
+
+
+def test_run_oauth_token_setup_strips_oauth_token_from_subprocess_env(monkeypatch, mod, tmp_path):
+    """`claude setup-token` must NOT inherit a pre-existing CLAUDE_CODE_OAUTH_TOKEN.
+
+    If the user has a global token exported in .zshrc (a very common state
+    for anyone who used the legacy rover-native-token flow), claude detects
+    the env var and short-circuits the URL/paste flow — the user never gets
+    a fresh token to paste, and the whole setup silently no-ops. This test
+    pins that the var is stripped from the subprocess env at the call site,
+    independent of what the parent process has."""
+    account_home = tmp_path / "accounts" / "work"
+    account_home.mkdir(parents=True)
+
+    monkeypatch.setattr(mod.shutil, "which", lambda name: "/usr/local/bin/claude")
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-leaked-from-shell")
+
+    captured_env = {}
+
+    def fake_run(cmd, **kw):
+        captured_env.update(kw.get("env") or {})
+        return subprocess.CompletedProcess(args=cmd, returncode=0)
+
+    monkeypatch.setattr(mod.subprocess, "run", fake_run)
+    monkeypatch.setattr("builtins.input", lambda prompt="": "sk-ant-oat01-fresh")
+    monkeypatch.delenv("SSH_CONNECTION", raising=False)
+
+    result = mod._run_oauth_token_setup("work", account_home)
+
+    assert result is True
+    assert "CLAUDE_CODE_OAUTH_TOKEN" not in captured_env, (
+        "claude setup-token must not see a pre-existing CLAUDE_CODE_OAUTH_TOKEN "
+        "or it short-circuits the OAuth flow"
+    )
+
+
+def test_run_oauth_token_setup_keyboard_interrupt_in_subprocess(monkeypatch, mod, tmp_path):
+    """KeyboardInterrupt during subprocess.run → returns False, no file written."""
+    account_home = tmp_path / "accounts" / "work"
+    account_home.mkdir(parents=True)
+
+    monkeypatch.setattr(mod.shutil, "which", lambda name: "/usr/local/bin/claude")
+
+    def raising_run(cmd, **kw):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(mod.subprocess, "run", raising_run)
+    monkeypatch.delenv("SSH_CONNECTION", raising=False)
+
+    result = mod._run_oauth_token_setup("work", account_home)
+
+    assert result is False
+    assert not (account_home / ".claude" / ".oauth-token").exists()
+
+
+def test_run_oauth_token_setup_eoferror_on_input(monkeypatch, mod, tmp_path):
+    """EOFError from input() (e.g. piped stdin) → returns False, no file written."""
+    account_home = tmp_path / "accounts" / "work"
+    account_home.mkdir(parents=True)
+
+    monkeypatch.setattr(mod.shutil, "which", lambda name: "/usr/local/bin/claude")
+    monkeypatch.setattr(mod.subprocess, "run", lambda cmd, **kw: subprocess.CompletedProcess(args=cmd, returncode=0))
+
+    def eof_input(prompt=""):
+        raise EOFError
+
+    monkeypatch.setattr("builtins.input", eof_input)
+    monkeypatch.delenv("SSH_CONNECTION", raising=False)
+
+    result = mod._run_oauth_token_setup("work", account_home)
+
+    assert result is False
+    assert not (account_home / ".claude" / ".oauth-token").exists()
+
+
+def test_run_oauth_token_setup_oserror_on_write_returns_false(monkeypatch, mod, tmp_path, capsys):
+    """OSError from _write_oauth_token_file → returns False and prints error to stderr."""
+    account_home = tmp_path / "accounts" / "work"
+    account_home.mkdir(parents=True)
+
+    monkeypatch.setattr(mod.shutil, "which", lambda name: "/usr/local/bin/claude")
+    monkeypatch.setattr(mod.subprocess, "run", lambda cmd, **kw: subprocess.CompletedProcess(args=cmd, returncode=0))
+    monkeypatch.setattr("builtins.input", lambda prompt="": "sk-ant-oat01-good")
+    monkeypatch.delenv("SSH_CONNECTION", raising=False)
+
+    def raising_write(account, account_home, token):
+        raise OSError("no space left on device")
+
+    monkeypatch.setattr(mod, "_write_oauth_token_file", raising_write)
+
+    result = mod._run_oauth_token_setup("work", account_home)
+
+    assert result is False
+    captured = capsys.readouterr()
+    assert "failed" in captured.err.lower() or "error" in captured.err.lower() or "token" in captured.err.lower()
+
+
+def test_run_oauth_token_setup_over_ssh_branch(monkeypatch, mod, tmp_path, capsys):
+    """When SSH_CONNECTION is set, setup-flow prints SSH-specific guidance."""
+    account_home = tmp_path / "accounts" / "work"
+    account_home.mkdir(parents=True)
+
+    monkeypatch.setattr(mod.shutil, "which", lambda name: "/usr/local/bin/claude")
+    monkeypatch.setattr(mod.subprocess, "run", lambda cmd, **kw: subprocess.CompletedProcess(args=cmd, returncode=0))
+    monkeypatch.setattr("builtins.input", lambda prompt="": "sk-ant-oat01-sshtoken")
+    monkeypatch.setenv("SSH_CONNECTION", "1.2.3.4 1234 5.6.7.8 22")
+
+    mod._run_oauth_token_setup("work", account_home)
+
+    captured = capsys.readouterr()
+    # The SSH branch prints a URL / phone / browser instruction; confirm the branch fired.
+    assert "ssh" in captured.out.lower() or "browser" in captured.out.lower() or "phone" in captured.out.lower()
+
+
+# -- _maybe_offer_oauth_token_setup ------------------------------------------
+
+
+@pytest.mark.parametrize("provider", ["gemini", "codex", "copilot"])
+def test_maybe_offer_skips_non_claude_providers(monkeypatch, mod, tmp_path, provider):
+    """Non-claude providers return False immediately without prompting."""
+    account_home = tmp_path / "accounts" / "work"
+    account_home.mkdir(parents=True)
+    monkeypatch.setattr(mod, "ACCOUNTS_DIR", tmp_path / "accounts")
+
+    prompt_calls = []
+    monkeypatch.setattr("builtins.input", lambda p="": prompt_calls.append(p) or "y")
+
+    result = mod._maybe_offer_oauth_token_setup("work", account_home, provider, "keychain")
+
+    assert result is False
+    assert prompt_calls == [], f"Must not prompt for provider={provider}"
+
+
+def test_maybe_offer_skips_keychain_mode_none(monkeypatch, mod, tmp_path):
+    """keychain_mode='none' → returns False without prompting."""
+    account_home = tmp_path / "accounts" / "work"
+    account_home.mkdir(parents=True)
+    monkeypatch.setattr(mod, "ACCOUNTS_DIR", tmp_path / "accounts")
+
+    prompt_calls = []
+    monkeypatch.setattr("builtins.input", lambda p="": prompt_calls.append(p) or "y")
+
+    result = mod._maybe_offer_oauth_token_setup("work", account_home, "claude", "none")
+
+    assert result is False
+    assert prompt_calls == []
+
+
+def test_maybe_offer_skips_when_token_already_present(monkeypatch, mod, tmp_path):
+    """When a token file already exists, returns False without prompting."""
+    account_home = tmp_path / "accounts" / "work"
+    token_file = account_home / ".claude" / ".oauth-token"
+    token_file.parent.mkdir(parents=True)
+    token_file.write_text("sk-ant-oat01-existing")
+    monkeypatch.setattr(mod, "ACCOUNTS_DIR", tmp_path / "accounts")
+
+    prompt_calls = []
+    monkeypatch.setattr("builtins.input", lambda p="": prompt_calls.append(p) or "y")
+
+    result = mod._maybe_offer_oauth_token_setup("work", account_home, "claude", "keychain")
+
+    assert result is False
+    assert prompt_calls == []
+
+
+def test_maybe_offer_non_tty_prints_hint_and_returns_false(monkeypatch, mod, tmp_path, capsys):
+    """Non-TTY stdin → returns False and prints a hint to stderr mentioning --setup-token."""
+    account_home = tmp_path / "accounts" / "work"
+    account_home.mkdir(parents=True)
+    monkeypatch.setattr(mod, "ACCOUNTS_DIR", tmp_path / "accounts")
+    monkeypatch.setattr(mod.sys.stdin, "isatty", lambda: False)
+
+    result = mod._maybe_offer_oauth_token_setup("work", account_home, "claude", "keychain")
+
+    assert result is False
+    captured = capsys.readouterr()
+    assert "altergo --setup-token" in captured.err
+
+
+def test_maybe_offer_user_types_n_returns_false(monkeypatch, mod, tmp_path, capsys):
+    """User responds 'n' → returns False, prints Skipped message, no file written."""
+    account_home = tmp_path / "accounts" / "work"
+    account_home.mkdir(parents=True)
+    monkeypatch.setattr(mod, "ACCOUNTS_DIR", tmp_path / "accounts")
+    monkeypatch.setattr(mod.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda p="": "n")
+
+    result = mod._maybe_offer_oauth_token_setup("work", account_home, "claude", "keychain")
+
+    assert result is False
+    captured = capsys.readouterr()
+    assert "skip" in captured.out.lower() or "later" in captured.out.lower()
+    assert not (account_home / ".claude" / ".oauth-token").exists()
+
+
+def test_maybe_offer_user_presses_enter_calls_run_setup(monkeypatch, mod, tmp_path):
+    """Empty Enter (default Yes) → _run_oauth_token_setup is called with the correct args."""
+    account_home = tmp_path / "accounts" / "work"
+    account_home.mkdir(parents=True)
+    monkeypatch.setattr(mod, "ACCOUNTS_DIR", tmp_path / "accounts")
+    monkeypatch.setattr(mod.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda p="": "")
+
+    run_setup_calls = []
+
+    def spy_run_setup(account, ah):
+        run_setup_calls.append((account, ah))
+        return True
+
+    monkeypatch.setattr(mod, "_run_oauth_token_setup", spy_run_setup)
+
+    result = mod._maybe_offer_oauth_token_setup("work", account_home, "claude", "keychain")
+
+    assert result is True
+    assert run_setup_calls == [("work", account_home)]
+
+
+def test_maybe_offer_user_types_y_calls_run_setup(monkeypatch, mod, tmp_path):
+    """Explicit 'y' → _run_oauth_token_setup is called with correct args."""
+    account_home = tmp_path / "accounts" / "work"
+    account_home.mkdir(parents=True)
+    monkeypatch.setattr(mod, "ACCOUNTS_DIR", tmp_path / "accounts")
+    monkeypatch.setattr(mod.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda p="": "y")
+
+    run_setup_calls = []
+
+    def spy_run_setup(account, ah):
+        run_setup_calls.append((account, ah))
+        return True
+
+    monkeypatch.setattr(mod, "_run_oauth_token_setup", spy_run_setup)
+
+    result = mod._maybe_offer_oauth_token_setup("work", account_home, "claude", "keychain")
+
+    assert result is True
+    assert run_setup_calls == [("work", account_home)]
+
+
+def test_maybe_offer_keyboard_interrupt_on_prompt_returns_false(monkeypatch, mod, tmp_path):
+    """KeyboardInterrupt during the Y/n prompt is treated as 'n' → returns False."""
+    account_home = tmp_path / "accounts" / "work"
+    account_home.mkdir(parents=True)
+    monkeypatch.setattr(mod, "ACCOUNTS_DIR", tmp_path / "accounts")
+    monkeypatch.setattr(mod.sys.stdin, "isatty", lambda: True)
+
+    def interrupt_input(p=""):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr("builtins.input", interrupt_input)
+
+    run_setup_calls = []
+    monkeypatch.setattr(mod, "_run_oauth_token_setup", lambda a, h: run_setup_calls.append((a, h)) or True)
+
+    result = mod._maybe_offer_oauth_token_setup("work", account_home, "claude", "keychain")
+
+    assert result is False
+    assert run_setup_calls == []
+
+
+# -- CLI: altergo --setup-token ----------------------------------------------
+
+
+def _setup_main_env(monkeypatch, mod, tmp_path):
+    """Wire MAIN_HOME, ACCOUNTS_DIR, etc. for main() CLI tests."""
+    main_home = tmp_path / "main_home"
+    accounts_dir = tmp_path / "accounts"
+    main_home.mkdir(parents=True)
+    accounts_dir.mkdir(parents=True)
+    monkeypatch.setattr(mod, "MAIN_HOME", main_home)
+    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
+    monkeypatch.setattr(mod, "SETTINGS_FILE", tmp_path / "settings.json")
+    monkeypatch.setattr(mod, "show_banner", lambda *a, **kw: None)
+    monkeypatch.setattr(mod, "load_settings", lambda: {})
+    return accounts_dir
+
+
+def test_cli_setup_token_no_account_arg_exits_1(monkeypatch, mod, tmp_path, capsys):
+    """altergo --setup-token (no account) → exits 1 with usage message."""
+    _setup_main_env(monkeypatch, mod, tmp_path)
+    monkeypatch.setattr(mod.sys, "argv", ["altergo", "--setup-token"])
+
+    with pytest.raises(SystemExit) as exc_info:
+        mod.main()
+
+    assert exc_info.value.code == 1
+    captured = capsys.readouterr()
+    assert "usage" in captured.err.lower() or "setup-token" in captured.err
+
+
+def test_cli_setup_token_nonexistent_account_exits_1(monkeypatch, mod, tmp_path, capsys):
+    """altergo --setup-token nonexistent → exits 1 with 'account not found' message."""
+    _setup_main_env(monkeypatch, mod, tmp_path)
+    monkeypatch.setattr(mod.sys, "argv", ["altergo", "--setup-token", "nosuchaccount"])
+
+    with pytest.raises(SystemExit) as exc_info:
+        mod.main()
+
+    assert exc_info.value.code == 1
+    captured = capsys.readouterr()
+    assert "not found" in captured.err.lower()
+
+
+def test_cli_setup_token_native_calls_run_setup(monkeypatch, mod, tmp_path):
+    """altergo --setup-token native → calls _run_oauth_token_setup('native', None), exits 0 on success."""
+    _setup_main_env(monkeypatch, mod, tmp_path)
+    monkeypatch.setattr(mod.sys, "argv", ["altergo", "--setup-token", "native"])
+
+    run_calls = []
+
+    def spy_run_setup(account, ah):
+        run_calls.append((account, ah))
+        return True
+
+    monkeypatch.setattr(mod, "_run_oauth_token_setup", spy_run_setup)
+
+    with pytest.raises(SystemExit) as exc_info:
+        mod.main()
+
+    assert exc_info.value.code == 0
+    assert run_calls == [("native", None)]
+
+
+def test_cli_setup_token_existing_account_calls_run_setup(monkeypatch, mod, tmp_path):
+    """altergo --setup-token work (account exists) → calls _run_oauth_token_setup with the account_home."""
+    accounts_dir = _setup_main_env(monkeypatch, mod, tmp_path)
+    work_dir = accounts_dir / "work"
+    work_dir.mkdir(parents=True)
+    monkeypatch.setattr(mod.sys, "argv", ["altergo", "--setup-token", "work"])
+
+    run_calls = []
+
+    def spy_run_setup(account, ah):
+        run_calls.append((account, ah))
+        return True
+
+    monkeypatch.setattr(mod, "_run_oauth_token_setup", spy_run_setup)
+
+    with pytest.raises(SystemExit) as exc_info:
+        mod.main()
+
+    assert exc_info.value.code == 0
+    assert len(run_calls) == 1
+    assert run_calls[0][0] == "work"
+    assert run_calls[0][1] == work_dir
+
+
+def test_cli_setup_token_exits_1_when_run_setup_returns_false(monkeypatch, mod, tmp_path):
+    """When _run_oauth_token_setup returns False (user cancelled), the CLI exits 1."""
+    accounts_dir = _setup_main_env(monkeypatch, mod, tmp_path)
+    (accounts_dir / "work").mkdir(parents=True)
+    monkeypatch.setattr(mod.sys, "argv", ["altergo", "--setup-token", "work"])
+    monkeypatch.setattr(mod, "_run_oauth_token_setup", lambda a, h: False)
+
+    with pytest.raises(SystemExit) as exc_info:
+        mod.main()
+
+    assert exc_info.value.code == 1
+
+
+# -- Integration: configure_account hook -------------------------------------
+
+
+def test_configure_account_claude_keychain_tty_calls_maybe_offer(monkeypatch, mod, tmp_path):
+    """After configuring a claude+keychain account on a TTY, _maybe_offer_oauth_token_setup
+    is called exactly once with the account name, account_home, 'claude', 'keychain'."""
+    accounts_dir = _setup_configure_account_env(monkeypatch, mod, tmp_path)
+    # Override the non-TTY stub from _setup_configure_account_env to simulate a TTY.
+    monkeypatch.setattr(mod.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(mod, "_sec", lambda argv, **kw: _cp(0))
+
+    offer_calls = []
+
+    def spy_offer(account, account_home, provider, keychain_mode):
+        offer_calls.append((account, provider, keychain_mode))
+        return False
+
+    monkeypatch.setattr(mod, "_maybe_offer_oauth_token_setup", spy_offer)
+    # configure_account prompts for keychain mode on TTY; answer 'n' → none mode.
+    # Use keychain_arg='keychain' to bypass the interactive prompt.
+    mod.configure_account("work", keychain_arg="keychain")
+
+    assert len(offer_calls) == 1
+    account_arg, provider_arg, kc_arg = offer_calls[0]
+    assert account_arg == "work"
+    assert provider_arg == "claude"
+    assert kc_arg == "keychain"
+
+
+def test_configure_account_claude_none_mode_offer_does_not_trigger_run_setup(monkeypatch, mod, tmp_path):
+    """When keychain_arg='none', _maybe_offer_oauth_token_setup is still wired but
+    the gating logic inside it prevents _run_oauth_token_setup from being called."""
+    accounts_dir = _setup_configure_account_env(monkeypatch, mod, tmp_path)
+    monkeypatch.setattr(mod, "_sec", lambda argv, **kw: _cp(0))
+
+    run_setup_calls = []
+    monkeypatch.setattr(mod, "_run_oauth_token_setup", lambda a, h: run_setup_calls.append((a, h)) or True)
+
+    mod.configure_account("work", keychain_arg="none")
+
+    assert run_setup_calls == [], (
+        "_run_oauth_token_setup must not be called when keychain_mode is 'none'"
+    )
+
+
+def test_configure_account_gemini_provider_offer_does_not_trigger_run_setup(monkeypatch, mod, tmp_path):
+    """Non-claude provider: _run_oauth_token_setup must never be called."""
+    accounts_dir = _setup_configure_account_env(monkeypatch, mod, tmp_path)
+    monkeypatch.setattr(mod, "_sec", lambda argv, **kw: _cp(0))
+
+    run_setup_calls = []
+    monkeypatch.setattr(mod, "_run_oauth_token_setup", lambda a, h: run_setup_calls.append((a, h)) or True)
+
+    mod.configure_account("work", provider="gemini", keychain_arg="none")
+
+    assert run_setup_calls == [], (
+        "_run_oauth_token_setup must not be called for non-claude providers"
     )

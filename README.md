@@ -160,7 +160,7 @@ That is the full workflow. The first time you run `altergo personal`, your confi
 | **tmux session persistence** | Opt in via settings — wraps every session in a tmux window so it survives SSH disconnects and can be reattached. |
 | **Native passthrough** | `altergo native` launches your provider against your real `$HOME` — handy for quick one-offs without isolation. |
 | **Minimal dependencies** | Standard library for the core. `rich`, `pyfiglet`, and `rich-pyfiglet` are loaded at runtime for TUI chrome; altergo degrades gracefully if they are absent. |
-| **Keychain modes (macOS)** | Default (`private`) gives each account its own per-account keychain, unlocked silently at launch. Opt out with `none` for flat-file credentials only. See [docs/keychain-isolation.md](docs/keychain-isolation.md) · [FAQ](docs/faq.md). |
+| **Keychain modes (macOS)** | Default (`keychain`) gives each account its own per-account keychain, unlocked silently at launch. Opt out with `none` for flat-file credentials only. See [docs/keychain-isolation.md](docs/keychain-isolation.md) · [FAQ](docs/faq.md). |
 | **Cross-platform** | macOS and Linux wherever Python 3.10+ is available. |
 
 ---
@@ -183,7 +183,8 @@ That is the full workflow. The first time you run `altergo personal`, your confi
 | `altergo <account> portal` | Same as above, scoped to a named account |
 | `altergo --search <query>` | Full-text search across every session from every account |
 | `altergo --config <account>` | Create or reconfigure a named account, wire symlinks automatically |
-| `altergo --config <account> --keychain private\|none` | Set keychain mode: `private` (default, per-account keychain) or `none` (flat files only) — macOS only |
+| `altergo --config <account> --keychain keychain\|none` | Set keychain mode: `keychain` (default, per-account keychain) or `none` (flat files only) — macOS only |
+| `altergo --setup-token <account>` | Generate and store an SSH-friendly OAuth token for a claude account (bypasses macOS keychain over SSH) |
 | `altergo <account> --add-provider <id>` | Add another provider to an existing account (reconciles any orphan data) |
 | `altergo <account> --remove-provider <id>` | Remove a provider from an account (session data in MAIN_HOME untouched) |
 | `altergo <account> --default-provider <id>` | Set which provider plain `altergo <account>` launches |
@@ -290,30 +291,30 @@ Credentials set this way persist in `~/.altergo/accounts/pro/` and are available
 
 ### Keychain modes (macOS)
 
-By default, altergo gives each account its own `login.keychain-db`, unlocked silently at session start (`private` mode — the default since v0.45.0). Provider credentials are isolated per account.
+By default, altergo gives each account its own `login.keychain-db`, unlocked silently at session start (`keychain` mode — the default since v0.45.0). Provider credentials are isolated per account.
 
-To opt out and use flat-file credentials only (no keychain writes):
+When you run `altergo --config <account>` interactively, altergo prompts you to pick `keychain` or `none` and explains both inline — including how each mode behaves over SSH. The "Allow access" dialog you may see is actually in `none` mode: the per-account keychain is intentionally locked, so when a provider tries to write to it macOS prompts for a password you don't have — click Cancel and the provider falls back to flat-file credentials. In `keychain` mode altergo handles unlock silently with a stored password, so you don't see popups. Re-running `--config` always re-prompts so you can switch modes any time, with the current mode as the default answer. To skip the prompt and set explicitly:
 
 ```bash
-altergo --config <account> --keychain none
+altergo --config <account> --keychain keychain   # or: --keychain none
 ```
 
-Or answer "n" to the keychain mode prompt during interactive `--config`.
+If you pick `keychain`, altergo immediately offers to set up an OAuth token bridge so the account works over SSH without the keychain. See [SSH access](#ssh-access) below for the full flow.
 
 | Mode | On-disk | Keychain writes | Unlock at launch |
 |---|---|---|---|
-| `private` (default) | plist + per-account keychain + unlock entry | succeed | yes |
+| `keychain` (default) | plist + per-account keychain + unlock entry | succeed | yes |
 | `none` | plist + empty locked keychain | blocked → providers fall back to flat files | no |
 
-**Switching modes:** `--keychain none` removes the unlock entry from your real login keychain and preserves the per-account keychain file on disk (so a later re-upgrade to `private` can reuse it, but providers will need to re-authenticate). `--keychain private` rebuilds the keychain and unlock entry. Full cleanup happens on `altergo --delete-account <account>`.
+**Switching modes:** `--keychain none` removes the unlock entry from your real login keychain and preserves the per-account keychain file on disk (so a later re-upgrade to `keychain` can reuse it, but providers will need to re-authenticate). `--keychain keychain` rebuilds the keychain and unlock entry. Full cleanup happens on `altergo --delete-account <account>`.
 
 **`none` mode warning:** In `none` mode, macOS may show a keychain password dialog. Always click **Cancel** — never "Reset To Defaults" (that destroys your real login keychain, unrelated to altergo). See [FAQ](docs/faq.md#what-is-the-keychain-password-prompt-i-keep-seeing-none-mode) for details.
 
-**v0.46.0:** The `--keychain` option only accepts `private` and `none`. All legacy aliases (`dedicated`, `isolated`, `system`, `shared`) were removed. Accounts with legacy values in `account.json` are treated as `private` with a one-time warning.
+**v0.46.0:** The `--keychain` option only accepts `keychain` and `none`. All legacy aliases (`dedicated`, `isolated`, `system`, `shared`, `private`) were removed. Accounts with legacy values in `account.json` fall through to the default (`keychain` mode); re-run `altergo --config <account>` to persist the new value.
 
 **This is workflow isolation, not cryptographic separation.** Any process running under your macOS user can potentially read keychain entries. If you need hard isolation — e.g., client work under NDA — use separate macOS user accounts.
 
-**UI indicators:** `altergo --config` (interactive picker) shows `  ·  keychain: private` next to private-mode accounts. None-mode accounts show no suffix (opt-out is implicit).
+**UI indicators:** `altergo --config` (interactive picker) shows `  ·  keychain` next to keychain-mode accounts. None-mode accounts show no suffix (opt-out is implicit).
 
 **Dev tool credentials are shared by design.** `gh`, `aws`, `gcloud`, and other dev tools are symlinked to your real `$HOME` by default so your existing logins work across all altergo accounts — no re-auth needed. Keychain mode applies to AI provider credentials only and does not affect these symlinks. Toggle per-tool in `altergo --settings` → Credentials if you need per-account separation.
 
@@ -321,14 +322,43 @@ See [docs/keychain-isolation.md](docs/keychain-isolation.md) for the full lifecy
 
 ---
 
+## <img src="docs/icons/howitworks.svg" width="22" align="center"> SSH access (keychain accounts)
+
+If you SSH into your Mac and your accounts use `keychain`, the macOS Security framework requires a GUI session to service keychain reads — SSH has none, so auth fails. altergo works around this with a per-account OAuth token file. During `altergo --config`, you are offered the chance to set one up. You can also run it at any time:
+
+```bash
+altergo --setup-token work
+```
+
+When you run that command, altergo launches `claude setup-token`, which prints an authorization URL. Open the URL in a browser (your phone works fine over SSH), approve, and paste the token back:
+
+```
+  Generating an SSH-friendly OAuth token
+
+  You're over SSH — claude setup-token will print a URL.
+  Open it in your phone or another browser, approve, and paste
+  the token back here when it prints to the terminal.
+
+  Paste the token below (starts with sk-ant-oat01-…):
+  token: sk-ant-oat01-…
+
+  ✓ token saved   /Users/you/.altergo/accounts/work/.claude/.oauth-token
+```
+
+After that, `altergo work --yolo` (or any launch of that account) works over SSH without a keychain prompt. Each account stores its own token — `work` and `personal` can be separate identities with no shell-level exports or cross-account leakage.
+
+See [docs/ssh-auth.md](docs/ssh-auth.md) for the full explanation: why this happens, per-account isolation, token rotation, security notes, and troubleshooting.
+
+---
+
 ## <img src="docs/icons/migrate.svg" width="22" align="center"> Migrating older installs
 
 - **v0.40.0 — multi-provider accounts, `--recall` across all providers, cwd-on-recall, `b`/`*` rebind:** `account.json` upgrades to v3 automatically on the next account mutation (e.g. `--add-provider`). v2 files load forever without being rewritten — no user action required. The picker's `b` key now bookmarks; `*` toggles a starred-only filter. Resumed sessions launch in their saved cwd. See [docs/migration.md](docs/migration.md#v0400--accountjson-v2--v3-schema) for details.
 - **v0.46.0 — keychain alias removal + Cancel warning:** All legacy `--keychain` aliases (`dedicated`, `isolated`, `system`, `shared`) removed — only `private` and `none` accepted. Accounts with legacy values in `account.json` are treated as `private` with a one-time warning. New warning when choosing `none` mode explains the Cancel-vs-Reset-To-Defaults risk. See [docs/migration.md](docs/migration.md#v0460--keychain-alias-removal--cancel-warning).
-- **v0.45.0 — keychain mode rename + default flip:** `dedicated` → `private`; `isolated` → `none`. Default flipped from `none` to `private`. See [docs/migration.md](docs/migration.md#v0450--keychain-mode-rename-private--none).
-- **v0.44.0 — keychain safety-default flip:** Default keychain mode was `isolated` (blocking, now called `none`). Existing accounts using `system` were silently migrated to `isolated` (same behavior, now called `none`). The old `isolated` mode (per-account keychain, now called `private`) was renamed `dedicated`. See [docs/migration.md](docs/migration.md#v0440--keychain-safety-default-flip).
-- **v0.43.0 — keychain preserve-and-reuse:** Downgrading from `isolated` (now `private`) to `system` (now `none`) preserves the per-account keychain file on disk. Re-upgrading reuses the preserved file.
-- **v0.41.0 — opt-in keychain isolation (macOS):** Introduced per-account keychains. Default was `system`; opt in per account with `--keychain isolated`. That mode is now called `private`. See [docs/keychain-isolation.md](docs/keychain-isolation.md).
+- **v0.45.0 — keychain mode rename + default flip:** `dedicated` → per-account keychain (later renamed `private`, now `keychain`); `isolated` → `none`. Default flipped from `none` to per-account keychain (now called `keychain`). See [docs/migration.md](docs/migration.md#v0450--keychain-mode-rename-private--none).
+- **v0.44.0 — keychain safety-default flip:** Default keychain mode was `isolated` (blocking, now called `none`). Existing accounts using `system` were silently migrated to `isolated` (same behavior, now called `none`). The old `isolated` mode (per-account keychain, now called `keychain`) was renamed `dedicated`. See [docs/migration.md](docs/migration.md#v0440--keychain-safety-default-flip).
+- **v0.43.0 — keychain preserve-and-reuse:** Downgrading from `isolated` (now `keychain`) to `system` (now `none`) preserves the per-account keychain file on disk. Re-upgrading reuses the preserved file.
+- **v0.41.0 — opt-in keychain isolation (macOS):** Introduced per-account keychains. Default was `system`; opt in per account with `--keychain isolated`. That mode is now called `keychain`. See [docs/keychain-isolation.md](docs/keychain-isolation.md).
 - **From v0.4.x:** auto-migration existed through v0.35.2 and was removed in v0.35.3. If you are still on a pre-v0.5.0 layout today, see [docs/migration.md](docs/migration.md#archived-migration-notes-v04x--v050) for the archived steps — or open an issue for manual guidance.
 - **Syntax change in v0.34.0:** `altergo --config --name <n>` is now `altergo --config <account>`. The old form was removed; update any aliases.
 - **From claude100-resume:** credentials and aliases are not picked up automatically. See [docs/migration.md](docs/migration.md) for step-by-step instructions.

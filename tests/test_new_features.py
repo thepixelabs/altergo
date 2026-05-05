@@ -1074,11 +1074,11 @@ def test_native_build_launcher_menu_no_chip_when_binary_absent(tmp_path, monkeyp
     assert menu == []
 
 
-# --- do_config and do_teardown guards ----------------------------------------
+# --- configure_account and do_teardown guards ----------------------------------------
 
 
-def test_native_do_config_is_rejected(tmp_path, monkeypatch):
-    """do_config('native') must exit 1 with an explanatory message."""
+def test_native_configure_account_is_rejected(tmp_path, monkeypatch):
+    """configure_account('native') must exit 1 with an explanatory message."""
     import sys, io
 
     mod = _load_altergo()
@@ -1090,7 +1090,7 @@ def test_native_do_config_is_rejected(tmp_path, monkeypatch):
     monkeypatch.setattr(sys, "stderr", stderr_buf)
 
     with pytest.raises(SystemExit) as exc:
-        mod.do_config("native", "claude")
+        mod.configure_account("native", "claude")
 
     assert exc.value.code == 1
     assert "native" in stderr_buf.getvalue()

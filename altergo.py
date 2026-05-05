@@ -502,11 +502,16 @@ def show_help():
         (
             "altergo --config --keychain",
             f"{kw('altergo --config --keychain')} {arg('<m>')}",
-            "private | none (macOS only)",
+            "keychain | none (macOS only)",
         ),
         ("altergo --use <account>", f"{kw('altergo --use')} {arg('<account>')}", "Set as default account"),
         ("altergo --teardown", f"{kw('altergo --teardown')} {arg('[--name <n>]')}", "Remove account + symlinks"),
         ("altergo --settings", kw("altergo --settings"), "Manage shared credentials"),
+        (
+            "altergo --setup-token <account>",
+            f"{kw('altergo --setup-token')} {arg('<account>')}",
+            "Generate SSH-friendly OAuth token (claude only)",
+        ),
     ]
     SEC_MULTI_PROVIDER = [
         (
@@ -1085,27 +1090,27 @@ def _coerce_meta_v3(data: dict) -> dict:
     out["default_provider"] = default
     # Keychain mode migration: normalise legacy values in-memory.
     # On-disk file is NOT rewritten here; persistence happens at next
-    # do_config touch or via _reconcile_keychain_state on launch.
+    # configure_account touch or via _reconcile_keychain_state on launch.
     #
     # v0.46.0: all legacy aliases (dedicated, isolated, system, shared) are
-    # removed from the CLI and treated as "private" (the default) with a
+    # removed from the CLI and treated as "keychain" (the default) with a
     # one-line warning on first encounter per process.  The coercion here
     # is a graceful fallback for pre-existing account.json files; new writes
-    # will always use "private" or "none".
+    # will always use "keychain" or "none".
     #
     #   "none"      → "none"     (canonical; pass through)
-    #   "private"   → "private"  (canonical; pass through)
-    #   "system"    → "private"  + warn  (v0.43.x name; removed in v0.46.0)
-    #   "shared"    → "private"  + warn  (deprecated alias; removed in v0.46.0)
-    #   "isolated"  → "private"  + warn  (v0.44.x name; removed in v0.46.0)
-    #   "dedicated" → "private"  + warn  (v0.44.x name; removed in v0.46.0)
+    #   "keychain"   → "keychain"  (canonical; pass through)
+    #   "system"    → "keychain"  + warn  (v0.43.x name; removed in v0.46.0)
+    #   "shared"    → "keychain"  + warn  (deprecated alias; removed in v0.46.0)
+    #   "isolated"  → "keychain"  + warn  (v0.44.x name; removed in v0.46.0)
+    #   "dedicated" → "keychain"  + warn  (v0.44.x name; removed in v0.46.0)
     #   absent key  → not set    (_is_keychain_none handles None as none/default)
     #
-    # Note: we intentionally do NOT map absent key → "private" here because
+    # Note: we intentionally do NOT map absent key → "keychain" here because
     # that mapping would create a read-write loop: _coerce_meta_v3 runs on every
     # load_account_meta call, so writing "none" then reading it would give
-    # "private", changing existing none accounts silently. The absent-key → "private"
-    # default is applied at decision points (_is_keychain_private, do_config,
+    # "keychain", changing existing none accounts silently. The absent-key → "keychain"
+    # default is applied at decision points (_uses_keychain, configure_account,
     # _reconcile_keychain_state) where context makes the intent clear.
     kc = data.get("keychain")
     _LEGACY_KC_VALUES = {"system", "shared", "dedicated", "isolated"}
@@ -1115,12 +1120,12 @@ def _coerce_meta_v3(data: dict) -> dict:
             _c(
                 2,
                 f"altergo: account '{_acct_hint}' has legacy keychain mode '{kc}' — "
-                f"treating as 'private'. Run `altergo --config {_acct_hint}` to normalize.",
+                f"treating as 'keychain'. Run `altergo --config {_acct_hint}` to normalize.",
             ),
             file=sys.stderr,
         )
-        out["keychain"] = "private"
-    elif kc in ("none", "private"):
+        out["keychain"] = "keychain"
+    elif kc in ("none", "keychain"):
         out["keychain"] = kc  # pass through current-vocabulary values
     # else (missing key): do NOT set — _is_keychain_none handles None as none (default)
     return out
@@ -2724,7 +2729,7 @@ def _warn_none_mode_cancel(*, interactive: bool) -> None:
         )
 
 
-def do_config(account: str = "default", provider: str = "claude", *, keychain_arg: str | None = None):
+def configure_account(account: str = "default", provider: str = "claude", *, keychain_arg: str | None = None):
     """Configure (or reconfigure) an altergo account."""
     if account == _NATIVE_ACCOUNT:
         print(
@@ -2745,9 +2750,9 @@ def do_config(account: str = "default", provider: str = "claude", *, keychain_ar
 
     # Surface current keychain mode so the user knows what they're changing.
     if sys.platform == "darwin":
-        current_kc = (meta or {}).get("keychain") or "private"  # default = private
-        if current_kc == "private":
-            label = "private (per-account keychain)"
+        current_kc = (meta or {}).get("keychain") or "keychain"  # default = keychain
+        if current_kc == "keychain":
+            label = "keychain (per-account keychain)"
         else:
             label = "none (flat files only)"
         print(_c(C("dim"), f"  Current keychain: {label}"))
@@ -2771,38 +2776,73 @@ def do_config(account: str = "default", provider: str = "claude", *, keychain_ar
 
     _status_wrap("Linking shared credentials…", _apply_catalog_entries)
 
-    # 5. Keychain mode (macOS only). Default: private (per-account keychain).
-    keychain_mode = "private"  # default since v0.45.0
+    # 5. Keychain mode (macOS only). Default: keychain (per-account keychain).
+    keychain_mode = "keychain"  # default since v0.45.0
     if sys.platform == "darwin":
         if keychain_arg is not None:
-            # v0.46.0: only "private" and "none" are accepted. The CLI parser
+            # v0.46.0: only "keychain" and "none" are accepted. The CLI parser
             # already rejects old names with an error, but callers that bypass
-            # the parser (e.g. tests using do_config directly) should still
+            # the parser (e.g. tests using configure_account directly) should still
             # receive a hard failure so misuse is caught early.
-            if keychain_arg not in ("private", "none"):
+            if keychain_arg not in ("keychain", "none"):
                 print(
                     f"altergo: invalid keychain mode '{keychain_arg}' — "
-                    "must be 'private' or 'none' (v0.46.0 removed old aliases)",
+                    "must be 'keychain' or 'none' (v0.46.0 removed old aliases)",
                     file=sys.stderr,
                 )
                 sys.exit(1)
             keychain_mode = keychain_arg
-        elif meta and meta.get("keychain") == "none":
-            # Re-config of a none account — preserve unless user says otherwise.
-            keychain_mode = "none"
         elif sys.stdin.isatty():
-            # Interactive prompt — default is now private (per-account keychain).
+            # Interactive prompt. Re-running --config always re-prompts so the
+            # user can switch modes; the current value (or "keychain" for a
+            # new account) is the default. The explanation merges keychain
+            # semantics with the SSH-access implications so the user can pick
+            # with full context — no second SSH-vs-keychain prompt later.
+            current_mode = (meta or {}).get("keychain") or "keychain"
             print()
             print(_c(C("header"), "  Keychain mode (macOS)"))
-            print(_c(2, "  Default: private — each account gets its own per-account keychain,"))
-            print(_c(2, "  unlocked silently at session start. Tokens stay per-account-isolated."))
-            print(_c(2, "  Alternative: none — no keychain; providers fall back to flat-file credentials."))
-            prompt = "  Enable per-account keychain ('private' mode)? [Y/n] "
+            print(_c(2, "  ─────────────────────"))
+            print(_c(2, "  How this account stores credentials:"))
+            print()
+            print(_c(2, "    keychain  per-account macOS keychain. Tokens encrypted at rest."))
+            print(_c(2, "             altergo stores the unlock password in your main login"))
+            print(_c(2, "             keychain and handles unlock silently — no popups at the"))
+            print(_c(2, "             desk during normal use. Over SSH the keychain can't be"))
+            print(_c(2, "             unlocked silently in all cases, so altergo will offer"))
+            print(_c(2, "             to set up an OAuth token bridge after this prompt."))
+            print()
+            print(_c(2, "    none     flat files in the account home (mode 0600). The"))
+            print(_c(2, "             per-account keychain is intentionally locked, so when"))
+            print(_c(2, "             a provider tries to write to it macOS will pop an"))
+            print(_c(2, "             'Allow access' dialog asking for a keychain password."))
+            print(_c(2, "             Always click Cancel — never 'Reset To Defaults'."))
+            print(_c(2, "             Providers fall back to flat files and your session"))
+            print(_c(2, "             continues. Works over SSH and on the desk identically."))
+            print()
+            print(_c(C("dim"), "  Details: https://github.com/thepixelabs/altergo/blob/main/docs/ssh-auth.md"))
+            print()
+            if current_mode == "keychain":
+                # Default = stay in keychain mode. [Y/n] convention.
+                prompt = f"  Current: {_c(1, 'keychain')}.  Use keychain mode? [Y/n] "
+                default_is_keychain = True
+            else:
+                # Default = stay none. [y/N] convention so the highlighted
+                # default matches the user's existing choice.
+                prompt = f"  Current: {_c(1, 'none')}.  Switch to keychain mode? [y/N] "
+                default_is_keychain = False
             try:
                 answer = input(prompt).strip().lower()
             except (KeyboardInterrupt, EOFError):
                 answer = ""
-            keychain_mode = "none" if answer in ("n", "no") else "private"
+            if answer in ("y", "yes"):
+                keychain_mode = "keychain"
+            elif answer in ("n", "no"):
+                keychain_mode = "none"
+            else:
+                keychain_mode = "keychain" if default_is_keychain else "none"
+        elif meta and meta.get("keychain") == "none":
+            # Non-interactive re-config of a none account — preserve.
+            keychain_mode = "none"
 
         # Show Cancel warning when none mode is chosen (interactive or non-interactive).
         if keychain_mode == "none":
@@ -2824,19 +2864,19 @@ def do_config(account: str = "default", provider: str = "claude", *, keychain_ar
             print("    Continuing with none mode (flat-file credentials).", file=sys.stderr)
             keychain_mode = "none"
         else:
-            if keychain_mode == "private":
+            if keychain_mode == "keychain":
                 print(f"  {_c(32, '✓')} Per-account keychain created/verified")
                 print(
                     _c(
                         2,
-                        "  NOTE: private mode requires your login keychain to be unlocked "
+                        "  NOTE: keychain mode requires your login keychain to be unlocked "
                         "(standard on GUI login; check Keychain Access → Preferences if auto-lock is aggressive)",
                     )
                 )
 
     # 4. Save account metadata.  New writes emit v3 (providers list + default).
     #    Existing v3 accounts preserve extra providers beyond the single one
-    #    passed into do_config — do_config only rewrites the default.
+    #    passed into configure_account — configure_account only rewrites the default.
     prior_providers: list = []
     if meta is not None:
         prior_providers = list(meta.get("providers", []))
@@ -2848,8 +2888,13 @@ def do_config(account: str = "default", provider: str = "claude", *, keychain_ar
         "created": (meta.get("created") if meta else None) or datetime.now().isoformat(timespec="seconds"),
     }
     # Always record keychain key so A is never absent after first --config touch.
-    meta_to_save["keychain"] = keychain_mode  # "none" or "private"
+    meta_to_save["keychain"] = keychain_mode  # "none" or "keychain"
     save_account_meta(account_home, meta_to_save)
+
+    # Offer SSH-friendly OAuth token setup now that the account is fully
+    # configured. Only fires for claude + keychain mode + no existing token +
+    # interactive TTY; silently no-ops in every other case.
+    _maybe_offer_oauth_token_setup(account, account_home, provider, keychain_mode)
 
     launch_cmd = f"altergo {account}" if account != "default" else "altergo"
     print()
@@ -5959,7 +6004,7 @@ def _sec_create_keychain(kc_path: Path, password: str) -> None:
 def _create_account_keychain(account_home: Path, slug: str, *, plant_unlock_entry: bool = True) -> None:
     """Create (or reconcile) the per-account keychain.
 
-    When plant_unlock_entry=True (private mode):
+    When plant_unlock_entry=True (keychain mode):
       Explicit case analysis on (C, D) presence so every partial-state the
       failure matrix enumerates falls through to a consistent fresh build:
       Case 1 — C present, D present, unlock succeeds  → reuse (write B, return).
@@ -5973,7 +6018,7 @@ def _create_account_keychain(account_home: Path, slug: str, *, plant_unlock_entr
       locked-forever per-account keychain (causing writes to fail, which is the
       desired behaviour for none mode). No unlock entry is planted anywhere.
       Case 1/2 fast path: if C already exists, leave it alone.
-      Case 4 stale entry: delete D (cleanup from prior private run).
+      Case 4 stale entry: delete D (cleanup from prior keychain run).
       Case 5 fresh build: create C with a discarded random password, skip D.
 
     After every path B (plist) is written, establishing invariant §5.3.
@@ -5989,7 +6034,7 @@ def _create_account_keychain(account_home: Path, slug: str, *, plant_unlock_entr
         # None mode: we need C present (for Security.framework routing) but no D.
         if c_present:
             # C already exists — leave it alone (preserve-and-reuse).
-            # Any stale D from a prior private run will be cleaned up by
+            # Any stale D from a prior keychain run will be cleaned up by
             # _apply_keychain_mode before we get here, but delete defensively.
             if d_present:
                 _sec(["delete-generic-password", "-s", _KC_SERVICE, "-a", slug], check=False)
@@ -6006,7 +6051,7 @@ def _create_account_keychain(account_home: Path, slug: str, *, plant_unlock_entr
         _write_keychain_prefs(account_home)
         return
 
-    # plant_unlock_entry=True (private mode): full case analysis.
+    # plant_unlock_entry=True (keychain mode): full case analysis.
     if c_present and d_present:
         # Probe whether D's password actually unlocks C (Case 1 vs Case 2).
         P_probe = d_result.stdout.rstrip("\n")
@@ -6052,30 +6097,110 @@ def _create_account_keychain(account_home: Path, slug: str, *, plant_unlock_entr
     # explicit pinning, future find-generic-password -w calls re-prompt the user
     # whenever cached partition state is invalidated (search-list changes, OS
     # updates, denied prompts). Pin apple-tool: + apple: so /usr/bin/security
-    # reads silently. This call may itself prompt for the login keychain
-    # password once at creation time — acceptable since --config is interactive.
+    # reads silently. This call must prompt for the login keychain password
+    # once at creation time — `/usr/bin/security` issues that prompt itself
+    # (it shows up as `password to unlock default:`).
+    #
+    # Failure mode: if the user presses Enter (no password) or types a wrong
+    # one, the partition list pin silently fails and future keychain reads
+    # over SSH will trigger GUI prompts the user can't service. We detect the
+    # failure here and surface a clear recovery instruction — re-running
+    # --config gives them another chance to enter the password.
     if sys.stdout.isatty():
+        print()
+        print(
+            _c(
+                C("header"),
+                "  macOS will now ask for your Mac login password",
+            )
+        )
         print(
             _c(
                 2,
-                "  macOS may prompt for your login password to authorize the keychain entry — "
-                "this is normal. Type your Mac login password.",
+                "  Prompt looks like: 'password to unlock default:'  (this is from macOS,"
             )
         )
-    _sec(
+        print(
+            _c(
+                2,
+                "  not altergo). Type the same password you use to log into your Mac at the"
+            )
+        )
+        print(
+            _c(
+                2,
+                "  desk. It's needed once, to authorize the new keychain entry; subsequent"
+            )
+        )
+        print(
+            _c(
+                2,
+                "  altergo launches will not re-prompt."
+            )
+        )
+    pin_result = _sec(
         ["set-generic-password-partition-list", "-S", "apple-tool:,apple:", "-s", _KC_SERVICE, "-a", slug],
         check=False,
     )
+    if pin_result.returncode != 0:
+        # Partition list pin failed (most commonly: user hit Enter at the
+        # macOS prompt without typing a password, or typed a wrong one). The
+        # keychain unlock entry exists, but without partition pinning future
+        # reads from non-GUI contexts (SSH) will still pop dialogs. Tell the
+        # user how to recover.
+        print(file=sys.stderr)
+        print(
+            _c(
+                33,
+                "  ⚠  Could not pin the keychain entry's partition list."
+            ),
+            file=sys.stderr,
+        )
+        print(
+            _c(
+                2,
+                "     This usually means the Mac login password prompt was skipped or"
+            ),
+            file=sys.stderr,
+        )
+        print(
+            _c(
+                2,
+                "     mistyped. The account will still work at the desk, but SSH access"
+            ),
+            file=sys.stderr,
+        )
+        print(
+            _c(
+                2,
+                "     may trigger keychain dialogs that can't be answered remotely."
+            ),
+            file=sys.stderr,
+        )
+        print(
+            _c(
+                2,
+                f"     To retry, re-run:  {_c(0, f'altergo --config {slug}')}"
+            ),
+            file=sys.stderr,
+        )
+        print(
+            _c(
+                2,
+                "     and type your Mac login password when prompted."
+            ),
+            file=sys.stderr,
+        )
 
     # Write B last: B present implies C+D present (invariant §5.3).
     _write_keychain_prefs(account_home)
 
 
 def _create_account_keychain_dedicated(account_home: Path, slug: str) -> None:
-    """Thin wrapper: create per-account keychain with unlock entry (private mode).
+    """Thin wrapper: create per-account keychain with unlock entry (keychain mode).
 
     The name retains 'dedicated' for historical reasons; functionally equivalent
-    to the v0.45.0 'private' mode.
+    to the v0.45.0 'keychain' mode.
     """
     _create_account_keychain(account_home, slug, plant_unlock_entry=True)
 
@@ -6148,52 +6273,28 @@ def _delete_account_keychain(account_home: Path, slug: str) -> None:
     _keychain_prefs_path(account_home).unlink(missing_ok=True)
 
 
-def _is_keychain_private(meta: dict | None) -> bool:
-    """True if meta requests per-account keychain with unlock on session start.
+def _uses_keychain(meta: dict | None) -> bool:
+    """True if meta requests the per-account macOS keychain (unlocked at launch).
 
-    v0.46.0: only "private" is the canonical value. Legacy values (dedicated,
-    isolated, system, shared) are coerced to "private" by _coerce_meta_v3 with
-    a warning; this function sees only "private" or "none" in practice.
-    Returns True for absent key (the default since v0.45.0 is private).
+    Canonical values are "keychain" and "none". Anything else (legacy or
+    malformed) is treated as the default: keychain mode.
     """
     if not meta:
-        return True  # absent meta → private by default
+        return True  # absent meta → keychain mode (default)
     kc = meta.get("keychain")
     if kc is None:
-        return True  # absent key → private by default
-    return kc == "private"
-
-
-def _is_keychain_dedicated(meta: dict | None) -> bool:
-    """Internal alias for _is_keychain_private.
-
-    Retained for internal use only — the "dedicated" CLI/config alias was
-    removed in v0.46.0.
-    """
-    return _is_keychain_private(meta)
+        return True  # absent key → keychain mode (default)
+    return kc == "keychain"
 
 
 def _is_keychain_none(meta: dict | None) -> bool:
-    """True if meta requests no keychain (flat-file credentials only).
-
-    v0.46.0: only "none" is the canonical value. This function sees only
-    "private" or "none" after _coerce_meta_v3 normalises on load.
-    """
+    """True if meta requests no keychain (flat-file credentials only)."""
     if not meta:
-        return False  # absent meta → private by default, not none
+        return False  # absent meta → keychain mode (default), not none
     kc = meta.get("keychain")
     if kc is None:
-        return False  # absent key → private by default
+        return False  # absent key → keychain mode (default)
     return kc == "none"
-
-
-def _is_keychain_isolated(meta: dict | None) -> bool:
-    """Internal alias for _is_keychain_none.
-
-    Retained for internal use only — the "isolated" CLI/config alias was
-    removed in v0.46.0.
-    """
-    return _is_keychain_none(meta)
 
 
 def _read_raw_account_keychain_key(account_home: Path) -> str | None:
@@ -6222,18 +6323,18 @@ def _save_meta_keychain(account_home: Path, current_meta: dict | None, new_value
 def _reconcile_keychain_state(account_home: Path, slug: str, desired: str | None = None) -> None:
     """Reconcile (A, B, C, D) to a consistent state.
 
-    desired="private": ensure B+C+D exist and are consistent; write A="private".
+    desired="keychain": ensure B+C+D exist and are consistent; write A="keychain".
     desired="none":    ensure B+C exist, D absent; delete stale D; write A="none".
     desired=None:      launch-time drift repair. Cheap — avoids destructive ops.
                        Never delete user data at launch time.
 
     Call sites:
     - _build_alt_env: desired=None (launch-time silent repair).
-    - do_config:      _apply_keychain_mode handles do_config transitions.
+    - configure_account:      _apply_keychain_mode handles configure_account transitions.
     - do_delete_account: not needed — destructive by design; presence probe handles it.
     """
 
-    meta = load_account_meta(account_home)  # already coerced → "none"|"private"|missing
+    meta = load_account_meta(account_home)  # already coerced → "none"|"keychain"|missing
     b_present = _keychain_prefs_path(account_home).exists()
     c_present = _keychain_path(account_home).exists()
     d_result = _sec(["find-generic-password", "-s", _KC_SERVICE, "-a", slug, "-w"], check=False)
@@ -6244,14 +6345,14 @@ def _reconcile_keychain_state(account_home: Path, slug: str, desired: str | None
     a_coerced = (meta or {}).get("keychain")
     a_needs_persist = a_raw != a_coerced
 
-    if desired == "private":
+    if desired == "keychain":
         _create_account_keychain(account_home, slug, plant_unlock_entry=True)
-        _save_meta_keychain(account_home, meta, "private")
+        _save_meta_keychain(account_home, meta, "keychain")
         return
 
     if desired == "none":
         # Ensure plist + empty locked keychain exist.
-        # Remove any leftover unlock entry from a prior private run.
+        # Remove any leftover unlock entry from a prior keychain run.
         if d_present:
             _sec(["delete-generic-password", "-s", _KC_SERVICE, "-a", slug], check=False)
         _create_account_keychain(account_home, slug, plant_unlock_entry=False)
@@ -6259,19 +6360,19 @@ def _reconcile_keychain_state(account_home: Path, slug: str, desired: str | None
         return
 
     # desired=None: launch-time drift repair. Must be cheap; no destructive ops.
-    # Default is now "private" (v0.45.0): absent key → private behaviour.
-    current = a_coerced or "private"  # default for legacy/missing
+    # Default is now "keychain" (v0.45.0): absent key → keychain behaviour.
+    current = a_coerced or "keychain"  # default for legacy/missing
 
-    if current == "private":
+    if current == "keychain":
         # Verify B+C+D consistent; if drift, rebuild (preserves existing behaviour).
         if not b_present:
-            # B missing while A says private — drift. Rebuild silently.
+            # B missing while A says keychain — drift. Rebuild silently.
             print(
                 _c(2, f"  altergo: repairing keychain state for '{slug}'"),
                 file=sys.stderr,
             )
             _create_account_keychain(account_home, slug, plant_unlock_entry=True)
-            _save_meta_keychain(account_home, meta, "private")
+            _save_meta_keychain(account_home, meta, "keychain")
             return
         if not c_present or not d_present:
             print(
@@ -6279,7 +6380,7 @@ def _reconcile_keychain_state(account_home: Path, slug: str, desired: str | None
                 file=sys.stderr,
             )
             _create_account_keychain(account_home, slug, plant_unlock_entry=True)
-            _save_meta_keychain(account_home, meta, "private")
+            _save_meta_keychain(account_home, meta, "keychain")
             return
         # C and D present — probe the unlock to confirm password consistency.
         P_probe = d_result.stdout.rstrip("\n")
@@ -6290,11 +6391,11 @@ def _reconcile_keychain_state(account_home: Path, slug: str, desired: str | None
                 file=sys.stderr,
             )
             _create_account_keychain(account_home, slug, plant_unlock_entry=True)
-            _save_meta_keychain(account_home, meta, "private")
+            _save_meta_keychain(account_home, meta, "keychain")
             return
         # B+C+D all consistent. Persist migration if needed.
         if a_needs_persist:
-            _save_meta_keychain(account_home, meta, "private")
+            _save_meta_keychain(account_home, meta, "keychain")
         return
 
     elif current == "none":
@@ -6312,40 +6413,40 @@ def _reconcile_keychain_state(account_home: Path, slug: str, desired: str | None
 
     else:
         # Should not reach here — _coerce_meta_v3 normalises everything legal.
-        # Treat as private (the default since v0.45.0).
+        # Treat as keychain mode (the default since v0.45.0).
         if not b_present:
             _write_keychain_prefs(account_home)
-        _save_meta_keychain(account_home, meta, "private")
+        _save_meta_keychain(account_home, meta, "keychain")
 
 
 def _apply_keychain_mode(account_home: Path, slug: str, mode: str, *, prior_meta: dict | None) -> None:
-    """Transition the account to `mode` ('none' | 'private'), idempotent.
+    """Transition the account to `mode` ('none' | 'keychain'), idempotent.
 
-    Only "private" and "none" are accepted (v0.46.0: legacy aliases removed).
+    Only "keychain" and "none" are accepted (v0.46.0: legacy aliases removed).
 
     Pre-flight stamps meta["keychain"]=mode BEFORE any security-framework
     mutation so a crash mid-operation is heal-able by the reconciler on next
     launch (invariant §5.1).
 
-    mode="private":
-      - Pre-flight stamp meta["keychain"]="private".
+    mode="keychain":
+      - Pre-flight stamp meta["keychain"]="keychain".
       - _create_account_keychain_dedicated → ensures per-account
         login.keychain-db + unlock entry + plist.
 
     mode="none":
       - Pre-flight stamp meta["keychain"]="none".
       - If an unlock entry exists in the real login keychain (from a prior
-        private run), remove it. This matches the "zero altergo footprint
+        keychain run), remove it. This matches the "zero altergo footprint
         in your real login keychain" promise of none mode. The per-account
         login.keychain-db file is preserved on disk (preserve-and-reuse) so a
-        later switch back to private can reuse it.
+        later switch back to keychain mode can reuse it.
       - _create_account_keychain_isolated → ensures plist + empty locked
         per-account keychain (C) exist WITHOUT an unlock entry.
     """
     # Pre-flight stamp so the reconciler can heal a crash mid-operation.
     _save_meta_keychain(account_home, prior_meta, mode)
 
-    if mode == "private":
+    if mode == "keychain":
         _create_account_keychain_dedicated(account_home, slug)
     else:
         # none: delete any stale unlock entry first, then ensure C+B.
@@ -6358,10 +6459,248 @@ def _apply_keychain_mode(account_home: Path, slug: str, mode: str, *, prior_meta
 # Launch
 
 
+def _oauth_token_path(account: str, account_home: "Path | None" = None) -> "Path":
+    """Return the per-account file that holds a long-lived ``CLAUDE_CODE_OAUTH_TOKEN``.
+
+    Native uses ``$MAIN_HOME/.claude/.oauth-token``. Non-native uses
+    ``<account_home>/.claude/.oauth-token``. ``_load_oauth_token`` also
+    accepts the legacy ``rover-native-token`` filename for native, for users
+    who set it up before the per-account model existed.
+
+    Storing per-account makes SSH-friendliness account-aware: claude reads
+    ``CLAUDE_CODE_OAUTH_TOKEN`` from env and bypasses the macOS keychain
+    entirely, which is the only reliable cross-environment auth path. Pinning
+    the file under each account home means every account can carry its own
+    distinct identity without a shell-level export ever leaking across
+    accounts.
+    """
+    if account == _NATIVE_ACCOUNT:
+        return MAIN_HOME / ".claude" / ".oauth-token"
+    if account_home is None:
+        account_home, _ = resolve_account(account)
+    return account_home / ".claude" / ".oauth-token"
+
+
+def _load_oauth_token(account: str, account_home: "Path | None" = None) -> "str | None":
+    """Read the per-account OAuth token from disk; return None if absent/empty.
+
+    For native, also accepts the legacy ``$MAIN_HOME/.claude/rover-native-token``
+    path that rover used to write before the per-account model existed. New
+    setups should use the canonical ``.oauth-token`` path; the fallback exists
+    so users with the old file don't have to migrate manually.
+    """
+    candidates = [_oauth_token_path(account, account_home)]
+    if account == _NATIVE_ACCOUNT:
+        candidates.append(MAIN_HOME / ".claude" / "rover-native-token")
+    for path in candidates:
+        try:
+            if path.is_file() and path.stat().st_size > 0:
+                token = path.read_text(encoding="utf-8").strip()
+                if token:
+                    return token
+        except OSError:
+            continue
+    return None
+
+
+def _write_oauth_token_file(account: str, account_home: "Path | None", token: str) -> "Path":
+    """Write ``token`` to the per-account OAuth token file with mode 0600.
+
+    Creates the parent ``.claude/`` directory if missing. Returns the path
+    written to so callers can surface it in success messages.
+    """
+    path = _oauth_token_path(account, account_home)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(token, encoding="utf-8")
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        # Non-fatal: filesystems without POSIX perms (rare on macOS, common
+        # on shared mounts) can't enforce this. The token file lives under a
+        # user-owned account home, which is typically mode 0700 anyway.
+        pass
+    return path
+
+
+def _run_oauth_token_setup(account: str, account_home: "Path | None") -> bool:
+    """Interactive flow: run ``claude setup-token`` and capture the token.
+
+    Returns ``True`` on success, ``False`` on cancel / claude-missing / bad
+    paste. Caller is responsible for deciding *whether* to invoke this — see
+    ``_maybe_offer_oauth_token_setup`` for the gating logic.
+
+    Flow (lifted from the rover --setup-native-ssh UX, generalised to any
+    account):
+
+    1. Show context (over SSH? at the desk?).
+    2. Run ``claude setup-token`` as a child process so claude prints its URL
+       and the user authorises in a browser.
+    3. After claude exits, prompt the user to paste the token here. Capture
+       via stdout parsing was considered and rejected — claude can change
+       its output format any release; a paste prompt is robust and only adds
+       one clipboard step.
+    4. Validate the prefix, strip whitespace, write to the per-account file.
+
+    All transient state (cancellation, bad token, missing claude) leaves the
+    account untouched: no file is written until validation passes.
+    """
+    claude_bin = shutil.which("claude")
+    if not claude_bin:
+        print(file=sys.stderr)
+        print(_c(C("error"), "  claude binary not found on PATH."), file=sys.stderr)
+        print(_c(C("dim"), "  Install Claude Code first: https://claude.com/code"), file=sys.stderr)
+        return False
+
+    over_ssh = bool(os.environ.get("SSH_CONNECTION"))
+    print()
+    print(_c(C("header"), "  Generating an SSH-friendly OAuth token"))
+    if over_ssh:
+        print(_c(2, "  You're over SSH — claude setup-token will print a URL."))
+        print(_c(2, "  Open it in your phone or another browser, approve, and paste"))
+        print(_c(2, "  the token back here when it prints to the terminal."))
+    else:
+        print(_c(2, "  A browser window will open for confirmation. After the token"))
+        print(_c(2, "  prints to the terminal, copy it and paste it when prompted below."))
+    print()
+
+    # Strip CLAUDE_CODE_OAUTH_TOKEN from the subprocess env. If the user has
+    # a global token exported in .zshrc (very common after the legacy rover
+    # setup), `claude setup-token` would see it as an existing credential and
+    # short-circuit the URL/paste flow — the user would never get a token to
+    # paste. Run setup-token in a token-free env to force the fresh issuance.
+    setup_env = {k: v for k, v in os.environ.items() if k != "CLAUDE_CODE_OAUTH_TOKEN"}
+    try:
+        subprocess.run([claude_bin, "setup-token"], env=setup_env)
+    except KeyboardInterrupt:
+        print(_c(C("dim"), "\n  cancelled"), file=sys.stderr)
+        return False
+    except OSError as exc:
+        print(_c(C("error"), f"\n  claude setup-token failed: {exc}"), file=sys.stderr)
+        return False
+
+    print()
+    print(_c(1, "  Paste the token below ") + _c(C("dim"), "(starts with sk-ant-oat01-…):"))
+    try:
+        raw = input("  token: ")
+    except (EOFError, KeyboardInterrupt):
+        print(_c(C("dim"), "\n  cancelled"), file=sys.stderr)
+        return False
+
+    token = raw.strip()
+    if not token.startswith("sk-ant-oat01-"):
+        print(file=sys.stderr)
+        print(_c(C("error"), "  That doesn't look like a Claude OAuth token."), file=sys.stderr)
+        print(_c(C("dim"), "  Expected prefix: sk-ant-oat01-…"), file=sys.stderr)
+        print(_c(C("dim"), "  Nothing was written. Re-run when you have the right value."), file=sys.stderr)
+        return False
+
+    try:
+        path = _write_oauth_token_file(account, account_home, token)
+    except OSError as exc:
+        print(_c(C("error"), f"\n  failed to write token file: {exc}"), file=sys.stderr)
+        return False
+
+    print()
+    print(_c(C("success"), f"  ✓ token saved   ") + _c(C("dim"), str(path)))
+    print(_c(2, "  Subsequent altergo launches for this account will use this token"))
+    print(_c(2, "  even when the macOS keychain is unavailable (e.g. over SSH)."))
+    print()
+    return True
+
+
+def _maybe_offer_oauth_token_setup(
+    account: str,
+    account_home: "Path | None",
+    provider: str,
+    keychain_mode: str,
+) -> bool:
+    """Offer to set up an OAuth token after a keychain-mode claude account
+    is configured. Idempotent — silently no-op when there's nothing to offer.
+
+    Returns ``True`` if a token was set up in this call, ``False`` otherwise.
+
+    Skip conditions (any one of these short-circuits the prompt):
+
+    * Provider is not claude. Other providers (gemini/codex/copilot) keep
+      their credentials in flat files inside the per-account dot-dir, which
+      is already SSH-friendly with no extra plumbing.
+    * Keychain mode is ``"none"``. Flat-file creds fall through naturally
+      and don't need a token bridge.
+    * The account already has a non-empty ``.oauth-token`` file. Don't pester
+      users on every reconfigure; they can rotate explicitly via the
+      ``--setup-token`` CLI flag.
+    * stdin is not a TTY. Headless invocations (CI, scripts) shouldn't
+      block on input(); print a one-line hint and continue.
+    """
+    if provider != "claude":
+        return False
+    if keychain_mode != "keychain":
+        return False
+    # Already configured? Don't prompt.
+    if _load_oauth_token(account, account_home) is not None:
+        return False
+    if not sys.stdin.isatty():
+        print(
+            f"  {_c(C('dim'), 'note: this account uses a keychain.')}\n"
+            f"  {_c(C('dim'), 'Over SSH, run')} {_c(0, f'altergo --setup-token {account}')} "
+            f"{_c(C('dim'), 'to enable token-based auth.')}",
+            file=sys.stderr,
+        )
+        return False
+
+    # The keychain-mode prompt already explained why a token is needed for
+    # SSH and linked to docs/ssh-auth.md, so this offer stays short. The
+    # only thing the user is deciding here is whether to do it now or later.
+    print()
+    print(_c(C("header"), "  OAuth token (SSH bridge)"))
+    print(_c(2, "  Generating one now lets claude auth over SSH without"))
+    print(_c(2, "  hitting the keychain. You can run this any time later"))
+    print(_c(2, f"  with: ") + _c(0, f"altergo --setup-token {account}"))
+    prompt = "  Generate an OAuth token now? [Y/n] "
+    try:
+        answer = input(prompt).strip().lower()
+    except (KeyboardInterrupt, EOFError):
+        answer = "n"
+    if answer in ("n", "no"):
+        print(
+            _c(C("dim"), f"  Skipped. Run ")
+            + _c(0, f"altergo --setup-token {account}")
+            + _c(C("dim"), " any time to enable it later.")
+        )
+        return False
+    return _run_oauth_token_setup(account, account_home)
+
+
+def _apply_oauth_token_to_env(env: dict, account: str, account_home: "Path | None" = None) -> None:
+    """Mutate ``env`` to set or strip ``CLAUDE_CODE_OAUTH_TOKEN`` for ``account``.
+
+    Behaviour:
+
+    * Token file exists → set ``env`` to that token. Overrides whatever the
+      caller's shell exported (important when the user has a global
+      ``CLAUDE_CODE_OAUTH_TOKEN`` in ``.zshrc`` set for one account and runs
+      altergo for another).
+    * No token file, **native** account → leave the env var untouched. Native
+      runs with the real ``$HOME``, so a shell-level export is the user's
+      intentional choice and we honour it.
+    * No token file, **non-native** account → strip the env var. Inheriting
+      a shell-level token here would auth claude as the wrong identity under
+      the non-native account's ``$HOME``, silently cross-contaminating
+      per-account credential state.
+    """
+    token = _load_oauth_token(account, account_home)
+    if token is not None:
+        env["CLAUDE_CODE_OAUTH_TOKEN"] = token
+    elif account != _NATIVE_ACCOUNT:
+        env.pop("CLAUDE_CODE_OAUTH_TOKEN", None)
+
+
 def _build_alt_env(account: str = "default") -> dict:
     """Return a copy of the environment with HOME set to the account home."""
     if account == _NATIVE_ACCOUNT:
-        return os.environ.copy()
+        env = os.environ.copy()
+        _apply_oauth_token_to_env(env, _NATIVE_ACCOUNT, account_home=None)
+        return env
     account_home, _ = resolve_account(account)
     # Launch-time drift repair: silently reconcile (A,B,C,D) before unlocking.
     # No-op when state is consistent; shells out only when drift is detected.
@@ -6374,7 +6713,7 @@ def _build_alt_env(account: str = "default") -> dict:
             # Continue — _unlock_account_keychain below will give a better error
             # if isolation is still expected.
     meta = load_account_meta(account_home)
-    if sys.platform == "darwin" and _is_keychain_private(meta):
+    if sys.platform == "darwin" and _uses_keychain(meta):
         try:
             _unlock_account_keychain(account_home, account)
         except KeychainError as e:
@@ -6388,6 +6727,7 @@ def _build_alt_env(account: str = "default") -> dict:
         path_dirs = env.get("PATH", "").split(":")
         if acct_local_bin_str not in path_dirs:
             env["PATH"] = acct_local_bin_str + ":" + env.get("PATH", "")
+    _apply_oauth_token_to_env(env, account, account_home=account_home)
     return env
 
 
@@ -7176,8 +7516,8 @@ def _run_config_picker(accounts: list, start_cursor: int = 0) -> tuple | None:
                     prov_label = PROVIDERS.get(pid, {}).get("display_name", pid or "")
                     marker = "●" if is_active else " "
                     email_str = email or ""
-                    if kc_mode == "private":
-                        kc_suffix = "  ·  keychain: private"
+                    if kc_mode == "keychain":
+                        kc_suffix = "  ·  keychain"
                     else:
                         kc_suffix = ""  # none is the opt-out — do not clutter rows
                     line = (
@@ -7769,7 +8109,7 @@ def _first_run_onboarding():
 
     # Run config then drop into the launcher
     console.print()
-    do_config(raw, chosen_provider)
+    configure_account(raw, chosen_provider)
     interactive_launcher()
 
 
@@ -7829,11 +8169,11 @@ def main():
         #   altergo --config <name>                             (named, interactive provider picker)
         #   altergo --config <name> --provider claude           (fully specified)
         #   altergo --config --provider gemini                  (interactive name, specified provider)
-        #   altergo --config <name> --keychain private|none  (non-interactive keychain mode)
+        #   altergo --config <name> --keychain keychain|none  (non-interactive keychain mode)
         remaining = args[1:]
         name = None
         provider_arg = None
-        keychain_arg = None  # "private", "none", or None (prompt/default)
+        keychain_arg = None  # "keychain", "none", or None (prompt/default)
         i = 0
         while i < len(remaining):
             if remaining[i] == "--provider" and i + 1 < len(remaining):
@@ -7844,13 +8184,13 @@ def main():
                 if keychain_arg in ("system", "shared", "isolated", "dedicated"):
                     # v0.46.0: all legacy aliases removed — hard error.
                     print(
-                        f"error: argument --keychain: invalid choice: '{keychain_arg}' (choose from 'private', 'none')",
+                        f"error: argument --keychain: invalid choice: '{keychain_arg}' (choose from 'keychain', 'none')",
                         file=sys.stderr,
                     )
                     sys.exit(2)
-                elif keychain_arg not in ("private", "none"):
+                elif keychain_arg not in ("keychain", "none"):
                     print(
-                        f"error: argument --keychain: invalid choice: '{keychain_arg}' (choose from 'private', 'none')",
+                        f"error: argument --keychain: invalid choice: '{keychain_arg}' (choose from 'keychain', 'none')",
                         file=sys.stderr,
                     )
                     sys.exit(2)
@@ -7895,7 +8235,7 @@ def main():
                 meta = load_account_meta(account_home)
                 cfg_provider = meta["default_provider"] if meta else "claude"
 
-        do_config(name, cfg_provider, keychain_arg=keychain_arg)
+        configure_account(name, cfg_provider, keychain_arg=keychain_arg)
         sys.exit(0)
 
     if args and args[0] == "--rename":
@@ -7919,6 +8259,34 @@ def main():
     if args and args[0] == "--settings":
         interactive_settings()
         sys.exit(0)
+
+    if args and args[0] == "--setup-token":
+        # altergo --setup-token <account>
+        # Re-run just the OAuth token setup for an existing account. Useful
+        # when the user skipped the offer during --config, or needs to
+        # rotate after revocation. Account must already exist; we do not
+        # create it here.
+        if len(args) < 2:
+            print(
+                "altergo: usage: altergo --setup-token <account>",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        target = args[1]
+        if target == _NATIVE_ACCOUNT:
+            account_home = None
+        else:
+            acct_dir = ACCOUNTS_DIR / target
+            if not acct_dir.is_dir():
+                print(
+                    f"altergo: account '{target}' not found. "
+                    f"Run 'altergo --config {target}' first.",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            account_home = acct_dir
+        ok = _run_oauth_token_setup(target, account_home)
+        sys.exit(0 if ok else 1)
 
     if args and args[0] == "--launch":
         interactive_launcher()

@@ -56,7 +56,7 @@ The entire program is one file. Here is a map of its logical sections:
 | Settings helpers | `load_settings()`, `save_settings()`, `_load_bool_setting()` | Settings persistence |
 | Preferences | `_load_bool_setting()` | Boolean settings: greeting, goodbye, animation |
 | Update checker | `load_update_check_enabled()`, PyPI cache | Background version check |
-| Config / Teardown | `do_config()`, `do_teardown()`, `do_delete_account()` | Account creation, removal, and full delete |
+| Config / Teardown | `configure_account()`, `do_teardown()`, `do_delete_account()` | Account creation, removal, and full delete |
 | Multi-provider | `do_add_provider()`, `do_remove_provider()`, `do_default_provider()` | Provider list mutations |
 | Session discovery | `get_sessions()`, `_discover_claude_sessions()`, `_discover_codex_sessions()`, `_discover_gemini_sessions()`, `_discover_copilot_sessions()` | Per-provider JSONL session scanning, unified under `get_sessions()` |
 | Session picker | `_draw_picker()` | Curses session resume TUI (starred filter, provider filter, sort) |
@@ -391,7 +391,7 @@ User runs: altergo [account] [args]
 │   ├─ parse sys.argv[1:]
 │   │   ├─ -h / --help      → show_help()           → sys.exit(0)
 │   │   ├─ --version        → print version         → sys.exit(0)
-│   │   ├─ --config [--name <n>]  → do_config(n)      → sys.exit(0)
+│   │   ├─ --config [--name <n>]  → configure_account(n)      → sys.exit(0)
 │   │   ├─ --teardown [--name <n>] → do_teardown(n) → sys.exit(0)
 │   │   ├─ --settings       → interactive_settings() → sys.exit(0)
 │   │   │
@@ -462,7 +462,7 @@ Because `projects/` is symlinked to the same target for every account, Claude Co
 
 ## `--config` and `--teardown` idempotency
 
-`do_config()` (altergo.py:2610-2730) is safe to run multiple times. Each symlinked directory passes through `_ensure_symlinked_dir()` (altergo.py:2394-2473), which handles four distinct cases:
+`configure_account()` (altergo.py:2610-2730) is safe to run multiple times. Each symlinked directory passes through `_ensure_symlinked_dir()` (altergo.py:2394-2473), which handles four distinct cases:
 
 | Case | State of `account_home/<dot>/name/` | Action |
 |---|---|---|
@@ -477,7 +477,7 @@ For home-level files (e.g. `.claude.json` in older code paths), `_ensure_home_fi
 
 `do_teardown()` removes only symlinks and (optionally) the account home itself; `.credentials.json` is never touched by teardown. See `do_teardown` in altergo.py:2733+ for the exact sequence.
 
-The dormant `_sweep_existing_accounts()` (altergo.py:5077-5117) is the self-heal helper that used to run on every `--config` and launch pre-v0.35.3; it walks every account, reads `account.json`, and reruns `_ensure_symlinked_dir` per provider. It is still in the source (covered by tests) but no production code path calls it. If the repair behaviour is needed in a future release, re-wire it from `do_config` — do not re-introduce the unconditional call from `main()`.
+The dormant `_sweep_existing_accounts()` (altergo.py:5077-5117) is the self-heal helper that used to run on every `--config` and launch pre-v0.35.3; it walks every account, reads `account.json`, and reruns `_ensure_symlinked_dir` per provider. It is still in the source (covered by tests) but no production code path calls it. If the repair behaviour is needed in a future release, re-wire it from `configure_account` — do not re-introduce the unconditional call from `main()`.
 
 ---
 
@@ -506,7 +506,7 @@ No polling, no background thread. The merge is a few lines of JSON and runs inli
 
 ## Account lifecycle
 
-`do_config(account, provider)` is the creation and reconfiguration path. It executes roughly the following steps (altergo.py:2610-2730):
+`configure_account(account, provider)` is the creation and reconfiguration path. It executes roughly the following steps (altergo.py:2610-2730):
 
 1. **Reject `native`.** The reserved `native` account is the zero-isolation passthrough; it cannot be configured.
 2. **Resolve paths.** `resolve_account(name)` returns `(account_home, account_claude)`.
@@ -519,7 +519,7 @@ No polling, no background thread. The merge is a few lines of JSON and runs inli
 9. **Report credentials state.** If the provider's credentials file is absent, print a hint to authenticate by running `altergo <account>`.
 10. **MCP sync (Claude only).** `_sync_claude_mcps(account_home)`.
 11. **Apply the CLI-credentials catalog.** For each `CATALOG` entry, honour the user's override in `.altergo.json` or fall back to `default_on`. Link or unlink accordingly at the account-home level (not inside the dot-dir).
-12. **Keychain setup (macOS).** Calls `_apply_keychain_mode(account_home, account, keychain_mode, prior_meta=meta)` where `keychain_mode` is `"isolated"` (default) or `"dedicated"` (opt-in). For `isolated`: creates a permanently locked per-account keychain + plist, no unlock entry. For `dedicated`: creates the per-account keychain, stores the unlock password in the real login keychain, writes the plist. Both paths are idempotent. On `KeychainError`, `do_config` falls back to `isolated` mode and continues.
+12. **Keychain setup (macOS).** Calls `_apply_keychain_mode(account_home, account, keychain_mode, prior_meta=meta)` where `keychain_mode` is `"isolated"` (default) or `"dedicated"` (opt-in). For `isolated`: creates a permanently locked per-account keychain + plist, no unlock entry. For `dedicated`: creates the per-account keychain, stores the unlock password in the real login keychain, writes the plist. Both paths are idempotent. On `KeychainError`, `configure_account` falls back to `isolated` mode and continues.
 13. **Write v3 metadata.** `account.json = {"version": 3, "providers": [...], "default_provider": "<id>", "created": <iso8601>, "keychain": "<mode>"}` via `save_account_meta`. The `keychain` key is always written after the first `--config` touch. Legal values: `"isolated"` | `"dedicated"`.
 
 There is no separate "repair" step in the current flow — `_ensure_symlinked_dir()` is itself idempotent and self-healing for the four cases enumerated above.
@@ -596,7 +596,7 @@ Type annotations are used selectively in the source — newer functions carry re
 
 | Location | Function | What happens |
 |---|---|---|
-| `do_config` | `_apply_keychain_mode` | Called for every macOS config run. Dispatches to `_create_account_keychain_dedicated` or `_create_account_keychain_isolated` based on the resolved mode. On `KeychainError`, falls back to `isolated` and continues. |
+| `configure_account` | `_apply_keychain_mode` | Called for every macOS config run. Dispatches to `_create_account_keychain_dedicated` or `_create_account_keychain_isolated` based on the resolved mode. On `KeychainError`, falls back to `isolated` and continues. |
 | `do_delete_account` | `_delete_account_keychain` | Unconditionally tears down keychain artifacts based on file-presence: deletes the per-account keychain and unlock entry before removing the account home. On `KeychainError`, warns and continues. |
 | `_build_alt_env` | `_unlock_account_keychain` | Called only for `dedicated` mode accounts. Reads unlock password from login keychain (silent), unlocks per-account keychain. On `KeychainError`, exits 1. |
 
@@ -606,7 +606,7 @@ Type annotations are used selectively in the source — newer functions carry re
 
 | Call site | On `KeychainError` |
 |---|---|
-| `do_config` (`_apply_keychain_mode`) | Falls back to `isolated`, prints warning, continues |
+| `configure_account` (`_apply_keychain_mode`) | Falls back to `isolated`, prints warning, continues |
 | `do_delete_account` | Prints warning, continues — rmtree removes remaining files |
 | `_build_alt_env` (dedicated only) | Exits 1 — cannot activate dedicated account without unlocking its keychain |
 

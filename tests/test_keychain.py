@@ -818,6 +818,87 @@ def test_build_alt_env_keychain_mode_with_oauth_token_skips_unlock(
     )
 
 
+def test_build_alt_env_keychain_mode_with_oauth_token_skips_reconcile(
+    monkeypatch, mod, tmp_path, account_meta_dedicated
+):
+    """A keychain-mode account with a per-account .oauth-token file must NOT
+    trigger _reconcile_keychain_state either.
+
+    Regression test for v1.2.1 bug: reconcile ran unconditionally before the
+    OAuth-token check, so it tried to read the unlock entry. In non-GUI
+    contexts (rover-spawned tmux sessions, SSH) where the partition list
+    isn't pinned, this surfaced a "user interaction is not allowed" error
+    AND a destructive 'orphaned keychain file found — rebuilding' attempt
+    that also failed. With the token in env claude bypasses the keychain
+    entirely, so reconcile is wasted work — and worse, surfaces the error."""
+    accounts_dir = tmp_path / "accounts"
+    account_home = accounts_dir / "work"
+    account_home.mkdir(parents=True)
+    (account_home / "Library" / "Preferences").mkdir(parents=True)
+    (account_home / "Library" / "Keychains").mkdir(parents=True)
+
+    token_file = account_home / ".claude" / ".oauth-token"
+    token_file.parent.mkdir(parents=True)
+    token_file.write_text("sk-ant-oat01-fake\n")
+
+    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
+    monkeypatch.setattr(mod.sys, "platform", "darwin")
+    monkeypatch.setattr(mod, "load_account_meta", lambda path: account_meta_dedicated)
+
+    reconcile_calls: list[tuple] = []
+
+    def spy_reconcile(account_home_arg, slug, *, desired):
+        reconcile_calls.append((account_home_arg, slug, desired))
+
+    monkeypatch.setattr(mod, "_reconcile_keychain_state", spy_reconcile)
+    monkeypatch.setattr(mod, "_unlock_account_keychain", lambda *a, **kw: None)
+
+    mod._build_alt_env("work")
+
+    assert reconcile_calls == [], (
+        "keychain-mode account with OAuth token must skip _reconcile_keychain_state — "
+        "the token bypasses the keychain entirely, so reconcile is wasted work and "
+        "may surface 'user interaction is not allowed' errors in non-GUI contexts"
+    )
+
+
+def test_build_alt_env_none_mode_with_oauth_token_still_reconciles(
+    monkeypatch, mod, tmp_path, account_meta_isolated
+):
+    """The skip is keychain-mode-only. None-mode accounts must still
+    reconcile (the locked-keychain file + plist is what makes flat-file
+    fallback work). A stray .oauth-token in a none-mode account home must
+    not disable reconcile — that mode doesn't depend on the OAuth bridge."""
+    accounts_dir = tmp_path / "accounts"
+    account_home = accounts_dir / "work"
+    account_home.mkdir(parents=True)
+    (account_home / "Library" / "Preferences").mkdir(parents=True)
+    (account_home / "Library" / "Keychains").mkdir(parents=True)
+    # Stray token + none-mode meta: reconcile must still run.
+    token_file = account_home / ".claude" / ".oauth-token"
+    token_file.parent.mkdir(parents=True)
+    token_file.write_text("sk-ant-oat01-fake\n")
+
+    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
+    monkeypatch.setattr(mod.sys, "platform", "darwin")
+    monkeypatch.setattr(mod, "load_account_meta", lambda path: account_meta_isolated)
+
+    reconcile_calls: list[tuple] = []
+
+    def spy_reconcile(account_home_arg, slug, *, desired):
+        reconcile_calls.append((account_home_arg, slug, desired))
+
+    monkeypatch.setattr(mod, "_reconcile_keychain_state", spy_reconcile)
+    monkeypatch.setattr(mod, "_unlock_account_keychain", lambda *a, **kw: None)
+
+    mod._build_alt_env("work")
+
+    assert len(reconcile_calls) == 1, (
+        f"none-mode reconcile must still run regardless of token presence; "
+        f"got: {reconcile_calls}"
+    )
+
+
 def test_build_alt_env_keychain_mode_without_oauth_token_does_unlock(
     monkeypatch, mod, tmp_path, account_meta_dedicated
 ):

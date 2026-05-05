@@ -6114,30 +6114,10 @@ def _create_account_keychain(account_home: Path, slug: str, *, plant_unlock_entr
                 "  macOS will now ask for your Mac login password",
             )
         )
-        print(
-            _c(
-                2,
-                "  Prompt looks like: 'password to unlock default:'  (this is from macOS,"
-            )
-        )
-        print(
-            _c(
-                2,
-                "  not altergo). Type the same password you use to log into your Mac at the"
-            )
-        )
-        print(
-            _c(
-                2,
-                "  desk. It's needed once, to authorize the new keychain entry; subsequent"
-            )
-        )
-        print(
-            _c(
-                2,
-                "  altergo launches will not re-prompt."
-            )
-        )
+        print(_c(2, "  Prompt looks like: 'password to unlock default:'  (this is from macOS,"))
+        print(_c(2, "  not altergo). Type the same password you use to log into your Mac at the"))
+        print(_c(2, "  desk. It's needed once, to authorize the new keychain entry; subsequent"))
+        print(_c(2, "  altergo launches will not re-prompt."))
     pin_result = _sec(
         ["set-generic-password-partition-list", "-S", "apple-tool:,apple:", "-s", _KC_SERVICE, "-a", slug],
         check=False,
@@ -6150,45 +6130,27 @@ def _create_account_keychain(account_home: Path, slug: str, *, plant_unlock_entr
         # user how to recover.
         print(file=sys.stderr)
         print(
-            _c(
-                33,
-                "  ⚠  Could not pin the keychain entry's partition list."
-            ),
+            _c(33, "  ⚠  Could not pin the keychain entry's partition list."),
             file=sys.stderr,
         )
         print(
-            _c(
-                2,
-                "     This usually means the Mac login password prompt was skipped or"
-            ),
+            _c(2, "     This usually means the Mac login password prompt was skipped or"),
             file=sys.stderr,
         )
         print(
-            _c(
-                2,
-                "     mistyped. The account will still work at the desk, but SSH access"
-            ),
+            _c(2, "     mistyped. The account will still work at the desk, but SSH access"),
             file=sys.stderr,
         )
         print(
-            _c(
-                2,
-                "     may trigger keychain dialogs that can't be answered remotely."
-            ),
+            _c(2, "     may trigger keychain dialogs that can't be answered remotely."),
             file=sys.stderr,
         )
         print(
-            _c(
-                2,
-                f"     To retry, re-run:  {_c(0, f'altergo --config {slug}')}"
-            ),
+            _c(2, f"     To retry, re-run:  {_c(0, f'altergo --config {slug}')}"),
             file=sys.stderr,
         )
         print(
-            _c(
-                2,
-                "     and type your Mac login password when prompted."
-            ),
+            _c(2, "     and type your Mac login password when prompted."),
             file=sys.stderr,
         )
 
@@ -6601,7 +6563,7 @@ def _run_oauth_token_setup(account: str, account_home: "Path | None") -> bool:
         return False
 
     print()
-    print(_c(C("success"), f"  ✓ token saved   ") + _c(C("dim"), str(path)))
+    print(_c(C("success"), "  ✓ token saved   ") + _c(C("dim"), str(path)))
     print(_c(2, "  Subsequent altergo launches for this account will use this token"))
     print(_c(2, "  even when the macOS keychain is unavailable (e.g. over SSH)."))
     print()
@@ -6655,7 +6617,7 @@ def _maybe_offer_oauth_token_setup(
     print(_c(C("header"), "  OAuth token (SSH bridge)"))
     print(_c(2, "  Generating one now lets claude auth over SSH without"))
     print(_c(2, "  hitting the keychain. You can run this any time later"))
-    print(_c(2, f"  with: ") + _c(0, f"altergo --setup-token {account}"))
+    print(_c(2, "  with: ") + _c(0, f"altergo --setup-token {account}"))
     prompt = "  Generate an OAuth token now? [Y/n] "
     try:
         answer = input(prompt).strip().lower()
@@ -6663,7 +6625,7 @@ def _maybe_offer_oauth_token_setup(
         answer = "n"
     if answer in ("n", "no"):
         print(
-            _c(C("dim"), f"  Skipped. Run ")
+            _c(C("dim"), "  Skipped. Run ")
             + _c(0, f"altergo --setup-token {account}")
             + _c(C("dim"), " any time to enable it later.")
         )
@@ -8184,13 +8146,15 @@ def main():
                 if keychain_arg in ("system", "shared", "isolated", "dedicated"):
                     # v0.46.0: all legacy aliases removed — hard error.
                     print(
-                        f"error: argument --keychain: invalid choice: '{keychain_arg}' (choose from 'keychain', 'none')",
+                        f"error: argument --keychain: invalid choice: '{keychain_arg}'"
+                        " (choose from 'keychain', 'none')",
                         file=sys.stderr,
                     )
                     sys.exit(2)
                 elif keychain_arg not in ("keychain", "none"):
                     print(
-                        f"error: argument --keychain: invalid choice: '{keychain_arg}' (choose from 'keychain', 'none')",
+                        f"error: argument --keychain: invalid choice: '{keychain_arg}'"
+                        " (choose from 'keychain', 'none')",
                         file=sys.stderr,
                     )
                     sys.exit(2)
@@ -8279,8 +8243,7 @@ def main():
             acct_dir = ACCOUNTS_DIR / target
             if not acct_dir.is_dir():
                 print(
-                    f"altergo: account '{target}' not found. "
-                    f"Run 'altergo --config {target}' first.",
+                    f"altergo: account '{target}' not found. Run 'altergo --config {target}' first.",
                     file=sys.stderr,
                 )
                 sys.exit(1)

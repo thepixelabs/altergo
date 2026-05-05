@@ -1,6 +1,38 @@
 # CHANGELOG
 
 
+## v1.2.1 (2026-05-05)
+
+### Bug Fixes
+
+- **keychain**: Drop interactive partition-list pin; skip unlock with token
+  ([#2](https://github.com/thepixelabs/altergo/pull/2),
+  [`a0d4d19`](https://github.com/thepixelabs/altergo/commit/a0d4d197e2ce724691f352e3511f5b11caaf510a))
+
+The set-generic-password-partition-list call required the user's macOS login password, surfaced via
+  /usr/bin/security's own interactive prompt ("password to unlock default:"). Combined with _sec()'s
+  10-second subprocess timeout, slow input crashed the entire --config flow with
+  subprocess.TimeoutExpired. The prompt was also previously hidden because none → keychain mode
+  switching was a flow we silently preserved; the unified prompt now exposes that path on every
+  re-config.
+
+Trade-off without the partition pin: - Desktop first launch may show one "Always Allow" GUI dialog
+  from macOS the first time security reads the unlock entry. Click Always Allow once and it persists
+  across all contexts (incl. SSH). - SSH access bypasses the keychain via the OAuth token bridge,
+  which altergo auto-prompts for during keychain-mode --config. With a token present, _build_alt_env
+  skips _unlock_account_keychain entirely, so the partition pin is moot for SSH anyway.
+
+Also: - _build_alt_env now skips _unlock_account_keychain when a per-account .oauth-token file is
+  present. The token in env makes the keychain irrelevant; unlocking is wasted work and would fail
+  over SSH without the partition pin. - Updated the keychain-mode prompt copy to mention the
+  one-time "Always Allow" dialog instead of a (no-longer-issued) password prompt. - Updated
+  docs/ssh-auth.md to explain the new trade-off. - Added 3 tests pinning: no partition-list call
+  from _create_account_keychain, unlock skip when token present, unlock still happens when no token.
+  Updated the prompt-copy assertion test.
+
+Co-authored-by: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+
+
 ## v1.2.0 (2026-05-05)
 
 ### Features

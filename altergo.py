@@ -6622,25 +6622,35 @@ def _build_alt_env(account: str = "default") -> dict:
         _apply_oauth_token_to_env(env, _NATIVE_ACCOUNT, account_home=None)
         return env
     account_home, _ = resolve_account(account)
+
+    # Decide up front whether to do *any* keychain ops. When the account is
+    # in keychain mode AND has an OAuth token bridge in place, claude reads
+    # the token from env and never touches the keychain — so reconcile and
+    # unlock are both wasted work. Worse, both can trigger
+    # "user interaction is not allowed" errors in non-GUI contexts (rover-
+    # spawned tmux sessions, SSH, headless launches) when the partition
+    # list isn't pinned (we removed that pin in v1.2.1 to avoid a forced
+    # macOS-password prompt during --config).
+    meta = load_account_meta(account_home)
+    has_oauth_token = _load_oauth_token(account, account_home) is not None
+    keychain_mode = _uses_keychain(meta)
+    skip_keychain_ops = sys.platform == "darwin" and keychain_mode and has_oauth_token
+
     # Launch-time drift repair: silently reconcile (A,B,C,D) before unlocking.
     # No-op when state is consistent; shells out only when drift is detected.
     # Invariants §5.1–§5.4 are established here for every non-native launch.
-    if sys.platform == "darwin":
+    if sys.platform == "darwin" and not skip_keychain_ops:
         try:
             _reconcile_keychain_state(account_home, account, desired=None)
         except KeychainError as e:
             print(f"altergo: keychain reconcile error: {e}", file=sys.stderr)
             # Continue — _unlock_account_keychain below will give a better error
             # if isolation is still expected.
-    meta = load_account_meta(account_home)
-    # Skip the keychain unlock when an OAuth token is present: the token
-    # bypasses the keychain entirely (claude reads CLAUDE_CODE_OAUTH_TOKEN
-    # from env), so there's nothing to unlock. This is what makes the
-    # "no partition list pin" trade-off (see _create_account_keychain) safe
-    # for SSH — over SSH, users are expected to have a token, and we never
-    # touch the keychain.
-    has_oauth_token = _load_oauth_token(account, account_home) is not None
-    if sys.platform == "darwin" and _uses_keychain(meta) and not has_oauth_token:
+        # Reload meta in case reconcile coerced legacy A or rewrote it.
+        meta = load_account_meta(account_home)
+        keychain_mode = _uses_keychain(meta)
+
+    if sys.platform == "darwin" and keychain_mode and not has_oauth_token:
         try:
             _unlock_account_keychain(account_home, account)
         except KeychainError as e:

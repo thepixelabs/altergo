@@ -1,6 +1,36 @@
 # CHANGELOG
 
 
+## v1.2.2 (2026-05-05)
+
+### Bug Fixes
+
+- **keychain**: Skip reconcile when keychain-mode account has OAuth token
+  ([#3](https://github.com/thepixelabs/altergo/pull/3),
+  [`d9ebf0e`](https://github.com/thepixelabs/altergo/commit/d9ebf0e33800ba55551d58cb0a6210d650c342e7))
+
+v1.2.1 made _build_alt_env skip _unlock_account_keychain when an OAuth token is present, but
+  _reconcile_keychain_state still ran unconditionally just before. In non-GUI contexts
+  (rover-spawned tmux sessions, SSH), reconcile triggered scary errors:
+
+Orphaned keychain file found — rebuilding altergo: keychain reconcile error: security
+  SecKeychainItemCreateFromContent: User interaction is not allowed.
+
+Reading the unlock entry pops a partition-list dialog the user can't service over SSH (we removed
+  the partition pin in v1.2.1 to avoid the mandatory macOS-password prompt during --config).
+  Reconcile then attempts a destructive rebuild that also fails for the same reason.
+
+When the account has a token bridge, claude reads the token from env and never touches the keychain
+  — so reconcile is wasted work that only surfaces noise. Hoist the token check above reconcile and
+  skip both reconcile and unlock when keychain-mode + token are present.
+
+None-mode accounts always reconcile (the locked-keychain + plist is what makes flat-file fallback
+  work). A stray .oauth-token in a none-mode home doesn't disable reconcile — explicit test coverage
+  for that.
+
+Co-authored-by: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+
+
 ## v1.2.1 (2026-05-05)
 
 ### Bug Fixes

@@ -1,6 +1,28 @@
 # CHANGELOG
 
 
+## v1.2.0 (2026-05-05)
+
+### Features
+
+- Rename keychain mode 'private' → 'keychain', add --setup-token SSH bridge
+  ([#1](https://github.com/thepixelabs/altergo/pull/1),
+  [`9240175`](https://github.com/thepixelabs/altergo/commit/9240175e5cdf5ae1d295b8af4cb173e02fc85b22))
+
+* feat: rename keychain mode 'private' → 'keychain', add --setup-token SSH bridge
+
+- Rename do_config() → configure_account() throughout source, tests, and docs - Rename keychain mode
+  value 'private' → 'keychain' (canonical name since v0.45.0); legacy alias 'private' now coerces to
+  'keychain' with a one-time warning alongside the existing dedicated/isolated/system/shared aliases
+  - Interactive --config prompt rewritten: single combined keychain+SSH explanation so the user can
+  pick keychain vs none with full context in one pass - Add --setup-token <account> command:
+  generates an SSH-friendly OAuth token for claude accounts and stores it, bypassing macOS keychain
+  over SSH connections - Add docs/ssh-auth.md covering the SSH access flow end-to-end - Update
+  README keychain mode table, command reference, and switching-modes section
+
+* fix(lint): remove bare f-prefixes and wrap overlong error strings
+
+
 ## v1.1.1 (2026-05-04)
 
 ### Bug Fixes

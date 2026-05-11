@@ -1477,7 +1477,16 @@
       gap: 16px;
       margin-top: 36px;
     }
-    @media (max-width: 900px) { .docs-grid { grid-template-columns: 1fr; } }
+    .docs-card-wide { grid-column: 1 / -1; }
+    .cmd-groups-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 22px 28px;
+    }
+    @media (max-width: 900px) {
+      .docs-grid { grid-template-columns: 1fr; }
+      .cmd-groups-grid { grid-template-columns: 1fr; gap: 18px; }
+    }
     @media (max-width: 430px) {
       .docs-card { padding: 20px 16px; }
     }
@@ -1527,6 +1536,33 @@
         padding-right: 8px;
       }
       .cmd-table td { padding: 6px 4px; }
+    }
+
+    .cmd-group + .cmd-group { margin-top: 18px; }
+    .cmd-group-title {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--indigo-bright);
+      opacity: 0.85;
+      margin: 0 0 6px;
+      padding-bottom: 5px;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    .cmd-group-footer {
+      margin-top: 14px;
+      font-size: 0.8rem;
+      color: var(--text-2);
+    }
+    .cmd-group-footer code {
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      color: var(--cyan);
+      background: var(--bg-2);
+      border-radius: 4px;
+      padding: 1px 5px;
     }
 
     .docs-note {
@@ -2420,6 +2456,14 @@
     /* Docs / install section, teal cmd text is unreadable on blue bg; shift to indigo */
     [data-theme="light"] .cmd-table td:first-child {
       color: var(--indigo);
+    }
+    [data-theme="light"] .cmd-group-title {
+      color: var(--indigo);
+      border-bottom-color: rgba(99, 102, 241, 0.2);
+    }
+    [data-theme="light"] .cmd-group-footer code {
+      color: var(--indigo);
+      background: rgba(99, 102, 241, 0.1);
     }
     [data-theme="light"] .docs-note code {
       color: var(--indigo);
@@ -3365,8 +3409,8 @@
                 <line x1="11" y1="15" x2="11" y2="16.8" stroke="var(--cyan)" stroke-width="1.4"/>
               </svg>
             </div>
-            <h3>Keychain-safe by default</h3>
-            <p>By default, altergo blocks each account from writing to the macOS keychain — providers fall back to flat-file credentials, and nothing lands in your real login keychain. Opt into <code style="font-family:var(--font-mono);font-size:0.82em;color:var(--cyan)">--keychain dedicated</code> for a per-account keychain that auto-unlocks with your session, no Touch-ID prompts, no TTL expiry.</p>
+            <h3>Per-account keychain by default</h3>
+            <p>Two modes: isolated per-account keychain (default, no Touch-ID prompts) or flat-file fallback. <a href="keychain-isolation.md" style="color:var(--cyan);text-decoration:none;border-bottom:1px solid rgba(0,229,255,0.35)">Details</a></p>
           </div>
           <div class="feature-item reveal reveal-delay-6" role="listitem" style="--shimmer-duration:30s; --shimmer-delay:23s">
             <div class="feature-icon" aria-hidden="true">
@@ -3594,31 +3638,29 @@
         <div class="reveal">
           <span class="section-label" aria-hidden="true">Documentation</span>
           <h2 class="section-title" id="docs-heading">Every identity, documented.</h2>
-          <p class="section-subtitle">Quick reference for commands, credentials, and how the symlink model works under the hood.</p>
+          <p class="section-subtitle">How to launch, what stays isolated, and the questions worth asking before install.</p>
         </div>
 
         <div class="docs-grid">
-          <!-- Commands reference -->
+          <!-- Cheat sheet -->
           <div class="docs-card reveal reveal-delay-1">
             <h3>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--cyan)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>
               </svg>
-              Commands
+              Cheat sheet
             </h3>
-            <table class="cmd-table" role="table" aria-label="altergo command reference">
+            <table class="cmd-table" role="table" aria-label="altergo cheat sheet">
               <tbody>
-                <tr><td>altergo &lt;account&gt;</td><td>Launch the account you named (e.g. if you created an account called "pro", run <code>altergo pro</code>)</td></tr>
-                <tr><td>altergo &lt;account&gt; &lt;provider&gt;</td><td>Launch with a specific provider (e.g. <code>altergo pro gemini</code>, <code>altergo pro codex</code>)</td></tr>
-                <tr><td>altergo --config &lt;account&gt; --provider &lt;p&gt;</td><td>Create or reconfigure an account with a specific provider, <code>claude</code>, <code>gemini</code>, <code>codex</code>, <code>copilot</code></td></tr>
-                <tr><td>altergo --recall</td><td>Interactive session picker across all accounts and providers, browse, preview, resume</td></tr>
-                <tr><td>altergo --resume [&lt;id&gt;]</td><td>Pass <code>--resume</code> through to the active provider's native resume UI, or resume a specific session by ID</td></tr>
-                <tr><td>altergo --search</td><td>Full-text search across all conversation history</td></tr>
-                <tr><td>altergo --settings</td><td>Configure themes, behavior, and credential sharing</td></tr>
-                <tr><td>altergo &lt;account&gt; -- &lt;cmd&gt;</td><td>Run any command inside a named account's HOME</td></tr>
-                <tr><td>altergo --teardown</td><td>Remove symlinks, data and credentials untouched</td></tr>
+                <tr><td>altergo &lt;account&gt;</td><td>Launch by account name</td></tr>
+                <tr><td>altergo --config &lt;account&gt;</td><td>Create or reconfigure an account</td></tr>
+                <tr><td>altergo --recall</td><td>TUI picker: browse, preview, resume across all accounts</td></tr>
+                <tr><td>altergo --search</td><td>Full-text search across conversation history</td></tr>
+                <tr><td>altergo portal &lt;account&gt;</td><td>Persistent tmux session, reconnect from anywhere</td></tr>
+                <tr><td>altergo --yolo-resume [&lt;id&gt;]</td><td>Skip permission prompts and resume last (or specific) session</td></tr>
               </tbody>
             </table>
+            <p class="cmd-group-footer">Full reference: <code>altergo --help</code></p>
           </div>
 
           <!-- How credentials work -->
@@ -3661,8 +3703,9 @@
             <p class="docs-note" style="margin-top:12px;">These stay <strong>separate</strong> per account:</p>
             <div class="docs-symlink-list" role="list">
               <span class="docs-symlink-tag separate" role="listitem">.credentials.json</span>
+              <span class="docs-symlink-tag separate" role="listitem">Library/Keychains/login.keychain-db</span>
+              <span class="docs-symlink-tag separate" role="listitem">Library/Preferences/com.apple.security.plist</span>
             </div>
-            <p class="docs-note" style="margin-top:12px;"><strong>CLI tool credentials:</strong> shared or isolated per tool across all named accounts, configurable via <code>altergo --settings</code>. Shared by default: <code>.aws</code>, <code>.config/gcloud</code>, <code>.azure</code>, <code>.docker</code>, <code>.kube</code>, <code>.terraform.d</code>, <code>.config/gh</code>. Isolated by default: <code>.config/glab</code>, <code>.npmrc</code>, <code>.ssh</code>, <code>.gitconfig</code>, <code>.gnupg</code>.</p>
           </div>
 
           <!-- Compatibility & disclaimer -->
@@ -3674,7 +3717,7 @@
               Compatibility &amp; Disclaimers
             </h3>
             <p class="docs-note">altergo depends on each provider's internal directory layout. Any provider may change their structure without notice. If altergo breaks after a tool update, please <a href="https://github.com/thepixelabs/altergo/issues" target="_blank" rel="noopener noreferrer">open an issue</a>. altergo is work in progress; issues and rough edges are expected.</p>
-            <p class="docs-note">altergo is <strong>not affiliated with or endorsed by Anthropic, Google, OpenAI, or GitHub</strong>. "Claude", "Gemini", "Codex", and "GitHub Copilot" are trademarks of their respective owners.</p>
+            <p class="docs-note">"Claude", "Gemini", "Codex", and "GitHub Copilot" are trademarks of their respective owners.</p>
             <div class="docs-disclaimer" role="note">
               This software is provided "as is". Back up your provider data directories before first use.
               Full terms in the <a href="https://github.com/thepixelabs/altergo/blob/main/DISCLAIMER.md" target="_blank" rel="noopener noreferrer">DISCLAIMER</a>.

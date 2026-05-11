@@ -8,9 +8,9 @@ If something here doesn't match what you're seeing, please open an issue — sho
 
 ## Most users will never see these messages
 
-The repair messages below only appear for accounts in **`private` keychain mode** (the default since v0.45.0; was called `dedicated` in v0.44.x). The `none` mode never produces them.
+The repair messages below only appear for accounts in **`keychain` mode** (the default; was called `private` in v1.0.x–v1.1.x and `dedicated` in v0.44.x). The `none` mode never produces them.
 
-To check which mode an account uses, look at the `keychain` field in `~/.altergo/accounts/<account>/account.json`. A missing field means `private` (the default). A value of `none` (or old `isolated`) means no keychain is in use.
+To check which mode an account uses, look at the `keychain` field in `~/.altergo/accounts/<account>/account.json`. A missing field means `keychain` (the default). A value of `none` (or any legacy alias) means no keychain is in use.
 
 ---
 
@@ -78,7 +78,7 @@ For a full comparison of the two modes, see [`keychain-isolation.md`](./keychain
 
 ## I restored from a backup. Should I expect this?
 
-Yes, on the first launch of any `private`-mode account after a restore or a Mac migration. Log back in to the provider once and you are done.
+Yes, on the first launch of any `keychain`-mode account after a restore or a Mac migration. Log back in to the provider once and you are done.
 
 ---
 
@@ -92,10 +92,10 @@ Yes, on the first launch of any `private`-mode account after a restore or a Mac 
 
 **Why does this happen in `none` mode?** In `none` mode, altergo routes the provider's keychain writes to a permanently locked per-account keychain. The provider app doesn't know the password for that keychain (there isn't one — the password was discarded at creation time), so macOS surfaces its standard "locked keychain" password dialog. Clicking Cancel tells macOS to skip the keychain write; the provider then falls back to flat-file credentials (`.credentials.json`, `oauth_creds.json`, etc.), which is the intended behavior.
 
-**If these prompts are disruptive,** consider switching the account to `private` mode:
+**If these prompts are disruptive,** consider switching the account to `keychain` mode:
 
 ```bash
-altergo --config <account> --keychain private
+altergo --config <account> --keychain keychain
 ```
 
-In `private` mode, the per-account keychain is unlocked silently at launch so providers can write tokens without any dialog.
+In `keychain` mode, the per-account keychain is unlocked silently at launch so providers can write tokens without any dialog.

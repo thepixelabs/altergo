@@ -315,27 +315,28 @@ def test_tmux_session_persists(tmp_path, monkeypatch):
 
 
 def test_tmux_session_name_format():
-    """Session names follow the <account>/<provider> pattern."""
+    """Session names follow the <project>/<account>/<provider> pattern."""
     mod = _load_altergo()
-    name = mod._tmux_session_name("work", "claude")
+    name = mod._tmux_session_name("work", "claude", project="myrepo")
     parts = name.split("/")
-    assert parts[0] == "work"
-    assert parts[1] == "claude"
+    assert parts[0] == "myrepo"
+    assert parts[1] == "work"
+    assert parts[2] == "claude"
 
 
 def test_tmux_session_name_sanitizes_dots_and_colons():
     """Dots and colons in account names are replaced with dashes."""
     mod = _load_altergo()
-    name = mod._tmux_session_name("my.account:v2", "gemini")
+    name = mod._tmux_session_name("my.account:v2", "gemini", project="proj")
     assert "." not in name
     assert ":" not in name
-    assert name == "my-account-v2/gemini"
+    assert name == "proj/my-account-v2/gemini"
 
 
 def test_tmux_session_names_are_unique():
-    """Session name is deterministic for the same account/provider pair."""
+    """Session name is deterministic for the same project/account/provider triple."""
     mod = _load_altergo()
-    names = {mod._tmux_session_name("default", "claude") for _ in range(20)}
+    names = {mod._tmux_session_name("default", "claude", project="myrepo") for _ in range(20)}
     # Deterministic: all 20 calls return the same name
     assert len(names) == 1
 

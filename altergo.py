@@ -6735,10 +6735,30 @@ def _tmux_available() -> bool:
     return shutil.which("tmux") is not None
 
 
-def _tmux_session_name(account: str, provider: str) -> str:
-    """Return a tmux session name for an altergo session."""
-    safe = account.replace(".", "-").replace(":", "-")
-    return f"{safe}/{provider}"
+_TMUX_UNSAFE_RE = re.compile(r"[^A-Za-z0-9_\-/]")
+
+
+def _sanitize_tmux_segment(raw: str) -> str:
+    """Return a tmux-safe version of a single name segment."""
+    if not raw:
+        return "unknown"
+    cleaned = _TMUX_UNSAFE_RE.sub("-", raw).strip("-")
+    return cleaned or "unknown"
+
+
+def _tmux_session_name(account: str, provider: str, project: str | None = None) -> str:
+    """Return a tmux session name ``<project>/<account>/<provider>``.
+
+    Matches rover's _derive_session_name so sessions started directly via
+    altergo line up with sessions started via rover.
+    """
+    if project is None:
+        project = Path.cwd().name or "project"
+    return (
+        f"{_sanitize_tmux_segment(project)}/"
+        f"{_sanitize_tmux_segment(account)}/"
+        f"{_sanitize_tmux_segment(provider)}"
+    )
 
 
 def _tmux_unique_session_name(base: str) -> str:

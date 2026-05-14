@@ -8429,8 +8429,7 @@ def main():
             print("altergo: --use requires an account name. Example: altergo --use work", file=sys.stderr)
             sys.exit(1)
         use_name = args[1]
-        use_home = ACCOUNTS_DIR / use_name
-        if not use_home.is_dir():
+        if use_name != _NATIVE_ACCOUNT and not (ACCOUNTS_DIR / use_name).is_dir():
             print(
                 f"altergo: account '{use_name}' not found. Run 'altergo --config {use_name}' to create it.",
                 file=sys.stderr,

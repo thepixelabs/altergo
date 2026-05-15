@@ -1,6 +1,27 @@
 # CHANGELOG
 
 
+## v1.3.1 (2026-05-15)
+
+### Bug Fixes
+
+- **cli**: Yolo-resume with session ID respects active default account
+  ([#8](https://github.com/thepixelabs/altergo/pull/8),
+  [`0017137`](https://github.com/thepixelabs/altergo/commit/001713742c9f9eb1adad8f6a20b1780ee4066764))
+
+* fix(cli): yolo-resume with session ID respects active default account
+
+When a default account is already set via --use, --yolo-resume <id> was always opening the account
+  picker, bypassing the persisted choice. Add an eligibility check before the picker: if the active
+  account supports the session's provider, use it silently. Picker fires only when no eligible
+  default exists.
+
+Regression tests added for all three branches: eligible active account (picker skipped), no active
+  account (picker opens), active account ineligible for the session's provider (picker opens).
+
+* fix(lint): apply ruff format
+
+
 ## v1.3.0 (2026-05-15)
 
 ### Features

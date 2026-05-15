@@ -215,3 +215,32 @@ def test_top_level_yolo_resume_opens_picker(routing_env, monkeypatch):
     assert picker_calls, "interactive_picker was NOT called for top-level --yolo-resume"
     # No actual provider launch happened.
     assert calls == []
+
+
+# ---------------------------------------------------------------------------
+# --use sets the active account (real accounts and the reserved 'native')
+# ---------------------------------------------------------------------------
+
+
+def test_use_native_sets_active_account(routing_env, monkeypatch):
+    """altergo --use native must persist active_account=native without a dir check."""
+    mod, _ = routing_env
+    monkeypatch.setattr(sys, "argv", ["altergo", "--use", "native"])
+
+    with pytest.raises(SystemExit) as exc:
+        mod.main()
+
+    assert exc.value.code == 0
+    assert mod.get_active_account() == "native"
+
+
+def test_use_unknown_account_rejected(routing_env, monkeypatch):
+    """altergo --use ghost (no dir, not 'native') still errors out."""
+    mod, _ = routing_env
+    monkeypatch.setattr(sys, "argv", ["altergo", "--use", "ghost"])
+
+    with pytest.raises(SystemExit) as exc:
+        mod.main()
+
+    assert exc.value.code == 1
+    assert mod.get_active_account() is None

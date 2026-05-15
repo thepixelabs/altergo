@@ -35,18 +35,19 @@ jobs:
           key: ${{ runner.os }}-pip-audit-${{ hashFiles('.github/workflows/security.yml') }}
           restore-keys: |
             ${{ runner.os }}-pip-audit-
+      - name: Upgrade pip
+        # pip 26.0.1 ships with the setup-python toolchain and triggers
+        # pip-audit findings against pip itself (CVE-2026-3219, CVE-2026-6357).
+        # Bumping to the latest patched pip resolves the audit at the source
+        # rather than accumulating per-CVE suppressions.
+        run: python -m pip install --upgrade pip
       - name: Install pip-audit
         run: pip install pip-audit
       # altergo has no runtime dependencies. Auditing the build/dev toolchain
       # (setuptools, build, ruff, pytest, python-semantic-release, pip-audit
       # itself) catches supply-chain vulnerabilities in the CI environment.
-      #
-      # Suppressed advisories:
-      #   CVE-2026-3219 — pip 26.0.1: no fix version published yet (2026-04-25).
-      #     Affects pip itself, not a dependency we install. Revisit once
-      #     a fixed pip is released and bump the suppression off.
       - name: Audit dev/build dependencies
-        run: pip-audit --skip-editable --vulnerability-service osv --ignore-vuln CVE-2026-3219
+        run: pip-audit --skip-editable --vulnerability-service osv
 
   # ---------------------------------------------------------------------------
   # OSV Scanner — cross-ecosystem vulnerability scan via osv.dev.

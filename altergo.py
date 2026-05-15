@@ -8539,11 +8539,19 @@ def main():
                     )
                     sys.exit(1)
 
-                _yr_picked = _prompt_yolo_account_picker(_yr_eligible, provider=_yr_provider)
-                if _yr_picked is None:
-                    print("Cancelled.")
-                    sys.exit(0)
-                _yr_account = _yr_picked
+                _yr_active = get_active_account()
+                _yr_active_eligible = (
+                    (_yr_active in _yr_eligible)
+                    or (_yr_active == _NATIVE_ACCOUNT and _yr_native_ok)
+                )
+                if _yr_active_eligible:
+                    _yr_account = _yr_active
+                else:
+                    _yr_picked = _prompt_yolo_account_picker(_yr_eligible, provider=_yr_provider)
+                    if _yr_picked is None:
+                        print("Cancelled.")
+                        sys.exit(0)
+                    _yr_account = _yr_picked
 
             launch_claude(_yr_account, ["--resume", _yr_session_id] + _yr_skip + _yr_rest, cwd=_yr_cwd or None)
             sys.exit(0)

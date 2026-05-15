@@ -298,3 +298,111 @@ def test_yolo_picker_skips_native_when_binary_missing(routing_env, monkeypatch):
     # Only one eligible item → no prompt, returned directly.
     picked = mod._prompt_yolo_account_picker(["pocus"], provider="claude")
     assert picked == "pocus"
+
+
+# ---------------------------------------------------------------------------
+# --yolo-resume case 2 (with session ID): active-account bypass
+# ---------------------------------------------------------------------------
+
+_FAKE_SESSION = {"id": "sess-abc", "provider": "claude", "cwd": "/tmp"}
+
+
+def _setup_yr_case2(routing_env, monkeypatch, active_account):
+    """Shared wiring for case-2 (session-ID-supplied) --yolo-resume tests.
+
+    Returns (mod, calls, picker_calls).
+    """
+    mod, calls = routing_env
+
+    monkeypatch.setattr(mod, "_status_wrap", lambda msg, fn: fn())
+    monkeypatch.setattr(mod, "get_sessions", lambda: [_FAKE_SESSION])
+    # native binary present so _native_supports_provider returns True for claude.
+    monkeypatch.setattr(mod.shutil, "which", lambda b: "/usr/bin/" + b)
+
+    if active_account is not None:
+        mod.set_active_account(active_account)
+
+    picker_calls = []
+
+    def fake_yr_picker(eligible, provider=None):
+        picker_calls.append({"eligible": eligible, "provider": provider})
+        # Return the first eligible account so the launch path completes.
+        return eligible[0] if eligible else None
+
+    monkeypatch.setattr(mod, "_prompt_yolo_account_picker", fake_yr_picker)
+
+    return mod, calls, picker_calls
+
+
+def test_yolo_resume_with_session_id_active_account_eligible_skips_picker(
+    routing_env, monkeypatch
+):
+    """active account is eligible → picker NOT called, account used directly."""
+    mod, calls, picker_calls = _setup_yr_case2(routing_env, monkeypatch, "pocus")
+    monkeypatch.setattr(sys, "argv", ["altergo", "--yolo-resume", "sess-abc"])
+
+    with pytest.raises(SystemExit) as exc:
+        mod.main()
+
+    assert exc.value.code == 0
+    assert picker_calls == [], "picker should NOT have been called when active account is eligible"
+    assert len(calls) == 1
+    assert calls[0]["account"] == "pocus"
+    assert "--resume" in calls[0]["args"]
+    assert "sess-abc" in calls[0]["args"]
+
+
+def test_yolo_resume_with_session_id_no_active_account_opens_picker(
+    routing_env, monkeypatch
+):
+    """No active account persisted → picker IS called."""
+    mod, calls, picker_calls = _setup_yr_case2(routing_env, monkeypatch, None)
+    monkeypatch.setattr(sys, "argv", ["altergo", "--yolo-resume", "sess-abc"])
+
+    with pytest.raises(SystemExit) as exc:
+        mod.main()
+
+    assert exc.value.code == 0
+    assert picker_calls, "picker SHOULD have been called when no active account is set"
+    assert len(calls) == 1
+
+
+def test_yolo_resume_with_session_id_active_account_wrong_provider_opens_picker(
+    routing_env, monkeypatch
+):
+    """Active account does not support the session's provider → picker IS called."""
+    mod, calls = routing_env
+
+    # Use a session whose provider is 'gemini'.
+    gemini_session = {"id": "sess-gem", "provider": "gemini", "cwd": "/tmp"}
+    monkeypatch.setattr(mod, "_status_wrap", lambda msg, fn: fn())
+    monkeypatch.setattr(mod, "get_sessions", lambda: [gemini_session])
+    monkeypatch.setattr(mod.shutil, "which", lambda b: None)  # native not available
+
+    # Set active to an account that only has 'claude' (we'll add a second account
+    # that only has 'claude' to make the active one truly ineligible for gemini).
+    # Actually the 'pocus' account has BOTH claude and gemini, so use a different
+    # account with only claude.
+    claude_only = mod.ACCOUNTS_DIR / "claudeonly"
+    claude_only.mkdir()
+    (claude_only / "account.json").write_text(
+        json.dumps({"version": 3, "providers": ["claude"], "default_provider": "claude"})
+    )
+    mod.set_active_account("claudeonly")
+
+    picker_calls = []
+
+    def fake_yr_picker(eligible, provider=None):
+        picker_calls.append({"eligible": eligible, "provider": provider})
+        return eligible[0] if eligible else None
+
+    monkeypatch.setattr(mod, "_prompt_yolo_account_picker", fake_yr_picker)
+    monkeypatch.setattr(sys, "argv", ["altergo", "--yolo-resume", "sess-gem"])
+
+    with pytest.raises(SystemExit) as exc:
+        mod.main()
+
+    assert exc.value.code == 0
+    assert picker_calls, "picker SHOULD have been called when active account lacks the required provider"
+    # The account that was launched should be the gemini-eligible one (pocus).
+    assert calls[0]["account"] == "pocus"

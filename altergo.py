@@ -8540,10 +8540,7 @@ def main():
                     sys.exit(1)
 
                 _yr_active = get_active_account()
-                _yr_active_eligible = (
-                    (_yr_active in _yr_eligible)
-                    or (_yr_active == _NATIVE_ACCOUNT and _yr_native_ok)
-                )
+                _yr_active_eligible = (_yr_active in _yr_eligible) or (_yr_active == _NATIVE_ACCOUNT and _yr_native_ok)
                 if _yr_active_eligible:
                     _yr_account = _yr_active
                 else:

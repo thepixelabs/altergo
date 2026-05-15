@@ -6754,11 +6754,7 @@ def _tmux_session_name(account: str, provider: str, project: str | None = None) 
     """
     if project is None:
         project = Path.cwd().name or "project"
-    return (
-        f"{_sanitize_tmux_segment(project)}/"
-        f"{_sanitize_tmux_segment(account)}/"
-        f"{_sanitize_tmux_segment(provider)}"
-    )
+    return f"{_sanitize_tmux_segment(project)}/{_sanitize_tmux_segment(account)}/{_sanitize_tmux_segment(provider)}"
 
 
 def _tmux_unique_session_name(base: str) -> str:

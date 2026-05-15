@@ -1,6 +1,32 @@
 # CHANGELOG
 
 
+## v1.2.3 (2026-05-15)
+
+### Bug Fixes
+
+- **cli**: Allow `altergo --use native` to set active account
+  ([#6](https://github.com/thepixelabs/altergo/pull/6),
+  [`f6eb9d2`](https://github.com/thepixelabs/altergo/commit/f6eb9d27564169d96163c4ed3b923223c58dba5e))
+
+* fix(cli): allow `altergo --use native` to set active account
+
+The --use handler validated the account by checking `ACCOUNTS_DIR / name` is a directory. `native`
+  is a reserved virtual passthrough account with no on-disk directory, so the command always failed
+  even though get_active_account, resolve_account, and the picker all already treat "native" as a
+  first-class active account name. Bypass the dir check for the native sentinel only; unknown names
+  still error out as before.
+
+Regression coverage: test_use_native_sets_active_account and test_use_unknown_account_rejected in
+  tests/test_arg_routing.py.
+
+* ci(security): upgrade pip before pip-audit to clear pip-self CVEs
+
+pip 26.0.1 (default with setup-python) triggers pip-audit on CVE-2026-3219 and CVE-2026-6357 against
+  pip itself. Bumping pip to the latest patched release before audit fixes the actual vulnerability
+  rather than chaining per-CVE --ignore-vuln suppressions.
+
+
 ## v1.2.2 (2026-05-05)
 
 ### Bug Fixes

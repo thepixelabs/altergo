@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "altergo"
-version = "1.2.2"
+version = "1.2.3"
 description = "Don't break flow. Switch accounts. — N-account session manager for Claude Code, Gemini CLI, Codex, and Copilot"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -27,9 +27,6 @@ classifiers = [
     "Topic :: Utilities",
 ]
 
-[tool.setuptools]
-py-modules = ["altergo", "altergo_greetings"]
-
 [project.scripts]
 altergo = "altergo:main"
 
@@ -38,12 +35,17 @@ Homepage = "https://altergo.pixelabs.net"
 Repository = "https://github.com/thepixelabs/altergo"
 Issues = "https://github.com/thepixelabs/altergo/issues"
 
+
+[tool.setuptools]
+py-modules = ["altergo", "altergo_greetings"]
+
 [tool.ruff]
 target-version = "py39"
 line-length = 120
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I"]
+
 
 [tool.semantic_release]
 version_toml = ["pyproject.toml:project.version"]

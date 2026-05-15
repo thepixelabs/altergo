@@ -1,6 +1,42 @@
 # CHANGELOG
 
 
+## v1.3.0 (2026-05-15)
+
+### Features
+
+- **cli**: Include native in --yolo-resume picker, support d-set-default
+  ([#7](https://github.com/thepixelabs/altergo/pull/7),
+  [`eb29697`](https://github.com/thepixelabs/altergo/commit/eb29697100dd1e934999fc455b4bf7dae0bb959d))
+
+The --yolo-resume multi-account chooser had two gaps when `altergo --use native` was set:
+
+1. The eligibility list was `[a for a in list_accounts() if has_provider(a)]`, which never includes
+  the native passthrough — so even with native as the persisted default, picker output didn't show
+  it.
+
+2. `_account_for_provider` (used by the silent auto-pick in --recall and --yolo-resume case 1) also
+  ignored active=='native' for the same reason, so the auto-pick path silently picked a regular
+  account instead.
+
+3. The picker itself was a plain numbered `input()` prompt — no arrow keys, no way to mark a row as
+  the new default account without bailing out and running `altergo --use <name>` separately.
+
+Changes: - New helper `_native_supports_provider(pid)` — native is launchable only when the provider
+  binary is already on the user's real $PATH. - `_account_for_provider` returns native first when
+  active=='native' and the binary is available; falls through to the regular accounts list
+  otherwise. - New curses picker `_prompt_yolo_account_picker(eligible, *, provider)` modeled on
+  `_prompt_provider_picker` and the `--config` row picker: * ↑↓ / jk navigate * Enter confirms * d
+  sets the highlighted row as the persisted default account * q / Esc cancels * Falls back to the
+  legacy numbered input prompt under non-TTY (CI, pipes, headless SSH) so scripted callers still
+  work and native is still offered. - Replaces the input() block in --yolo-resume case 2 with the
+  new picker.
+
+Regression coverage: 4 new tests in tests/test_arg_routing.py covering the _account_for_provider
+  native-honoring branch (both binary-present and binary-missing) and the picker's native chip
+  injection.
+
+
 ## v1.2.3 (2026-05-15)
 
 ### Bug Fixes

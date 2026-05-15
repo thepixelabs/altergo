@@ -244,3 +244,57 @@ def test_use_unknown_account_rejected(routing_env, monkeypatch):
 
     assert exc.value.code == 1
     assert mod.get_active_account() is None
+
+
+# ---------------------------------------------------------------------------
+# _account_for_provider honors active=='native' once --use native is set
+# ---------------------------------------------------------------------------
+
+
+def test_account_for_provider_honors_native_when_active(routing_env, monkeypatch):
+    """active=='native' + binary on PATH → _account_for_provider returns 'native'."""
+    mod, _ = routing_env
+    mod.set_active_account("native")
+    # Force the provider binary to look "installed" so native is launchable.
+    monkeypatch.setattr(mod.shutil, "which", lambda b: "/usr/bin/" + b)
+    assert mod._account_for_provider("claude") == "native"
+
+
+def test_account_for_provider_falls_back_when_native_binary_missing(routing_env, monkeypatch):
+    """active=='native' but no binary on PATH → fall through to a regular account."""
+    mod, _ = routing_env
+    mod.set_active_account("native")
+    # Native isn't launchable without the provider binary.
+    monkeypatch.setattr(mod.shutil, "which", lambda b: None)
+    # `pocus` has `claude` in its providers list (see routing_env fixture).
+    assert mod._account_for_provider("claude") == "pocus"
+
+
+# ---------------------------------------------------------------------------
+# --yolo-resume picker: native chip + arrow-key picker
+# ---------------------------------------------------------------------------
+
+
+def test_yolo_picker_includes_native_when_binary_available(routing_env, monkeypatch):
+    """_prompt_yolo_account_picker must inject the 'native' chip when binary is on PATH."""
+    mod, _ = routing_env
+    monkeypatch.setattr(mod.shutil, "which", lambda b: "/usr/bin/" + b)
+    # Non-TTY fallback path so we exercise the legacy numbered prompt
+    # (the curses path requires a real terminal).
+    monkeypatch.setattr(mod.sys.stdin, "isatty", lambda: False, raising=False)
+    monkeypatch.setattr(mod.sys.stdout, "isatty", lambda: False, raising=False)
+    inputs = iter(["2"])
+    monkeypatch.setattr("builtins.input", lambda _prompt="": next(inputs))
+
+    picked = mod._prompt_yolo_account_picker(["pocus"], provider="claude")
+    # With native injected after pocus, "2" should pick native.
+    assert picked == "native"
+
+
+def test_yolo_picker_skips_native_when_binary_missing(routing_env, monkeypatch):
+    """No binary on PATH → native chip is NOT offered."""
+    mod, _ = routing_env
+    monkeypatch.setattr(mod.shutil, "which", lambda b: None)
+    # Only one eligible item → no prompt, returned directly.
+    picked = mod._prompt_yolo_account_picker(["pocus"], provider="claude")
+    assert picked == "pocus"

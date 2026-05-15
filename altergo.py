@@ -2321,8 +2321,25 @@ def get_active_account() -> str | None:
         return None
 
 
+def _native_supports_provider(provider_id: str) -> bool:
+    """Return True if the native passthrough can launch ``provider_id`` right now.
+
+    Native is a no-isolation passthrough — it can only launch a provider whose
+    binary already exists on the user's real $PATH.
+    """
+    spec = PROVIDERS.get(provider_id)
+    return bool(spec and shutil.which(spec["binary"]))
+
+
 def _account_for_provider(provider_id: str) -> str | None:
     """Return an account name suitable for launching sessions of ``provider_id``."""
+    active = get_active_account()
+    # Honor `altergo --use native` for auto-pick paths (--recall, --yolo-resume
+    # case 1). Without this, setting native as the default account had no effect
+    # on resume flows because list_accounts() never includes the native sentinel.
+    if active == _NATIVE_ACCOUNT and _native_supports_provider(provider_id):
+        return _NATIVE_ACCOUNT
+
     accounts = list_accounts()
     if not accounts:
         return None
@@ -2333,7 +2350,6 @@ def _account_for_provider(provider_id: str) -> str | None:
             return provider_id == "claude"
         return provider_id in meta["providers"]
 
-    active = get_active_account()
     if active and active in accounts and _has_provider(active):
         return active
     for acct in accounts:
@@ -8079,6 +8095,125 @@ def interactive_launcher(pending_args: list | None = None, context_msg: str | No
         # Session exited — loop back to the menu
 
 
+def _prompt_yolo_account_picker(
+    eligible: list,
+    *,
+    provider: str,
+) -> "str | None":
+    """Curses-driven account picker for the --yolo-resume multi-account fork.
+
+    Renders the eligible regular accounts plus a 'native' chip when the
+    provider binary is on $PATH. The currently persisted active account is
+    marked with ● and pre-selected by the cursor.
+
+    Keys: ↑↓/jk navigate, Enter confirm, d set highlighted as default account
+    (persisted to active_account via [[set_active_account]]), q/Esc cancel.
+
+    Falls back to a numbered input prompt when stdin/stdout isn't a TTY so the
+    flow still works under pipes and SSH sessions without a controlling tty.
+    """
+    items = list(eligible)
+    if _native_supports_provider(provider) and _NATIVE_ACCOUNT not in items:
+        items.append(_NATIVE_ACCOUNT)
+    if not items:
+        return None
+    if len(items) == 1:
+        return items[0]
+
+    # Non-TTY fallback — preserve the legacy numbered prompt, now including
+    # native so scripted callers can pick it too.
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        print(f"\n  Multiple accounts support '{provider}'. Pick one:\n")
+        for i, name in enumerate(items, 1):
+            tag = "  (real $HOME passthrough)" if name == _NATIVE_ACCOUNT else ""
+            print(f"  [{i}] {_c(C('command'), name)}{tag}")
+        print()
+        while True:
+            try:
+                raw = input(f"  Account [1-{len(items)}]: ").strip()
+            except (KeyboardInterrupt, EOFError):
+                print("\nCancelled.")
+                return None
+            if raw.isdigit() and 1 <= int(raw) <= len(items):
+                return items[int(raw) - 1]
+            print(f"  Please enter a number between 1 and {len(items)}.")
+
+    def _draw(stdscr, state):
+        curses.curs_set(0)
+        attrs = _picker_attrs("resume")
+        stdscr.timeout(80)
+        phase = 0
+        while True:
+            stdscr.erase()
+            max_y, max_x = stdscr.getmaxyx()
+
+            header = f"  Pick account for '{provider}'  (↑↓ navigate · Enter confirm · d set default · q quit)"
+            _safe_addnstr(stdscr, 0, 0, header[: max_x - 1], max_x - 1, attrs["title"])
+            _safe_addnstr(stdscr, 1, 0, ("─" * (max_x - 1))[: max_x - 1], max_x - 1, attrs["dim"])
+
+            active = get_active_account()
+            cursor = state["cursor"]
+            for idx, name in enumerate(state["items"]):
+                row = 3 + idx
+                if row >= max_y - 2:
+                    break
+                is_cursor = idx == cursor
+                is_default = name == active
+                marker = "●" if is_default else " "
+                suffix = "  (real $HOME · passthrough)" if name == _NATIVE_ACCOUNT else ""
+                label = f"  {marker} {name}{suffix}"
+                if is_cursor:
+                    row_attr = attrs["selected"]
+                elif is_default:
+                    row_attr = attrs["accent"]
+                else:
+                    row_attr = attrs["dim"]
+                _safe_addnstr(stdscr, row, 0, label[: max_x - 1].ljust(max_x - 1), max_x - 1, row_attr)
+
+            flash = state.get("flash")
+            if flash and phase < state.get("flash_until", 0):
+                _safe_addnstr(stdscr, max_y - 1, 0, flash[: max_x - 1].ljust(max_x - 1), max_x - 1, attrs["accent"])
+            else:
+                nav = "  Enter · Default (d) · ↑↓/jk · Quit (q/Esc)"
+                _draw_animated_nav(stdscr, max_y - 1, nav, max_x - 1, phase, attrs)
+
+            stdscr.refresh()
+            key = stdscr.getch()
+            if key == -1:
+                phase += 1
+                continue
+            if key in (curses.KEY_UP, ord("k")):
+                state["cursor"] = max(0, cursor - 1)
+            elif key in (curses.KEY_DOWN, ord("j")):
+                state["cursor"] = min(len(state["items"]) - 1, cursor + 1)
+            elif key in (curses.KEY_ENTER, 10, 13):
+                state["action"] = "select"
+                return
+            elif key in (ord("d"), ord("D")):
+                picked_name = state["items"][cursor]
+                set_active_account(picked_name)
+                state["flash"] = f" ✓ '{picked_name}' set as default account "
+                state["flash_until"] = phase + 10  # ~0.8s at the 80ms tick
+            elif key in (ord("q"), 27):
+                state["action"] = "quit"
+                return
+            elif key == curses.KEY_RESIZE:
+                continue
+
+    # Pre-select the cursor on the currently persisted active account so the
+    # default round-trip (Enter) keeps the user's existing pick.
+    active0 = get_active_account()
+    cursor0 = items.index(active0) if active0 in items else 0
+    state = {"cursor": cursor0, "items": items, "action": None, "flash": None}
+    try:
+        curses.wrapper(_draw, state)
+    except Exception:
+        return None
+    if state["action"] != "select":
+        return None
+    return state["items"][state["cursor"]]
+
+
 # Main
 
 
@@ -8394,32 +8529,21 @@ def main():
                     return _yr_provider in _m["providers"]
 
                 _yr_eligible = [a for a in list_accounts() if _yr_has_provider(a)]
+                _yr_native_ok = _native_supports_provider(_yr_provider)
 
-                if not _yr_eligible:
+                if not _yr_eligible and not _yr_native_ok:
                     print(
                         f"altergo: no account configured for provider '{_yr_provider}'.\n"
                         f"  Create one with: altergo --config <account> --provider {_yr_provider}",
                         file=sys.stderr,
                     )
                     sys.exit(1)
-                elif len(_yr_eligible) == 1:
-                    _yr_account = _yr_eligible[0]
-                else:
-                    # Multiple eligible accounts — prompt the user to pick one.
-                    print(f"\n  Multiple accounts support '{_yr_provider}'. Pick one:\n")
-                    for _yi, _ya in enumerate(_yr_eligible, 1):
-                        print(f"  [{_yi}] {_c(C('command'), _ya)}")
-                    print()
-                    while True:
-                        try:
-                            _yr_raw = input(f"  Account [1-{len(_yr_eligible)}]: ").strip()
-                        except (KeyboardInterrupt, EOFError):
-                            print("\nCancelled.")
-                            sys.exit(0)
-                        if _yr_raw.isdigit() and 1 <= int(_yr_raw) <= len(_yr_eligible):
-                            _yr_account = _yr_eligible[int(_yr_raw) - 1]
-                            break
-                        print(f"  Please enter a number between 1 and {len(_yr_eligible)}.")
+
+                _yr_picked = _prompt_yolo_account_picker(_yr_eligible, provider=_yr_provider)
+                if _yr_picked is None:
+                    print("Cancelled.")
+                    sys.exit(0)
+                _yr_account = _yr_picked
 
             launch_claude(_yr_account, ["--resume", _yr_session_id] + _yr_skip + _yr_rest, cwd=_yr_cwd or None)
             sys.exit(0)

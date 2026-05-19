@@ -5,6 +5,7 @@ This file exists solely so that ``python altergo.py`` and subprocess-level
 tests that run the script directly continue to work after the codebase moved
 to the ``altergo/`` package layout.  All real logic lives in the package.
 """
+
 import sys
 from pathlib import Path
 

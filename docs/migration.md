@@ -4,9 +4,62 @@ This page covers syntax changes and one-time migrations that apply when you upgr
 
 ---
 
+## v1.2.0 — keychain mode rename (`private` → `keychain`) + SSH OAuth bridge
+
+**Applies to:** macOS users upgrading from v1.0.x / v1.1.x.
+
+### What changed
+
+The per-account-keychain mode was renamed from `private` to `keychain`. The other mode (`none`) is unchanged. This is the **current canonical naming** — see the [keychain modes section in the README](../README.md#keychain-modes-macos).
+
+| Pre-v1.2.0 name | v1.2.0 name | Behavior |
+|---|---|---|
+| `private` (default) | `keychain` (default) | Per-account keychain, unlocked silently at launch |
+| `none` | `none` | No keychain writes; flat-file fallback |
+
+Also new in v1.2.0: `altergo --setup-token <account>` for claude accounts generates an OAuth token file under the account home, so `keychain`-mode accounts work over SSH (where the macOS Security framework refuses keychain reads). The interactive `--config` flow offers token setup immediately after picking `keychain` mode. See [docs/ssh-auth.md](ssh-auth.md) for the full SSH story.
+
+### Automatic migration
+
+Your existing accounts keep working without any manual changes:
+
+- `"keychain": "private"` on disk → coerced to `"keychain"` in memory with a one-time stderr warning, alongside the existing legacy aliases (`dedicated`, `isolated`, `system`, `shared`).
+- `"keychain": "none"` on disk → unchanged.
+- No `keychain` key → still defaults to per-account keychain (now under the name `keychain`).
+
+The on-disk file is normalized on the next `--config` touch — re-running `altergo --config <account>` writes the new canonical value and silences the warning permanently.
+
+### CLI behavior
+
+```bash
+# New canonical forms (the only values the CLI accepts):
+altergo --config <account> --keychain keychain   # per-account keychain, unlocked at launch
+altergo --config <account> --keychain none       # flat files only; no keychain writes
+
+# Legacy 'private' is now rejected at the CLI (alongside dedicated/isolated/system/shared):
+altergo --config <account> --keychain private
+# error: argument --keychain: invalid choice: 'private' (choose from 'keychain', 'none')
+```
+
+**Action required:** Update any scripts or aliases that pass `--keychain private` to use `--keychain keychain`. Accounts whose `account.json` still says `"keychain": "private"` keep loading with a one-time stderr warning until the next `--config` rewrite.
+
+### SSH bridge — what to do if you SSH into your Mac
+
+If you previously hit "auth fails over SSH" with `keychain`-mode accounts, run once per account:
+
+```bash
+altergo --setup-token <account>
+```
+
+Open the printed URL on any device, approve, paste the token back. Subsequent SSH launches skip the keychain entirely.
+
+---
+
 ## v0.46.0 — Keychain alias removal + Cancel warning
 
 **Applies to:** macOS users upgrading from v0.45.x or earlier.
+
+> **Naming update:** the canonical names below (`private` / `none`) describe the state at v0.46.0. The `private` mode was later renamed to `keychain` in [v1.2.0](#v120--keychain-mode-rename-private--keychain--ssh-oauth-bridge); on current altergo, write `--keychain keychain` wherever you see `--keychain private` in this section.
 
 **Breaking change.** This release removes all legacy `--keychain` alias names.
 

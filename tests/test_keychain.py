@@ -17,7 +17,6 @@ Patching boundary: _sec only. No real /usr/bin/security calls. Ever.
 
 from __future__ import annotations
 
-import importlib.util
 import io
 import json
 import plistlib
@@ -28,20 +27,13 @@ from pathlib import Path
 
 import pytest
 
-ROOT = Path(__file__).parent.parent
-SCRIPT = ROOT / "altergo.py"
-
-
-# ---------------------------------------------------------------------------
-# Module loader — matches pattern established in test_smoke.py / test_new_features.py
-# ---------------------------------------------------------------------------
-
-
-def _load_altergo():
-    spec = importlib.util.spec_from_file_location("altergo", SCRIPT)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+import altergo.accounts
+import altergo.cli
+import altergo.constants
+import altergo.keychain
+import altergo.persistence
+import altergo.runner
+import altergo.ui
 
 
 # ---------------------------------------------------------------------------
@@ -61,8 +53,8 @@ def _cp(rc: int, stdout: str = "", stderr: str = "") -> subprocess.CompletedProc
 
 @pytest.fixture()
 def mod():
-    """Fresh altergo module per test."""
-    return _load_altergo()
+    """Returns altergo.keychain for test patching of keychain-layer functions."""
+    return altergo.keychain
 
 
 @pytest.fixture()
@@ -656,7 +648,7 @@ def test_is_keychain_none_truth_table(mod, meta, expected):
     the literal 'none' value. Anything else (absent key, unrecognized legacy
     value, wrong case) falls through to keychain mode and the function
     returns False."""
-    assert mod._is_keychain_none(meta) is expected
+    assert altergo.keychain._is_keychain_none(meta) is expected
 
 
 # ---------------------------------------------------------------------------
@@ -669,19 +661,19 @@ def test_build_alt_env_exits_1_on_keychain_error(monkeypatch, mod, tmp_path, acc
     Only dedicated mode calls _unlock_account_keychain."""
     accounts_dir = tmp_path / "accounts"
     (accounts_dir / "work").mkdir(parents=True)
-    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
+    monkeypatch.setattr(altergo.constants, "ACCOUNTS_DIR", accounts_dir)
     monkeypatch.setattr(mod.sys, "platform", "darwin")
 
-    monkeypatch.setattr(mod, "load_account_meta", lambda path: account_meta_dedicated)
+    monkeypatch.setattr(altergo.runner, "load_account_meta", lambda path: account_meta_dedicated)
     monkeypatch.setattr(
-        mod, "_unlock_account_keychain", lambda home, slug: (_ for _ in ()).throw(mod.KeychainError("test"))
+        altergo.runner, "_unlock_account_keychain", lambda home, slug: (_ for _ in ()).throw(mod.KeychainError("test"))
     )
 
     stderr_buf = io.StringIO()
     monkeypatch.setattr(mod.sys, "stderr", stderr_buf)
 
     with pytest.raises(SystemExit) as exc_info:
-        mod._build_alt_env("work")
+        altergo.runner._build_alt_env("work")
 
     assert exc_info.value.code == 1
 
@@ -691,12 +683,12 @@ def test_build_alt_env_propagates_keychain_error_message(monkeypatch, mod, tmp_p
     Only dedicated mode calls _unlock_account_keychain."""
     accounts_dir = tmp_path / "accounts"
     (accounts_dir / "work").mkdir(parents=True)
-    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
+    monkeypatch.setattr(altergo.constants, "ACCOUNTS_DIR", accounts_dir)
     monkeypatch.setattr(mod.sys, "platform", "darwin")
 
-    monkeypatch.setattr(mod, "load_account_meta", lambda path: account_meta_dedicated)
+    monkeypatch.setattr(altergo.runner, "load_account_meta", lambda path: account_meta_dedicated)
     monkeypatch.setattr(
-        mod,
+        altergo.runner,
         "_unlock_account_keychain",
         lambda home, slug: (_ for _ in ()).throw(mod.KeychainError("login keychain is locked")),
     )
@@ -705,7 +697,7 @@ def test_build_alt_env_propagates_keychain_error_message(monkeypatch, mod, tmp_p
     monkeypatch.setattr(mod.sys, "stderr", stderr_buf)
 
     with pytest.raises(SystemExit):
-        mod._build_alt_env("work")
+        altergo.runner._build_alt_env("work")
 
     assert "login keychain is locked" in stderr_buf.getvalue()
 
@@ -735,7 +727,7 @@ def test_build_alt_env_legacy_meta_no_unlock_sec_calls(monkeypatch, mod, tmp_pat
     # B (plist) is intentionally absent.
     assert not (account_home / "Library" / "Preferences" / "com.apple.security.plist").exists()
 
-    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
+    monkeypatch.setattr(altergo.constants, "ACCOUNTS_DIR", accounts_dir)
     monkeypatch.setattr(mod.sys, "platform", "darwin")
 
     import json as _json
@@ -750,7 +742,7 @@ def test_build_alt_env_legacy_meta_no_unlock_sec_calls(monkeypatch, mod, tmp_pat
 
     monkeypatch.setattr(mod, "_sec", spy_sec)
 
-    mod._build_alt_env("work")
+    altergo.runner._build_alt_env("work")
 
     # No unlock, create, or destructive _sec calls — none mode never calls unlock.
     disallowed = {
@@ -794,20 +786,20 @@ def test_build_alt_env_keychain_mode_with_oauth_token_skips_unlock(
     token_file.parent.mkdir(parents=True)
     token_file.write_text("sk-ant-oat01-fake-token-for-test\n")
 
-    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
+    monkeypatch.setattr(altergo.constants, "ACCOUNTS_DIR", accounts_dir)
     monkeypatch.setattr(mod.sys, "platform", "darwin")
-    monkeypatch.setattr(mod, "load_account_meta", lambda path: account_meta_dedicated)
+    monkeypatch.setattr(altergo.runner, "load_account_meta", lambda path: account_meta_dedicated)
 
     unlock_calls: list[tuple[Path, str]] = []
 
     def spy_unlock(account_home_arg, slug):
         unlock_calls.append((account_home_arg, slug))
 
-    monkeypatch.setattr(mod, "_unlock_account_keychain", spy_unlock)
+    monkeypatch.setattr(altergo.runner, "_unlock_account_keychain", spy_unlock)
     # Stub _sec so the reconcile pass doesn't shell out.
     monkeypatch.setattr(mod, "_sec", lambda *a, **kw: _cp(0))
 
-    env = mod._build_alt_env("work")
+    env = altergo.runner._build_alt_env("work")
 
     assert unlock_calls == [], (
         f"keychain-mode account with OAuth token must skip _unlock_account_keychain; "
@@ -841,19 +833,19 @@ def test_build_alt_env_keychain_mode_with_oauth_token_skips_reconcile(
     token_file.parent.mkdir(parents=True)
     token_file.write_text("sk-ant-oat01-fake\n")
 
-    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
+    monkeypatch.setattr(altergo.constants, "ACCOUNTS_DIR", accounts_dir)
     monkeypatch.setattr(mod.sys, "platform", "darwin")
-    monkeypatch.setattr(mod, "load_account_meta", lambda path: account_meta_dedicated)
+    monkeypatch.setattr(altergo.runner, "load_account_meta", lambda path: account_meta_dedicated)
 
     reconcile_calls: list[tuple] = []
 
     def spy_reconcile(account_home_arg, slug, *, desired):
         reconcile_calls.append((account_home_arg, slug, desired))
 
-    monkeypatch.setattr(mod, "_reconcile_keychain_state", spy_reconcile)
-    monkeypatch.setattr(mod, "_unlock_account_keychain", lambda *a, **kw: None)
+    monkeypatch.setattr(altergo.runner, "_reconcile_keychain_state", spy_reconcile)
+    monkeypatch.setattr(altergo.runner, "_unlock_account_keychain", lambda *a, **kw: None)
 
-    mod._build_alt_env("work")
+    altergo.runner._build_alt_env("work")
 
     assert reconcile_calls == [], (
         "keychain-mode account with OAuth token must skip _reconcile_keychain_state — "
@@ -879,19 +871,19 @@ def test_build_alt_env_none_mode_with_oauth_token_still_reconciles(
     token_file.parent.mkdir(parents=True)
     token_file.write_text("sk-ant-oat01-fake\n")
 
-    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
+    monkeypatch.setattr(altergo.constants, "ACCOUNTS_DIR", accounts_dir)
     monkeypatch.setattr(mod.sys, "platform", "darwin")
-    monkeypatch.setattr(mod, "load_account_meta", lambda path: account_meta_isolated)
+    monkeypatch.setattr(altergo.runner, "load_account_meta", lambda path: account_meta_isolated)
 
     reconcile_calls: list[tuple] = []
 
     def spy_reconcile(account_home_arg, slug, *, desired):
         reconcile_calls.append((account_home_arg, slug, desired))
 
-    monkeypatch.setattr(mod, "_reconcile_keychain_state", spy_reconcile)
-    monkeypatch.setattr(mod, "_unlock_account_keychain", lambda *a, **kw: None)
+    monkeypatch.setattr(altergo.runner, "_reconcile_keychain_state", spy_reconcile)
+    monkeypatch.setattr(altergo.runner, "_unlock_account_keychain", lambda *a, **kw: None)
 
-    mod._build_alt_env("work")
+    altergo.runner._build_alt_env("work")
 
     assert len(reconcile_calls) == 1, (
         f"none-mode reconcile must still run regardless of token presence; "
@@ -912,19 +904,19 @@ def test_build_alt_env_keychain_mode_without_oauth_token_does_unlock(
     (account_home / "Library" / "Keychains").mkdir(parents=True)
     # No .oauth-token file planted.
 
-    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
+    monkeypatch.setattr(altergo.constants, "ACCOUNTS_DIR", accounts_dir)
     monkeypatch.setattr(mod.sys, "platform", "darwin")
-    monkeypatch.setattr(mod, "load_account_meta", lambda path: account_meta_dedicated)
+    monkeypatch.setattr(altergo.runner, "load_account_meta", lambda path: account_meta_dedicated)
 
     unlock_calls: list[tuple[Path, str]] = []
 
     def spy_unlock(account_home_arg, slug):
         unlock_calls.append((account_home_arg, slug))
 
-    monkeypatch.setattr(mod, "_unlock_account_keychain", spy_unlock)
+    monkeypatch.setattr(altergo.runner, "_unlock_account_keychain", spy_unlock)
     monkeypatch.setattr(mod, "_sec", lambda *a, **kw: _cp(0))
 
-    mod._build_alt_env("work")
+    altergo.runner._build_alt_env("work")
 
     assert len(unlock_calls) == 1, (
         f"keychain-mode account without OAuth token must call _unlock_account_keychain; "
@@ -949,7 +941,7 @@ def test_build_alt_env_native_never_calls_sec(monkeypatch, mod):
     monkeypatch.setattr(mod, "_sec", spy_sec)
     monkeypatch.setattr(mod.sys, "platform", "darwin")
 
-    mod._build_alt_env("native")
+    altergo.runner._build_alt_env("native")
 
     assert sec_calls == []
 
@@ -961,9 +953,9 @@ def test_build_alt_env_native_never_calls_sec(monkeypatch, mod):
 
 def _create_main_claude_sources_for_mod(mod, main_claude: Path):
     """Create the source dirs/files in MAIN_CLAUDE that configure_account() will symlink."""
-    for name in mod.SYMLINK_DIRS:
+    for name in altergo.constants.SYMLINK_DIRS:
         (main_claude / name).mkdir(parents=True, exist_ok=True)
-    for name in mod.SYMLINK_FILES:
+    for name in altergo.constants.SYMLINK_FILES:
         (main_claude / name).touch()
 
 
@@ -979,21 +971,21 @@ def test_configure_account_non_tty_none_writes_meta_and_plist(monkeypatch, mod, 
     accounts_dir.mkdir(parents=True)
     _create_main_claude_sources_for_mod(mod, main_claude)
 
-    monkeypatch.setattr(mod, "MAIN_HOME", main_home)
-    monkeypatch.setattr(mod, "MAIN_CLAUDE", main_claude)
-    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
-    monkeypatch.setattr(mod, "SETTINGS_FILE", tmp_path / "settings.json")
+    monkeypatch.setattr(altergo.constants, "MAIN_HOME", main_home)
+    monkeypatch.setattr(altergo.constants, "MAIN_CLAUDE", main_claude)
+    monkeypatch.setattr(altergo.constants, "ACCOUNTS_DIR", accounts_dir)
+    monkeypatch.setattr(altergo.constants, "SETTINGS_FILE", tmp_path / "settings.json")
     monkeypatch.setattr(mod.sys, "platform", "darwin")
     monkeypatch.setattr(mod.sys.stdin, "isatty", lambda: False)
 
     # _sec always succeeds.
     monkeypatch.setattr(mod, "_sec", lambda argv, **kw: _cp(0))
 
-    monkeypatch.setattr(mod, "show_banner", lambda *a, **kw: None)
-    monkeypatch.setattr(mod, "_status_wrap", lambda msg, fn: fn())
-    monkeypatch.setattr(mod, "load_settings", lambda: {})
+    monkeypatch.setattr(altergo.ui, "show_banner", lambda *a, **kw: None)
+    monkeypatch.setattr(altergo.ui, "_status_wrap", lambda msg, fn: fn())
+    monkeypatch.setattr(altergo.accounts, "load_settings", lambda: {})
 
-    mod.configure_account("work", keychain_arg="none")
+    altergo.accounts.configure_account("work", keychain_arg="none")
 
     account_home = accounts_dir / "work"
     meta_path = account_home / "account.json"
@@ -1016,21 +1008,21 @@ def test_configure_account_non_tty_none_sec_is_called(monkeypatch, mod, tmp_path
     accounts_dir.mkdir(parents=True)
     _create_main_claude_sources_for_mod(mod, main_claude)
 
-    monkeypatch.setattr(mod, "MAIN_HOME", main_home)
-    monkeypatch.setattr(mod, "MAIN_CLAUDE", main_claude)
-    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
-    monkeypatch.setattr(mod, "SETTINGS_FILE", tmp_path / "settings.json")
+    monkeypatch.setattr(altergo.constants, "MAIN_HOME", main_home)
+    monkeypatch.setattr(altergo.constants, "MAIN_CLAUDE", main_claude)
+    monkeypatch.setattr(altergo.constants, "ACCOUNTS_DIR", accounts_dir)
+    monkeypatch.setattr(altergo.constants, "SETTINGS_FILE", tmp_path / "settings.json")
     monkeypatch.setattr(mod.sys, "platform", "darwin")
     monkeypatch.setattr(mod.sys.stdin, "isatty", lambda: False)
 
     sec_calls = []
     monkeypatch.setattr(mod, "_sec", lambda argv, **kw: (sec_calls.append(argv), _cp(0))[-1])
 
-    monkeypatch.setattr(mod, "show_banner", lambda *a, **kw: None)
-    monkeypatch.setattr(mod, "_status_wrap", lambda msg, fn: fn())
-    monkeypatch.setattr(mod, "load_settings", lambda: {})
+    monkeypatch.setattr(altergo.ui, "show_banner", lambda *a, **kw: None)
+    monkeypatch.setattr(altergo.ui, "_status_wrap", lambda msg, fn: fn())
+    monkeypatch.setattr(altergo.accounts, "load_settings", lambda: {})
 
-    mod.configure_account("work", keychain_arg="none")
+    altergo.accounts.configure_account("work", keychain_arg="none")
 
     assert len(sec_calls) > 0, "_sec must be called when keychain_arg='none'"
 
@@ -1053,21 +1045,21 @@ def test_configure_account_non_tty_no_flag_creates_keychain_mode(monkeypatch, mo
     accounts_dir.mkdir(parents=True)
     _create_main_claude_sources_for_mod(mod, main_claude)
 
-    monkeypatch.setattr(mod, "MAIN_HOME", main_home)
-    monkeypatch.setattr(mod, "MAIN_CLAUDE", main_claude)
-    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
-    monkeypatch.setattr(mod, "SETTINGS_FILE", tmp_path / "settings.json")
+    monkeypatch.setattr(altergo.constants, "MAIN_HOME", main_home)
+    monkeypatch.setattr(altergo.constants, "MAIN_CLAUDE", main_claude)
+    monkeypatch.setattr(altergo.constants, "ACCOUNTS_DIR", accounts_dir)
+    monkeypatch.setattr(altergo.constants, "SETTINGS_FILE", tmp_path / "settings.json")
     monkeypatch.setattr(mod.sys, "platform", "darwin")
     monkeypatch.setattr(mod.sys.stdin, "isatty", lambda: False)
 
     sec_calls = []
     monkeypatch.setattr(mod, "_sec", lambda argv, **kw: (sec_calls.append(list(argv)), _cp(0))[-1])
 
-    monkeypatch.setattr(mod, "show_banner", lambda *a, **kw: None)
-    monkeypatch.setattr(mod, "_status_wrap", lambda msg, fn: fn())
-    monkeypatch.setattr(mod, "load_settings", lambda: {})
+    monkeypatch.setattr(altergo.ui, "show_banner", lambda *a, **kw: None)
+    monkeypatch.setattr(altergo.ui, "_status_wrap", lambda msg, fn: fn())
+    monkeypatch.setattr(altergo.accounts, "load_settings", lambda: {})
 
-    mod.configure_account("work", keychain_arg=None)
+    altergo.accounts.configure_account("work", keychain_arg=None)
 
     account_home = accounts_dir / "work"
     meta_path = account_home / "account.json"
@@ -1097,10 +1089,10 @@ def test_configure_account_non_tty_no_flag_does_not_hang(monkeypatch, mod, tmp_p
     accounts_dir.mkdir(parents=True)
     _create_main_claude_sources_for_mod(mod, main_claude)
 
-    monkeypatch.setattr(mod, "MAIN_HOME", main_home)
-    monkeypatch.setattr(mod, "MAIN_CLAUDE", main_claude)
-    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
-    monkeypatch.setattr(mod, "SETTINGS_FILE", tmp_path / "settings.json")
+    monkeypatch.setattr(altergo.constants, "MAIN_HOME", main_home)
+    monkeypatch.setattr(altergo.constants, "MAIN_CLAUDE", main_claude)
+    monkeypatch.setattr(altergo.constants, "ACCOUNTS_DIR", accounts_dir)
+    monkeypatch.setattr(altergo.constants, "SETTINGS_FILE", tmp_path / "settings.json")
     monkeypatch.setattr(mod.sys, "platform", "darwin")
     monkeypatch.setattr(mod.sys.stdin, "isatty", lambda: False)
 
@@ -1110,12 +1102,12 @@ def test_configure_account_non_tty_no_flag_does_not_hang(monkeypatch, mod, tmp_p
 
     monkeypatch.setattr(builtins, "input", boom)
     monkeypatch.setattr(mod, "_sec", lambda argv, **kw: _cp(0))
-    monkeypatch.setattr(mod, "show_banner", lambda *a, **kw: None)
-    monkeypatch.setattr(mod, "_status_wrap", lambda msg, fn: fn())
-    monkeypatch.setattr(mod, "load_settings", lambda: {})
+    monkeypatch.setattr(altergo.ui, "show_banner", lambda *a, **kw: None)
+    monkeypatch.setattr(altergo.ui, "_status_wrap", lambda msg, fn: fn())
+    monkeypatch.setattr(altergo.accounts, "load_settings", lambda: {})
 
     # Should complete without raising.
-    mod.configure_account("work", keychain_arg=None)
+    altergo.accounts.configure_account("work", keychain_arg=None)
 
 
 # ---------------------------------------------------------------------------
@@ -1135,21 +1127,21 @@ def test_configure_account_non_darwin_no_sec_no_plist(monkeypatch, mod, tmp_path
     accounts_dir.mkdir(parents=True)
     _create_main_claude_sources_for_mod(mod, main_claude)
 
-    monkeypatch.setattr(mod, "MAIN_HOME", main_home)
-    monkeypatch.setattr(mod, "MAIN_CLAUDE", main_claude)
-    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
-    monkeypatch.setattr(mod, "SETTINGS_FILE", tmp_path / "settings.json")
+    monkeypatch.setattr(altergo.constants, "MAIN_HOME", main_home)
+    monkeypatch.setattr(altergo.constants, "MAIN_CLAUDE", main_claude)
+    monkeypatch.setattr(altergo.constants, "ACCOUNTS_DIR", accounts_dir)
+    monkeypatch.setattr(altergo.constants, "SETTINGS_FILE", tmp_path / "settings.json")
     monkeypatch.setattr(mod.sys, "platform", "linux")
     monkeypatch.setattr(mod.sys.stdin, "isatty", lambda: False)
 
     sec_calls = []
     monkeypatch.setattr(mod, "_sec", lambda argv, **kw: (sec_calls.append(argv), _cp(0))[-1])
 
-    monkeypatch.setattr(mod, "show_banner", lambda *a, **kw: None)
-    monkeypatch.setattr(mod, "_status_wrap", lambda msg, fn: fn())
-    monkeypatch.setattr(mod, "load_settings", lambda: {})
+    monkeypatch.setattr(altergo.ui, "show_banner", lambda *a, **kw: None)
+    monkeypatch.setattr(altergo.ui, "_status_wrap", lambda msg, fn: fn())
+    monkeypatch.setattr(altergo.accounts, "load_settings", lambda: {})
 
-    mod.configure_account("work", keychain_arg="none")
+    altergo.accounts.configure_account("work", keychain_arg="none")
 
     account_home = accounts_dir / "work"
     keychains_dir = account_home / "Library" / "Keychains"
@@ -1162,14 +1154,14 @@ def test_build_alt_env_non_darwin_never_calls_sec(monkeypatch, mod, tmp_path, ac
     """_build_alt_env on non-darwin never calls _sec even for dedicated meta."""
     accounts_dir = tmp_path / "accounts"
     (accounts_dir / "work").mkdir(parents=True)
-    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
+    monkeypatch.setattr(altergo.constants, "ACCOUNTS_DIR", accounts_dir)
     monkeypatch.setattr(mod.sys, "platform", "linux")
-    monkeypatch.setattr(mod, "load_account_meta", lambda path: account_meta_dedicated)
+    monkeypatch.setattr(altergo.runner, "load_account_meta", lambda path: account_meta_dedicated)
 
     sec_calls = []
     monkeypatch.setattr(mod, "_sec", lambda argv, **kw: (sec_calls.append(argv), _cp(0))[-1])
 
-    mod._build_alt_env("work")
+    altergo.runner._build_alt_env("work")
 
     assert sec_calls == []
 
@@ -1199,10 +1191,10 @@ def test_configure_account_reconfig_preserves_none(monkeypatch, mod, tmp_path):
     # Pre-existing "none" metadata — should stay "none" on re-config.
     (account_home / "account.json").write_text(json.dumps({"version": 2, "provider": "claude", "keychain": "none"}))
 
-    monkeypatch.setattr(mod, "MAIN_HOME", main_home)
-    monkeypatch.setattr(mod, "MAIN_CLAUDE", main_claude)
-    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
-    monkeypatch.setattr(mod, "SETTINGS_FILE", tmp_path / "settings.json")
+    monkeypatch.setattr(altergo.constants, "MAIN_HOME", main_home)
+    monkeypatch.setattr(altergo.constants, "MAIN_CLAUDE", main_claude)
+    monkeypatch.setattr(altergo.constants, "ACCOUNTS_DIR", accounts_dir)
+    monkeypatch.setattr(altergo.constants, "SETTINGS_FILE", tmp_path / "settings.json")
     monkeypatch.setattr(mod.sys, "platform", "darwin")
     monkeypatch.setattr(mod.sys.stdin, "isatty", lambda: False)
 
@@ -1212,11 +1204,11 @@ def test_configure_account_reconfig_preserves_none(monkeypatch, mod, tmp_path):
         return _cp(0)
 
     monkeypatch.setattr(mod, "_sec", fake_sec)
-    monkeypatch.setattr(mod, "show_banner", lambda *a, **kw: None)
-    monkeypatch.setattr(mod, "_status_wrap", lambda msg, fn: fn())
-    monkeypatch.setattr(mod, "load_settings", lambda: {})
+    monkeypatch.setattr(altergo.ui, "show_banner", lambda *a, **kw: None)
+    monkeypatch.setattr(altergo.ui, "_status_wrap", lambda msg, fn: fn())
+    monkeypatch.setattr(altergo.accounts, "load_settings", lambda: {})
 
-    mod.configure_account("work", keychain_arg=None)
+    altergo.accounts.configure_account("work", keychain_arg=None)
 
     meta = json.loads((account_home / "account.json").read_text())
     assert meta.get("keychain") == "none", (
@@ -1251,18 +1243,18 @@ def _setup_interactive_reconfig_env(monkeypatch, mod, tmp_path, *, current_keych
         json.dumps({"version": 3, "providers": ["claude"], "default_provider": "claude", "keychain": current_keychain})
     )
 
-    monkeypatch.setattr(mod, "MAIN_HOME", main_home)
-    monkeypatch.setattr(mod, "MAIN_CLAUDE", main_claude)
-    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
-    monkeypatch.setattr(mod, "SETTINGS_FILE", tmp_path / "settings.json")
+    monkeypatch.setattr(altergo.constants, "MAIN_HOME", main_home)
+    monkeypatch.setattr(altergo.constants, "MAIN_CLAUDE", main_claude)
+    monkeypatch.setattr(altergo.constants, "ACCOUNTS_DIR", accounts_dir)
+    monkeypatch.setattr(altergo.constants, "SETTINGS_FILE", tmp_path / "settings.json")
     monkeypatch.setattr(mod.sys, "platform", "darwin")
     monkeypatch.setattr(mod.sys.stdin, "isatty", lambda: True)
     monkeypatch.setattr(mod, "_sec", lambda *a, **kw: _cp(0))
-    monkeypatch.setattr(mod, "show_banner", lambda *a, **kw: None)
-    monkeypatch.setattr(mod, "_status_wrap", lambda msg, fn: fn())
-    monkeypatch.setattr(mod, "load_settings", lambda: {})
+    monkeypatch.setattr(altergo.ui, "show_banner", lambda *a, **kw: None)
+    monkeypatch.setattr(altergo.ui, "_status_wrap", lambda msg, fn: fn())
+    monkeypatch.setattr(altergo.accounts, "load_settings", lambda: {})
     # Suppress the SSH-token offer; we're testing the keychain-mode prompt only.
-    monkeypatch.setattr(mod, "_maybe_offer_oauth_token_setup", lambda *a, **kw: False)
+    monkeypatch.setattr(altergo.accounts, "_maybe_offer_oauth_token_setup", lambda *a, **kw: False)
     return account_home
 
 
@@ -1284,7 +1276,7 @@ def test_interactive_reconfig_existing_none_account_prompts_user(monkeypatch, mo
 
     monkeypatch.setattr("builtins.input", fake_input)
 
-    mod.configure_account("work", "claude")
+    altergo.accounts.configure_account("work", "claude")
 
     # The keychain-mode prompt must have been issued.
     assert any("Switch to keychain mode?" in p for p in captured_prompts), (
@@ -1298,7 +1290,7 @@ def test_interactive_reconfig_existing_none_can_switch_to_keychain(monkeypatch, 
     account_home = _setup_interactive_reconfig_env(monkeypatch, mod, tmp_path, current_keychain="none")
     monkeypatch.setattr("builtins.input", lambda prompt="": "y")
 
-    mod.configure_account("work", "claude")
+    altergo.accounts.configure_account("work", "claude")
 
     meta = json.loads((account_home / "account.json").read_text())
     assert meta.get("keychain") == "keychain", (
@@ -1312,7 +1304,7 @@ def test_interactive_reconfig_existing_none_default_preserves_none(monkeypatch, 
     account_home = _setup_interactive_reconfig_env(monkeypatch, mod, tmp_path, current_keychain="none")
     monkeypatch.setattr("builtins.input", lambda prompt="": "")
 
-    mod.configure_account("work", "claude")
+    altergo.accounts.configure_account("work", "claude")
 
     meta = json.loads((account_home / "account.json").read_text())
     assert meta.get("keychain") == "none", (
@@ -1325,7 +1317,7 @@ def test_interactive_reconfig_existing_keychain_default_preserves_keychain(monke
     account_home = _setup_interactive_reconfig_env(monkeypatch, mod, tmp_path, current_keychain="keychain")
     monkeypatch.setattr("builtins.input", lambda prompt="": "")
 
-    mod.configure_account("work", "claude")
+    altergo.accounts.configure_account("work", "claude")
 
     meta = json.loads((account_home / "account.json").read_text())
     assert meta.get("keychain") == "keychain", (
@@ -1338,7 +1330,7 @@ def test_interactive_reconfig_existing_keychain_can_switch_to_none(monkeypatch, 
     account_home = _setup_interactive_reconfig_env(monkeypatch, mod, tmp_path, current_keychain="keychain")
     monkeypatch.setattr("builtins.input", lambda prompt="": "n")
 
-    mod.configure_account("work", "claude")
+    altergo.accounts.configure_account("work", "claude")
 
     meta = json.loads((account_home / "account.json").read_text())
     assert meta.get("keychain") == "none", (
@@ -1361,7 +1353,7 @@ def test_interactive_keychain_prompt_includes_ssh_context_and_link(monkeypatch, 
     _setup_interactive_reconfig_env(monkeypatch, mod, tmp_path, current_keychain="keychain")
     monkeypatch.setattr("builtins.input", lambda prompt="": "")
 
-    mod.configure_account("work", "claude")
+    altergo.accounts.configure_account("work", "claude")
 
     out = capsys.readouterr().out
     # keychain-mode reality: encrypted at rest, one-time desk Always-Allow
@@ -1406,12 +1398,12 @@ def _setup_delete_account_env(monkeypatch, mod, tmp_path, meta):
     (account_home / "Library" / "Preferences").mkdir(parents=True)
     (account_home / "account.json").write_text(json.dumps(meta))
 
-    monkeypatch.setattr(mod, "MAIN_HOME", main_home)
-    monkeypatch.setattr(mod, "MAIN_CLAUDE", main_claude)
-    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
-    monkeypatch.setattr(mod, "SETTINGS_FILE", tmp_path / "settings.json")
+    monkeypatch.setattr(altergo.constants, "MAIN_HOME", main_home)
+    monkeypatch.setattr(altergo.constants, "MAIN_CLAUDE", main_claude)
+    monkeypatch.setattr(altergo.constants, "ACCOUNTS_DIR", accounts_dir)
+    monkeypatch.setattr(altergo.constants, "SETTINGS_FILE", tmp_path / "settings.json")
     monkeypatch.setattr(mod.sys, "platform", "darwin")
-    monkeypatch.setattr(mod, "show_banner", lambda *a, **kw: None)
+    monkeypatch.setattr(altergo.ui, "show_banner", lambda *a, **kw: None)
 
     return account_home
 
@@ -1425,12 +1417,12 @@ def test_do_delete_account_calls_delete_keychain_for_isolated(monkeypatch, mod, 
     kc_path.touch()
 
     delete_calls = []
-    monkeypatch.setattr(mod, "_delete_account_keychain", lambda home, slug: delete_calls.append((home, slug)))
+    monkeypatch.setattr(altergo.accounts, "_delete_account_keychain", lambda home, slug: delete_calls.append((home, slug)))
 
     # _sec needed for the find-generic-password probe in do_delete_account.
-    monkeypatch.setattr(mod, "_sec", lambda argv, **kw: _cp(0, "deadbeef" * 8))
+    monkeypatch.setattr(altergo.accounts, "_sec", lambda argv, **kw: _cp(0, "deadbeef" * 8))
 
-    mod.do_delete_account("work")
+    altergo.accounts.do_delete_account("work")
 
     assert len(delete_calls) == 1
     assert delete_calls[0][1] == "work"
@@ -1442,7 +1434,7 @@ def test_do_delete_account_no_artifacts_skips_keychain_teardown(monkeypatch, mod
     account_home = _setup_delete_account_env(monkeypatch, mod, tmp_path, account_meta_legacy)
 
     delete_calls = []
-    monkeypatch.setattr(mod, "_delete_account_keychain", lambda home, slug: delete_calls.append((home, slug)))
+    monkeypatch.setattr(altergo.accounts, "_delete_account_keychain", lambda home, slug: delete_calls.append((home, slug)))
 
     # Spy on _sec so we can assert the find-generic-password probe was actually called.
     sec_calls = []
@@ -1454,9 +1446,9 @@ def test_do_delete_account_no_artifacts_skips_keychain_teardown(monkeypatch, mod
             return _cp(44, "", "The specified item could not be found in the keychain.")
         return _cp(0)
 
-    monkeypatch.setattr(mod, "_sec", spy_sec)
+    monkeypatch.setattr(altergo.accounts, "_sec", spy_sec)
 
-    mod.do_delete_account("work")
+    altergo.accounts.do_delete_account("work")
 
     # Probe must have been issued.
     probe_calls = [args for args in sec_calls if args[0] == "find-generic-password"]
@@ -1473,13 +1465,13 @@ def test_do_delete_account_continues_on_keychain_error(monkeypatch, mod, tmp_pat
     def failing_delete(home, slug):
         raise mod.KeychainError("simulated keychain teardown failure")
 
-    monkeypatch.setattr(mod, "_delete_account_keychain", failing_delete)
+    monkeypatch.setattr(altergo.accounts, "_delete_account_keychain", failing_delete)
     # do_delete_account probes for D via _sec before calling _delete_account_keychain;
     # stub _sec so the probe succeeds on CI runners without /usr/bin/security (Linux).
-    monkeypatch.setattr(mod, "_sec", lambda argv, **kw: _cp(0, "deadbeef\n"))
+    monkeypatch.setattr(altergo.accounts, "_sec", lambda argv, **kw: _cp(0, "deadbeef\n"))
 
     # Should not raise; should return True (account home is removed).
-    result = mod.do_delete_account("work")
+    result = altergo.accounts.do_delete_account("work")
     assert result is True
     assert not account_home.exists(), "account_home must be removed even after keychain error"
 
@@ -1494,9 +1486,10 @@ def test_do_delete_account_sec_calls_use_check_false(monkeypatch, mod, tmp_path,
         sec_calls.append((list(argv), check))
         return _cp(0)
 
+    monkeypatch.setattr(altergo.accounts, "_sec", spy_sec)
     monkeypatch.setattr(mod, "_sec", spy_sec)
 
-    mod.do_delete_account("work")
+    altergo.accounts.do_delete_account("work")
 
     # Every _sec call made during delete must use check=False.
     delete_sec_calls = [
@@ -1523,15 +1516,15 @@ def _setup_configure_account_env(monkeypatch, mod, tmp_path):
     accounts_dir.mkdir(parents=True)
     _create_main_claude_sources_for_mod(mod, main_claude)
 
-    monkeypatch.setattr(mod, "MAIN_HOME", main_home)
-    monkeypatch.setattr(mod, "MAIN_CLAUDE", main_claude)
-    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
-    monkeypatch.setattr(mod, "SETTINGS_FILE", tmp_path / "settings.json")
+    monkeypatch.setattr(altergo.constants, "MAIN_HOME", main_home)
+    monkeypatch.setattr(altergo.constants, "MAIN_CLAUDE", main_claude)
+    monkeypatch.setattr(altergo.constants, "ACCOUNTS_DIR", accounts_dir)
+    monkeypatch.setattr(altergo.constants, "SETTINGS_FILE", tmp_path / "settings.json")
     monkeypatch.setattr(mod.sys, "platform", "darwin")
     monkeypatch.setattr(mod.sys.stdin, "isatty", lambda: False)
-    monkeypatch.setattr(mod, "show_banner", lambda *a, **kw: None)
-    monkeypatch.setattr(mod, "_status_wrap", lambda msg, fn: fn())
-    monkeypatch.setattr(mod, "load_settings", lambda: {})
+    monkeypatch.setattr(altergo.ui, "show_banner", lambda *a, **kw: None)
+    monkeypatch.setattr(altergo.ui, "_status_wrap", lambda msg, fn: fn())
+    monkeypatch.setattr(altergo.accounts, "load_settings", lambda: {})
 
     return accounts_dir
 
@@ -1552,7 +1545,7 @@ def test_configure_account_then_build_alt_env_calls_find_generic_password(monkey
         return _cp(0)
 
     monkeypatch.setattr(mod, "_sec", fake_sec_config)
-    mod.configure_account("work", keychain_arg="none")
+    altergo.accounts.configure_account("work", keychain_arg="none")
 
     # Phase 2: _build_alt_env — replace spy to capture only calls from this phase.
     build_sec_calls = []
@@ -1564,7 +1557,7 @@ def test_configure_account_then_build_alt_env_calls_find_generic_password(monkey
         return _cp(0)
 
     monkeypatch.setattr(mod, "_sec", fake_sec_build)
-    mod._build_alt_env("work")
+    altergo.runner._build_alt_env("work")
 
     find_calls = [args for args in build_sec_calls if args[0] == "find-generic-password"]
     assert len(find_calls) >= 1, (
@@ -1596,7 +1589,7 @@ def test_configure_account_existing_system_account_normalizes_to_keychain(monkey
     sec_calls = []
     monkeypatch.setattr(mod, "_sec", lambda argv, **kw: (sec_calls.append(list(argv)), _cp(0))[-1])
 
-    mod.configure_account("work", keychain_arg=None)
+    altergo.accounts.configure_account("work", keychain_arg=None)
 
     meta = json.loads((account_home / "account.json").read_text())
     assert meta.get("keychain") == "keychain", f"v0.45.0 default is 'keychain'; got {meta}"
@@ -1713,7 +1706,7 @@ def test_configure_account_keychain_to_none_removes_unlock_entry(monkeypatch, mo
 
     monkeypatch.setattr(mod, "_sec", fake_sec)
 
-    mod.configure_account("work", keychain_arg="none")
+    altergo.accounts.configure_account("work", keychain_arg="none")
 
     subcommands = [args[0] for args in sec_calls]
 
@@ -2053,19 +2046,19 @@ def test_isolated_mode_keychain_is_unusable_by_provider(monkeypatch, mod, tmp_pa
     accounts_dir = tmp_path / "accounts"
     account_home = accounts_dir / "work"
     account_home.mkdir(parents=True)
-    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
+    monkeypatch.setattr(altergo.constants, "ACCOUNTS_DIR", accounts_dir)
     monkeypatch.setattr(mod.sys, "platform", "darwin")
 
     # Isolated meta: _uses_keychain returns False → no unlock.
-    monkeypatch.setattr(mod, "load_account_meta", lambda path: account_meta_isolated)
+    monkeypatch.setattr(altergo.runner, "load_account_meta", lambda path: account_meta_isolated)
 
     unlock_calls = []
-    monkeypatch.setattr(mod, "_unlock_account_keychain", lambda home, slug: unlock_calls.append((home, slug)))
+    monkeypatch.setattr(altergo.runner, "_unlock_account_keychain", lambda home, slug: unlock_calls.append((home, slug)))
 
     # Reconciler must not crash and must not call unlock either.
-    monkeypatch.setattr(mod, "_reconcile_keychain_state", lambda *a, **kw: None)
+    monkeypatch.setattr(altergo.runner, "_reconcile_keychain_state", lambda *a, **kw: None)
 
-    env = mod._build_alt_env("work")
+    env = altergo.runner._build_alt_env("work")
 
     assert unlock_calls == [], "_unlock_account_keychain must NOT be called for isolated accounts"
     assert "HOME" in env, "env must have HOME set"
@@ -2076,16 +2069,16 @@ def test_build_alt_env_dedicated_mode_unlocks(monkeypatch, mod, tmp_path, accoun
     accounts_dir = tmp_path / "accounts"
     account_home = accounts_dir / "work"
     account_home.mkdir(parents=True)
-    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
+    monkeypatch.setattr(altergo.constants, "ACCOUNTS_DIR", accounts_dir)
     monkeypatch.setattr(mod.sys, "platform", "darwin")
 
-    monkeypatch.setattr(mod, "load_account_meta", lambda path: account_meta_dedicated)
-    monkeypatch.setattr(mod, "_reconcile_keychain_state", lambda *a, **kw: None)
+    monkeypatch.setattr(altergo.runner, "load_account_meta", lambda path: account_meta_dedicated)
+    monkeypatch.setattr(altergo.runner, "_reconcile_keychain_state", lambda *a, **kw: None)
 
     unlock_calls = []
-    monkeypatch.setattr(mod, "_unlock_account_keychain", lambda home, slug: unlock_calls.append((home, slug)))
+    monkeypatch.setattr(altergo.runner, "_unlock_account_keychain", lambda home, slug: unlock_calls.append((home, slug)))
 
-    mod._build_alt_env("work")
+    altergo.runner._build_alt_env("work")
 
     assert len(unlock_calls) == 1, f"dedicated mode must call _unlock_account_keychain once; got {unlock_calls}"
 
@@ -2095,17 +2088,12 @@ def test_migration_system_to_keychain_on_load_with_warning(tmp_account_home, cap
     keychain='keychain' (all legacy values → 'keychain') AND emits a warning to stderr.
     On-disk file is unchanged."""
     import json as _json
-    import importlib.util
-
-    spec = importlib.util.spec_from_file_location("altergo", ROOT / "altergo.py")
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
 
     (tmp_account_home / "account.json").write_text(
         _json.dumps({"version": 3, "providers": ["claude"], "default_provider": "claude", "keychain": "system"})
     )
 
-    meta = mod.load_account_meta(tmp_account_home)
+    meta = altergo.persistence.load_account_meta(tmp_account_home)
     assert meta.get("keychain") == "keychain", f"system → keychain (v0.46.0); got {meta}"
 
     captured = capsys.readouterr()
@@ -2123,17 +2111,12 @@ def test_migration_shared_to_keychain_on_load_with_warning(tmp_account_home, cap
     """v0.46.0: load_account_meta with keychain='shared' on disk returns in-memory
     keychain='keychain' AND emits a warning to stderr."""
     import json as _json
-    import importlib.util
-
-    spec = importlib.util.spec_from_file_location("altergo", ROOT / "altergo.py")
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
 
     (tmp_account_home / "account.json").write_text(
         _json.dumps({"version": 3, "providers": ["claude"], "default_provider": "claude", "keychain": "shared"})
     )
 
-    meta = mod.load_account_meta(tmp_account_home)
+    meta = altergo.persistence.load_account_meta(tmp_account_home)
     assert meta.get("keychain") == "keychain", f"shared → keychain (v0.46.0); got {meta}"
 
     captured = capsys.readouterr()
@@ -2148,17 +2131,12 @@ def test_migration_old_isolated_to_keychain_on_load_with_warning(tmp_account_hom
     """v0.46.0: load_account_meta with keychain='isolated' on disk returns in-memory
     keychain='keychain' AND emits a warning. (Was 'none' in v0.45.0; removed alias in v0.46.0.)"""
     import json as _json
-    import importlib.util
-
-    spec = importlib.util.spec_from_file_location("altergo", ROOT / "altergo.py")
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
 
     (tmp_account_home / "account.json").write_text(
         _json.dumps({"version": 3, "providers": ["claude"], "default_provider": "claude", "keychain": "isolated"})
     )
 
-    meta = mod.load_account_meta(tmp_account_home)
+    meta = altergo.persistence.load_account_meta(tmp_account_home)
     assert meta.get("keychain") == "keychain", f"isolated → keychain (v0.46.0); got {meta}"
 
     captured = capsys.readouterr()
@@ -2174,17 +2152,12 @@ def test_migration_old_dedicated_to_keychain_on_load_with_warning(tmp_account_ho
     """v0.46.0: load_account_meta with keychain='dedicated' on disk returns in-memory
     keychain='keychain' AND emits a warning. (Was silent in v0.45.0; removed alias in v0.46.0.)"""
     import json as _json
-    import importlib.util
-
-    spec = importlib.util.spec_from_file_location("altergo", ROOT / "altergo.py")
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
 
     (tmp_account_home / "account.json").write_text(
         _json.dumps({"version": 3, "providers": ["claude"], "default_provider": "claude", "keychain": "dedicated"})
     )
 
-    meta = mod.load_account_meta(tmp_account_home)
+    meta = altergo.persistence.load_account_meta(tmp_account_home)
     assert meta.get("keychain") == "keychain", f"dedicated → keychain (v0.46.0); got {meta}"
 
     captured = capsys.readouterr()
@@ -2200,19 +2173,14 @@ def test_migration_legacy_no_keychain_key_defaults_to_keychain(tmp_account_home)
     """load_account_meta with no keychain key → _uses_keychain returns True.
     Default mode is `keychain` (per-account macOS keychain) since v0.45.0."""
     import json as _json
-    import importlib.util
-
-    spec = importlib.util.spec_from_file_location("altergo", ROOT / "altergo.py")
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
 
     (tmp_account_home / "account.json").write_text(
         _json.dumps({"version": 3, "providers": ["claude"], "default_provider": "claude"})
     )
 
-    meta = mod.load_account_meta(tmp_account_home)
-    assert mod._uses_keychain(meta) is True, "no keychain key → keychain mode (default)"
-    assert mod._is_keychain_none(meta) is False, "no keychain key → not none"
+    meta = altergo.persistence.load_account_meta(tmp_account_home)
+    assert altergo.keychain._uses_keychain(meta) is True, "no keychain key → keychain mode (default)"
+    assert altergo.keychain._is_keychain_none(meta) is False, "no keychain key → not none"
 
 
 def test_reconcile_persists_migrated_key_on_launch(monkeypatch, tmp_account_home):
@@ -2220,11 +2188,7 @@ def test_reconcile_persists_migrated_key_on_launch(monkeypatch, tmp_account_home
     coerces to 'keychain' (with warning) and persists 'keychain' to disk.
     (v0.45.0 mapped system → none; v0.46.0 maps all legacy values → keychain.)"""
     import json as _json
-    import importlib.util
-
-    spec = importlib.util.spec_from_file_location("altergo", ROOT / "altergo.py")
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
+    mod = altergo.keychain
 
     (tmp_account_home / "account.json").write_text(
         _json.dumps({"version": 3, "providers": ["claude"], "default_provider": "claude", "keychain": "system"})
@@ -2250,11 +2214,7 @@ def test_reconcile_preserves_keychain_mode_on_launch_with_prior_state(monkeypatc
     """_reconcile_keychain_state(desired=None) with 'keychain' account + B+C+D consistent:
     leaves everything unchanged, no files deleted."""
     import json as _json
-    import importlib.util
-
-    spec = importlib.util.spec_from_file_location("altergo", ROOT / "altergo.py")
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
+    mod = altergo.keychain
 
     # Write canonical 'keychain' on disk.
     (tmp_account_home / "account.json").write_text(
@@ -2287,23 +2247,18 @@ def test_reconcile_preserves_keychain_mode_on_launch_with_prior_state(monkeypatc
 def test_cli_keychain_legacy_alias_rejected(monkeypatch, tmp_path, old_name):
     """v0.46.0: all legacy --keychain aliases (system, shared, dedicated, isolated) are
     rejected with a non-zero exit and an error message naming the valid choices."""
-    import importlib.util, io
-
-    spec = importlib.util.spec_from_file_location("altergo", ROOT / "altergo.py")
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
 
     accounts_dir = tmp_path / "accounts"
     accounts_dir.mkdir()
-    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
+    monkeypatch.setattr(altergo.constants, "ACCOUNTS_DIR", accounts_dir)
 
     stderr_buf = io.StringIO()
-    monkeypatch.setattr(mod.sys, "stderr", stderr_buf)
-    monkeypatch.setattr(mod.sys, "argv", ["altergo", "--config", "work", "--keychain", old_name])
-    monkeypatch.setattr(mod.sys.stdin, "isatty", lambda: False)
+    monkeypatch.setattr(sys, "stderr", stderr_buf)
+    monkeypatch.setattr(sys, "argv", ["altergo", "--config", "work", "--keychain", old_name])
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
 
     with pytest.raises(SystemExit) as exc_info:
-        mod.main()
+        altergo.cli.main()
 
     assert exc_info.value.code != 0, f"--keychain {old_name!r} must exit non-zero"
     err = stderr_buf.getvalue()
@@ -2314,30 +2269,25 @@ def test_cli_keychain_legacy_alias_rejected(monkeypatch, tmp_path, old_name):
 
 def test_cli_keychain_keychain_no_warning(monkeypatch, tmp_path):
     """--keychain keychain is the canonical name in v0.45.0 and must pass through without warning."""
-    import importlib.util, io
-
-    spec = importlib.util.spec_from_file_location("altergo", ROOT / "altergo.py")
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
 
     captured = {}
 
     def fake_configure_account(account, provider="claude", *, keychain_arg=None):
         captured["keychain_arg"] = keychain_arg
 
-    monkeypatch.setattr(mod, "configure_account", fake_configure_account)
+    monkeypatch.setattr(altergo.cli, "configure_account", fake_configure_account)
 
     accounts_dir = tmp_path / "accounts"
     accounts_dir.mkdir()
-    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
+    monkeypatch.setattr(altergo.constants, "ACCOUNTS_DIR", accounts_dir)
 
     stderr_buf = io.StringIO()
-    monkeypatch.setattr(mod.sys, "stderr", stderr_buf)
-    monkeypatch.setattr(mod.sys, "argv", ["altergo", "--config", "work", "--keychain", "keychain"])
-    monkeypatch.setattr(mod.sys.stdin, "isatty", lambda: False)
+    monkeypatch.setattr(sys, "stderr", stderr_buf)
+    monkeypatch.setattr(sys, "argv", ["altergo", "--config", "work", "--keychain", "keychain"])
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
 
     with pytest.raises(SystemExit):
-        mod.main()
+        altergo.cli.main()
 
     assert captured.get("keychain_arg") == "keychain", (
         f"--keychain keychain must pass through unchanged; got {captured.get('keychain_arg')}"
@@ -2349,30 +2299,25 @@ def test_cli_keychain_keychain_no_warning(monkeypatch, tmp_path):
 
 def test_cli_keychain_none_no_warning(monkeypatch, tmp_path):
     """--keychain none is the canonical name in v0.45.0 and must pass through without warning."""
-    import importlib.util, io
-
-    spec = importlib.util.spec_from_file_location("altergo", ROOT / "altergo.py")
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
 
     captured = {}
 
     def fake_configure_account(account, provider="claude", *, keychain_arg=None):
         captured["keychain_arg"] = keychain_arg
 
-    monkeypatch.setattr(mod, "configure_account", fake_configure_account)
+    monkeypatch.setattr(altergo.cli, "configure_account", fake_configure_account)
 
     accounts_dir = tmp_path / "accounts"
     accounts_dir.mkdir()
-    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
+    monkeypatch.setattr(altergo.constants, "ACCOUNTS_DIR", accounts_dir)
 
     stderr_buf = io.StringIO()
-    monkeypatch.setattr(mod.sys, "stderr", stderr_buf)
-    monkeypatch.setattr(mod.sys, "argv", ["altergo", "--config", "work", "--keychain", "none"])
-    monkeypatch.setattr(mod.sys.stdin, "isatty", lambda: False)
+    monkeypatch.setattr(sys, "stderr", stderr_buf)
+    monkeypatch.setattr(sys, "argv", ["altergo", "--config", "work", "--keychain", "none"])
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
 
     with pytest.raises(SystemExit):
-        mod.main()
+        altergo.cli.main()
 
     assert captured.get("keychain_arg") == "none", (
         f"--keychain none must pass through unchanged; got {captured.get('keychain_arg')}"
@@ -2384,23 +2329,18 @@ def test_cli_keychain_none_no_warning(monkeypatch, tmp_path):
 
 def test_cli_keychain_invalid_exits_nonzero(monkeypatch, tmp_path):
     """--keychain garbage exits non-zero and stderr mentions 'keychain' and 'none'."""
-    import importlib.util, io
-
-    spec = importlib.util.spec_from_file_location("altergo", ROOT / "altergo.py")
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
 
     accounts_dir = tmp_path / "accounts"
     accounts_dir.mkdir()
-    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
+    monkeypatch.setattr(altergo.constants, "ACCOUNTS_DIR", accounts_dir)
 
     stderr_buf = io.StringIO()
-    monkeypatch.setattr(mod.sys, "stderr", stderr_buf)
-    monkeypatch.setattr(mod.sys, "argv", ["altergo", "--config", "work", "--keychain", "garbage"])
-    monkeypatch.setattr(mod.sys.stdin, "isatty", lambda: False)
+    monkeypatch.setattr(sys, "stderr", stderr_buf)
+    monkeypatch.setattr(sys, "argv", ["altergo", "--config", "work", "--keychain", "garbage"])
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
 
     with pytest.raises(SystemExit) as exc_info:
-        mod.main()
+        altergo.cli.main()
 
     assert exc_info.value.code != 0, "invalid --keychain value must exit non-zero"
     err = stderr_buf.getvalue()
@@ -2485,15 +2425,10 @@ def test_switch_none_to_keychain_reuses_preserved_file(monkeypatch, mod, tmp_acc
 def test_v046_legacy_cli_aliases_all_rejected(monkeypatch, tmp_path):
     """v0.46.0 spec requirement: --keychain dedicated, isolated, system, and shared are
     all rejected with a non-zero exit — no silent normalisation, no configure_account call."""
-    import importlib.util, io
-
-    spec = importlib.util.spec_from_file_location("altergo", ROOT / "altergo.py")
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
 
     accounts_dir = tmp_path / "accounts"
     accounts_dir.mkdir()
-    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
+    monkeypatch.setattr(altergo.constants, "ACCOUNTS_DIR", accounts_dir)
 
     for old_name in ("dedicated", "isolated", "system", "shared"):
         configure_account_called = []
@@ -2502,13 +2437,13 @@ def test_v046_legacy_cli_aliases_all_rejected(monkeypatch, tmp_path):
         def fake_configure_account(account, provider="claude", *, keychain_arg=None):
             configure_account_called.append(keychain_arg)
 
-        monkeypatch.setattr(mod, "configure_account", fake_configure_account)
-        monkeypatch.setattr(mod.sys, "stderr", stderr_buf)
-        monkeypatch.setattr(mod.sys, "argv", ["altergo", "--config", "work", "--keychain", old_name])
-        monkeypatch.setattr(mod.sys.stdin, "isatty", lambda: False)
+        monkeypatch.setattr(altergo.cli, "configure_account", fake_configure_account)
+        monkeypatch.setattr(sys, "stderr", stderr_buf)
+        monkeypatch.setattr(sys, "argv", ["altergo", "--config", "work", "--keychain", old_name])
+        monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
 
         with pytest.raises(SystemExit) as exc_info:
-            mod.main()
+            altergo.cli.main()
 
         assert exc_info.value.code != 0, (
             f"--keychain {old_name!r} must exit non-zero in v0.46.0"
@@ -2534,19 +2469,19 @@ def test_v046_account_json_written_with_canonical_names(monkeypatch, mod, tmp_pa
     accounts_dir.mkdir(parents=True)
     _create_main_claude_sources_for_mod(mod, main_claude)
 
-    monkeypatch.setattr(mod, "MAIN_HOME", main_home)
-    monkeypatch.setattr(mod, "MAIN_CLAUDE", main_claude)
-    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
-    monkeypatch.setattr(mod, "SETTINGS_FILE", tmp_path / "settings.json")
+    monkeypatch.setattr(altergo.constants, "MAIN_HOME", main_home)
+    monkeypatch.setattr(altergo.constants, "MAIN_CLAUDE", main_claude)
+    monkeypatch.setattr(altergo.constants, "ACCOUNTS_DIR", accounts_dir)
+    monkeypatch.setattr(altergo.constants, "SETTINGS_FILE", tmp_path / "settings.json")
     monkeypatch.setattr(mod.sys, "platform", "darwin")
     monkeypatch.setattr(mod.sys.stdin, "isatty", lambda: False)
     monkeypatch.setattr(mod, "_sec", lambda argv, **kw: _cp(0))
-    monkeypatch.setattr(mod, "show_banner", lambda *a, **kw: None)
-    monkeypatch.setattr(mod, "_status_wrap", lambda msg, fn: fn())
-    monkeypatch.setattr(mod, "load_settings", lambda: {})
+    monkeypatch.setattr(altergo.ui, "show_banner", lambda *a, **kw: None)
+    monkeypatch.setattr(altergo.ui, "_status_wrap", lambda msg, fn: fn())
+    monkeypatch.setattr(altergo.accounts, "load_settings", lambda: {})
 
     # Test keychain mode.
-    mod.configure_account("work1", keychain_arg="keychain")
+    altergo.accounts.configure_account("work1", keychain_arg="keychain")
     meta_keychain = json.loads((accounts_dir / "work1" / "account.json").read_text())
     assert meta_keychain.get("keychain") == "keychain", (
         f"keychain_arg='keychain' must write 'keychain', got: {meta_keychain}"
@@ -2556,7 +2491,7 @@ def test_v046_account_json_written_with_canonical_names(monkeypatch, mod, tmp_pa
     )
 
     # Test none mode.
-    mod.configure_account("work2", keychain_arg="none")
+    altergo.accounts.configure_account("work2", keychain_arg="none")
     meta_none = json.loads((accounts_dir / "work2" / "account.json").read_text())
     assert meta_none.get("keychain") == "none", (
         f"keychain_arg='none' must write 'none', got: {meta_none}"
@@ -2578,19 +2513,19 @@ def test_v046_default_is_keychain_when_no_flag_and_no_prior_meta(monkeypatch, mo
     accounts_dir.mkdir(parents=True)
     _create_main_claude_sources_for_mod(mod, main_claude)
 
-    monkeypatch.setattr(mod, "MAIN_HOME", main_home)
-    monkeypatch.setattr(mod, "MAIN_CLAUDE", main_claude)
-    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
-    monkeypatch.setattr(mod, "SETTINGS_FILE", tmp_path / "settings.json")
+    monkeypatch.setattr(altergo.constants, "MAIN_HOME", main_home)
+    monkeypatch.setattr(altergo.constants, "MAIN_CLAUDE", main_claude)
+    monkeypatch.setattr(altergo.constants, "ACCOUNTS_DIR", accounts_dir)
+    monkeypatch.setattr(altergo.constants, "SETTINGS_FILE", tmp_path / "settings.json")
     monkeypatch.setattr(mod.sys, "platform", "darwin")
     monkeypatch.setattr(mod.sys.stdin, "isatty", lambda: False)  # non-interactive
     monkeypatch.setattr(mod, "_sec", lambda argv, **kw: _cp(0))
-    monkeypatch.setattr(mod, "show_banner", lambda *a, **kw: None)
-    monkeypatch.setattr(mod, "_status_wrap", lambda msg, fn: fn())
-    monkeypatch.setattr(mod, "load_settings", lambda: {})
+    monkeypatch.setattr(altergo.ui, "show_banner", lambda *a, **kw: None)
+    monkeypatch.setattr(altergo.ui, "_status_wrap", lambda msg, fn: fn())
+    monkeypatch.setattr(altergo.accounts, "load_settings", lambda: {})
 
     # Fresh account — no account.json exists yet, no keychain_arg.
-    mod.configure_account("freshaccount", keychain_arg=None)
+    altergo.accounts.configure_account("freshaccount", keychain_arg=None)
 
     meta = json.loads((accounts_dir / "freshaccount" / "account.json").read_text())
     assert meta.get("keychain") == "keychain", (
@@ -2618,7 +2553,7 @@ def test_v046_default_is_keychain_when_no_flag_and_no_prior_meta(monkeypatch, mo
 
 def test_oauth_token_path_native_uses_main_home(monkeypatch, mod, tmp_path):
     """Native account's canonical token path is $MAIN_HOME/.claude/.oauth-token."""
-    monkeypatch.setattr(mod, "MAIN_HOME", tmp_path)
+    monkeypatch.setattr(altergo.constants, "MAIN_HOME", tmp_path)
     p = mod._oauth_token_path("native")
     assert p == tmp_path / ".claude" / ".oauth-token"
 
@@ -2627,7 +2562,7 @@ def test_oauth_token_path_non_native_uses_account_home(monkeypatch, mod, tmp_pat
     """Non-native account's token path lives under <account_home>/.claude/.oauth-token."""
     accounts_dir = tmp_path / "accounts"
     (accounts_dir / "work").mkdir(parents=True)
-    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
+    monkeypatch.setattr(altergo.constants, "ACCOUNTS_DIR", accounts_dir)
     p = mod._oauth_token_path("work", account_home=accounts_dir / "work")
     assert p == accounts_dir / "work" / ".claude" / ".oauth-token"
 
@@ -2636,20 +2571,20 @@ def test_oauth_token_path_resolves_account_home_when_omitted(monkeypatch, mod, t
     """When account_home is not passed, _oauth_token_path resolves it via resolve_account."""
     accounts_dir = tmp_path / "accounts"
     (accounts_dir / "work").mkdir(parents=True)
-    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
+    monkeypatch.setattr(altergo.constants, "ACCOUNTS_DIR", accounts_dir)
     p = mod._oauth_token_path("work")
     assert p == accounts_dir / "work" / ".claude" / ".oauth-token"
 
 
 def test_load_oauth_token_returns_none_when_missing(monkeypatch, mod, tmp_path):
     """No file → None (callers fall back to keychain or strip the env var)."""
-    monkeypatch.setattr(mod, "MAIN_HOME", tmp_path)
+    monkeypatch.setattr(altergo.constants, "MAIN_HOME", tmp_path)
     assert mod._load_oauth_token("native") is None
 
 
 def test_load_oauth_token_returns_none_when_empty(monkeypatch, mod, tmp_path):
     """Empty file is treated as no token (avoid setting env to '')."""
-    monkeypatch.setattr(mod, "MAIN_HOME", tmp_path)
+    monkeypatch.setattr(altergo.constants, "MAIN_HOME", tmp_path)
     token_file = tmp_path / ".claude" / ".oauth-token"
     token_file.parent.mkdir(parents=True)
     token_file.write_text("")
@@ -2658,7 +2593,7 @@ def test_load_oauth_token_returns_none_when_empty(monkeypatch, mod, tmp_path):
 
 def test_load_oauth_token_strips_whitespace(monkeypatch, mod, tmp_path):
     """Trailing newline (from `claude setup-token | tee`) must not poison the token."""
-    monkeypatch.setattr(mod, "MAIN_HOME", tmp_path)
+    monkeypatch.setattr(altergo.constants, "MAIN_HOME", tmp_path)
     token_file = tmp_path / ".claude" / ".oauth-token"
     token_file.parent.mkdir(parents=True)
     token_file.write_text("sk-ant-oat01-fake\n  \n")
@@ -2669,7 +2604,7 @@ def test_load_oauth_token_whitespace_only_returns_none(monkeypatch, mod, tmp_pat
     """A file that's non-empty on disk but strips to '' must yield None,
     not an empty-string env value (which would silently break claude auth
     in confusing ways)."""
-    monkeypatch.setattr(mod, "MAIN_HOME", tmp_path)
+    monkeypatch.setattr(altergo.constants, "MAIN_HOME", tmp_path)
     token_file = tmp_path / ".claude" / ".oauth-token"
     token_file.parent.mkdir(parents=True)
     token_file.write_text("   \n\t  \n")
@@ -2680,7 +2615,7 @@ def test_load_oauth_token_oserror_falls_through(monkeypatch, mod, tmp_path):
     """If read_text raises OSError mid-read (permissions, FS error, racy
     delete), _load_oauth_token must skip that candidate and try the next —
     not propagate the exception up to crash _build_alt_env at launch time."""
-    monkeypatch.setattr(mod, "MAIN_HOME", tmp_path)
+    monkeypatch.setattr(altergo.constants, "MAIN_HOME", tmp_path)
     canonical = tmp_path / ".claude" / ".oauth-token"
     legacy = tmp_path / ".claude" / "rover-native-token"
     canonical.parent.mkdir(parents=True)
@@ -2701,7 +2636,7 @@ def test_load_oauth_token_oserror_falls_through(monkeypatch, mod, tmp_path):
 def test_load_oauth_token_native_falls_back_to_legacy_rover_path(monkeypatch, mod, tmp_path):
     """Users who set up the rover-native-token before the per-account model
     existed should not have to migrate their file manually."""
-    monkeypatch.setattr(mod, "MAIN_HOME", tmp_path)
+    monkeypatch.setattr(altergo.constants, "MAIN_HOME", tmp_path)
     legacy = tmp_path / ".claude" / "rover-native-token"
     legacy.parent.mkdir(parents=True)
     legacy.write_text("sk-ant-oat01-legacy\n")
@@ -2711,7 +2646,7 @@ def test_load_oauth_token_native_falls_back_to_legacy_rover_path(monkeypatch, mo
 
 def test_load_oauth_token_native_canonical_takes_precedence_over_legacy(monkeypatch, mod, tmp_path):
     """When both files exist, the canonical .oauth-token wins (legacy is fallback only)."""
-    monkeypatch.setattr(mod, "MAIN_HOME", tmp_path)
+    monkeypatch.setattr(altergo.constants, "MAIN_HOME", tmp_path)
     canonical = tmp_path / ".claude" / ".oauth-token"
     legacy = tmp_path / ".claude" / "rover-native-token"
     canonical.parent.mkdir(parents=True)
@@ -2724,20 +2659,20 @@ def test_load_oauth_token_non_native_does_not_check_legacy_path(monkeypatch, mod
     """The rover-native-token fallback is native-only — non-native accounts
     must NEVER read from MAIN_HOME's legacy path (would re-introduce the
     cross-account token leak this whole mechanism is designed to prevent)."""
-    monkeypatch.setattr(mod, "MAIN_HOME", tmp_path)
+    monkeypatch.setattr(altergo.constants, "MAIN_HOME", tmp_path)
     legacy = tmp_path / ".claude" / "rover-native-token"
     legacy.parent.mkdir(parents=True)
     legacy.write_text("sk-ant-oat01-native-token\n")
     accounts_dir = tmp_path / ".altergo" / "accounts"
     (accounts_dir / "work").mkdir(parents=True)
-    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
+    monkeypatch.setattr(altergo.constants, "ACCOUNTS_DIR", accounts_dir)
     # No per-account .oauth-token file → must return None, ignoring native legacy.
     assert mod._load_oauth_token("work", account_home=accounts_dir / "work") is None
 
 
 def test_apply_oauth_token_sets_env_when_file_present(monkeypatch, mod, tmp_path):
     """File present → env gets that token (overrides any inherited value)."""
-    monkeypatch.setattr(mod, "MAIN_HOME", tmp_path)
+    monkeypatch.setattr(altergo.constants, "MAIN_HOME", tmp_path)
     token_file = tmp_path / ".claude" / ".oauth-token"
     token_file.parent.mkdir(parents=True)
     token_file.write_text("sk-ant-oat01-fromfile\n")
@@ -2753,7 +2688,7 @@ def test_apply_oauth_token_native_no_file_preserves_inherited_env(monkeypatch, m
     Native runs with the real $HOME, so a shell-level CLAUDE_CODE_OAUTH_TOKEN
     is the user's intentional choice (e.g. .zshrc on SSH login) and altergo
     must honour it."""
-    monkeypatch.setattr(mod, "MAIN_HOME", tmp_path)
+    monkeypatch.setattr(altergo.constants, "MAIN_HOME", tmp_path)
     env = {"CLAUDE_CODE_OAUTH_TOKEN": "sk-ant-oat01-from-zshrc"}
     mod._apply_oauth_token_to_env(env, "native")
     assert env["CLAUDE_CODE_OAUTH_TOKEN"] == "sk-ant-oat01-from-zshrc"
@@ -2768,7 +2703,7 @@ def test_apply_oauth_token_non_native_no_file_strips_env(monkeypatch, mod, tmp_p
     account's credential state on every launch."""
     accounts_dir = tmp_path / "accounts"
     (accounts_dir / "work").mkdir(parents=True)
-    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
+    monkeypatch.setattr(altergo.constants, "ACCOUNTS_DIR", accounts_dir)
 
     env = {"CLAUDE_CODE_OAUTH_TOKEN": "sk-ant-oat01-leaked-from-shell"}
     mod._apply_oauth_token_to_env(env, "work", account_home=accounts_dir / "work")
@@ -2779,7 +2714,7 @@ def test_apply_oauth_token_non_native_no_file_no_env_is_noop(monkeypatch, mod, t
     """Stripping a non-existent key must not raise — pop with default."""
     accounts_dir = tmp_path / "accounts"
     (accounts_dir / "work").mkdir(parents=True)
-    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
+    monkeypatch.setattr(altergo.constants, "ACCOUNTS_DIR", accounts_dir)
 
     env = {}  # no CLAUDE_CODE_OAUTH_TOKEN to begin with
     mod._apply_oauth_token_to_env(env, "work", account_home=accounts_dir / "work")
@@ -2793,7 +2728,7 @@ def test_apply_oauth_token_non_native_with_file_overrides_inherited(monkeypatch,
     stored under work-acct's home."""
     accounts_dir = tmp_path / "accounts"
     (accounts_dir / "work").mkdir(parents=True)
-    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
+    monkeypatch.setattr(altergo.constants, "ACCOUNTS_DIR", accounts_dir)
     token_file = accounts_dir / "work" / ".claude" / ".oauth-token"
     token_file.parent.mkdir(parents=True)
     token_file.write_text("sk-ant-oat01-work-identity\n")
@@ -2806,23 +2741,23 @@ def test_apply_oauth_token_non_native_with_file_overrides_inherited(monkeypatch,
 def test_build_alt_env_native_no_file_preserves_shell_token(monkeypatch, mod, tmp_path):
     """Integration: _build_alt_env('native') with no token file forwards
     CLAUDE_CODE_OAUTH_TOKEN from os.environ unchanged."""
-    monkeypatch.setattr(mod, "MAIN_HOME", tmp_path)
+    monkeypatch.setattr(altergo.constants, "MAIN_HOME", tmp_path)
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-shell-only")
 
-    env = mod._build_alt_env("native")
+    env = altergo.runner._build_alt_env("native")
     assert env["CLAUDE_CODE_OAUTH_TOKEN"] == "sk-ant-oat01-shell-only"
 
 
 def test_build_alt_env_native_with_file_overrides_shell_token(monkeypatch, mod, tmp_path):
     """Integration: _build_alt_env('native') with a token file overrides
     whatever the shell had exported."""
-    monkeypatch.setattr(mod, "MAIN_HOME", tmp_path)
+    monkeypatch.setattr(altergo.constants, "MAIN_HOME", tmp_path)
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-shell-export")
     token_file = tmp_path / ".claude" / ".oauth-token"
     token_file.parent.mkdir(parents=True)
     token_file.write_text("sk-ant-oat01-fromfile\n")
 
-    env = mod._build_alt_env("native")
+    env = altergo.runner._build_alt_env("native")
     assert env["CLAUDE_CODE_OAUTH_TOKEN"] == "sk-ant-oat01-fromfile"
 
 
@@ -2836,13 +2771,13 @@ def test_build_alt_env_non_native_strips_shell_token_when_no_file(monkeypatch, m
     (account_home / "Library" / "Preferences").mkdir(parents=True)
     (account_home / "Library" / "Keychains").mkdir(parents=True)
     (account_home / "account.json").write_text(json.dumps(account_meta_isolated))
-    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
+    monkeypatch.setattr(altergo.constants, "ACCOUNTS_DIR", accounts_dir)
     monkeypatch.setattr(mod.sys, "platform", "darwin")
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-shell-leak")
     # Stub _sec so the keychain reconcile doesn't shell out.
     monkeypatch.setattr(mod, "_sec", lambda *a, **kw: subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr=""))
 
-    env = mod._build_alt_env("work")
+    env = altergo.runner._build_alt_env("work")
     assert "CLAUDE_CODE_OAUTH_TOKEN" not in env, (
         "non-native subprocess must NOT inherit a shell-level CLAUDE_CODE_OAUTH_TOKEN "
         "when no per-account token file exists — that would cross-contaminate identities"
@@ -2861,12 +2796,12 @@ def test_build_alt_env_non_native_with_file_uses_account_token(monkeypatch, mod,
     token_file.parent.mkdir(parents=True)
     token_file.write_text("sk-ant-oat01-work-identity\n")
 
-    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
+    monkeypatch.setattr(altergo.constants, "ACCOUNTS_DIR", accounts_dir)
     monkeypatch.setattr(mod.sys, "platform", "darwin")
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-shell-other-identity")
     monkeypatch.setattr(mod, "_sec", lambda *a, **kw: subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr=""))
 
-    env = mod._build_alt_env("work")
+    env = altergo.runner._build_alt_env("work")
     assert env["CLAUDE_CODE_OAUTH_TOKEN"] == "sk-ant-oat01-work-identity"
 
 
@@ -2880,7 +2815,7 @@ def test_build_alt_env_non_native_with_file_uses_account_token(monkeypatch, mod,
 
 def test_write_oauth_token_file_native_uses_main_home(monkeypatch, mod, tmp_path):
     """For the native account, the token is written to $MAIN_HOME/.claude/.oauth-token."""
-    monkeypatch.setattr(mod, "MAIN_HOME", tmp_path)
+    monkeypatch.setattr(altergo.constants, "MAIN_HOME", tmp_path)
     path = mod._write_oauth_token_file("native", None, "sk-ant-oat01-abc")
     assert path == tmp_path / ".claude" / ".oauth-token"
     assert path.read_text(encoding="utf-8") == "sk-ant-oat01-abc"
@@ -2918,7 +2853,7 @@ def test_write_oauth_token_file_returns_path(mod, tmp_path):
     account_home = tmp_path / "rettest"
     account_home.mkdir()
     result = mod._write_oauth_token_file("work", account_home, "sk-ant-oat01-ret")
-    assert isinstance(result, mod.Path)
+    assert isinstance(result, Path)
     assert result.exists()
 
 
@@ -2927,7 +2862,7 @@ def test_write_oauth_token_file_returns_path(mod, tmp_path):
 
 def test_run_oauth_token_setup_missing_claude_returns_false(monkeypatch, mod, tmp_path, capsys):
     """When claude is not on PATH, returns False and emits an error to stderr."""
-    monkeypatch.setattr(mod, "ACCOUNTS_DIR", tmp_path / "accounts")
+    monkeypatch.setattr(altergo.constants, "ACCOUNTS_DIR", tmp_path / "accounts")
     monkeypatch.setattr(mod.shutil, "which", lambda name: None)
     account_home = tmp_path / "accounts" / "work"
     account_home.mkdir(parents=True)
@@ -3122,7 +3057,7 @@ def test_maybe_offer_skips_non_claude_providers(monkeypatch, mod, tmp_path, prov
     """Non-claude providers return False immediately without prompting."""
     account_home = tmp_path / "accounts" / "work"
     account_home.mkdir(parents=True)
-    monkeypatch.setattr(mod, "ACCOUNTS_DIR", tmp_path / "accounts")
+    monkeypatch.setattr(altergo.constants, "ACCOUNTS_DIR", tmp_path / "accounts")
 
     prompt_calls = []
     monkeypatch.setattr("builtins.input", lambda p="": prompt_calls.append(p) or "y")
@@ -3137,7 +3072,7 @@ def test_maybe_offer_skips_keychain_mode_none(monkeypatch, mod, tmp_path):
     """keychain_mode='none' → returns False without prompting."""
     account_home = tmp_path / "accounts" / "work"
     account_home.mkdir(parents=True)
-    monkeypatch.setattr(mod, "ACCOUNTS_DIR", tmp_path / "accounts")
+    monkeypatch.setattr(altergo.constants, "ACCOUNTS_DIR", tmp_path / "accounts")
 
     prompt_calls = []
     monkeypatch.setattr("builtins.input", lambda p="": prompt_calls.append(p) or "y")
@@ -3154,7 +3089,7 @@ def test_maybe_offer_skips_when_token_already_present(monkeypatch, mod, tmp_path
     token_file = account_home / ".claude" / ".oauth-token"
     token_file.parent.mkdir(parents=True)
     token_file.write_text("sk-ant-oat01-existing")
-    monkeypatch.setattr(mod, "ACCOUNTS_DIR", tmp_path / "accounts")
+    monkeypatch.setattr(altergo.constants, "ACCOUNTS_DIR", tmp_path / "accounts")
 
     prompt_calls = []
     monkeypatch.setattr("builtins.input", lambda p="": prompt_calls.append(p) or "y")
@@ -3169,7 +3104,7 @@ def test_maybe_offer_non_tty_prints_hint_and_returns_false(monkeypatch, mod, tmp
     """Non-TTY stdin → returns False and prints a hint to stderr mentioning --setup-token."""
     account_home = tmp_path / "accounts" / "work"
     account_home.mkdir(parents=True)
-    monkeypatch.setattr(mod, "ACCOUNTS_DIR", tmp_path / "accounts")
+    monkeypatch.setattr(altergo.constants, "ACCOUNTS_DIR", tmp_path / "accounts")
     monkeypatch.setattr(mod.sys.stdin, "isatty", lambda: False)
 
     result = mod._maybe_offer_oauth_token_setup("work", account_home, "claude", "keychain")
@@ -3183,7 +3118,7 @@ def test_maybe_offer_user_types_n_returns_false(monkeypatch, mod, tmp_path, caps
     """User responds 'n' → returns False, prints Skipped message, no file written."""
     account_home = tmp_path / "accounts" / "work"
     account_home.mkdir(parents=True)
-    monkeypatch.setattr(mod, "ACCOUNTS_DIR", tmp_path / "accounts")
+    monkeypatch.setattr(altergo.constants, "ACCOUNTS_DIR", tmp_path / "accounts")
     monkeypatch.setattr(mod.sys.stdin, "isatty", lambda: True)
     monkeypatch.setattr("builtins.input", lambda p="": "n")
 
@@ -3199,7 +3134,7 @@ def test_maybe_offer_user_presses_enter_calls_run_setup(monkeypatch, mod, tmp_pa
     """Empty Enter (default Yes) → _run_oauth_token_setup is called with the correct args."""
     account_home = tmp_path / "accounts" / "work"
     account_home.mkdir(parents=True)
-    monkeypatch.setattr(mod, "ACCOUNTS_DIR", tmp_path / "accounts")
+    monkeypatch.setattr(altergo.constants, "ACCOUNTS_DIR", tmp_path / "accounts")
     monkeypatch.setattr(mod.sys.stdin, "isatty", lambda: True)
     monkeypatch.setattr("builtins.input", lambda p="": "")
 
@@ -3221,7 +3156,7 @@ def test_maybe_offer_user_types_y_calls_run_setup(monkeypatch, mod, tmp_path):
     """Explicit 'y' → _run_oauth_token_setup is called with correct args."""
     account_home = tmp_path / "accounts" / "work"
     account_home.mkdir(parents=True)
-    monkeypatch.setattr(mod, "ACCOUNTS_DIR", tmp_path / "accounts")
+    monkeypatch.setattr(altergo.constants, "ACCOUNTS_DIR", tmp_path / "accounts")
     monkeypatch.setattr(mod.sys.stdin, "isatty", lambda: True)
     monkeypatch.setattr("builtins.input", lambda p="": "y")
 
@@ -3243,7 +3178,7 @@ def test_maybe_offer_keyboard_interrupt_on_prompt_returns_false(monkeypatch, mod
     """KeyboardInterrupt during the Y/n prompt is treated as 'n' → returns False."""
     account_home = tmp_path / "accounts" / "work"
     account_home.mkdir(parents=True)
-    monkeypatch.setattr(mod, "ACCOUNTS_DIR", tmp_path / "accounts")
+    monkeypatch.setattr(altergo.constants, "ACCOUNTS_DIR", tmp_path / "accounts")
     monkeypatch.setattr(mod.sys.stdin, "isatty", lambda: True)
 
     def interrupt_input(p=""):
@@ -3269,11 +3204,11 @@ def _setup_main_env(monkeypatch, mod, tmp_path):
     accounts_dir = tmp_path / "accounts"
     main_home.mkdir(parents=True)
     accounts_dir.mkdir(parents=True)
-    monkeypatch.setattr(mod, "MAIN_HOME", main_home)
-    monkeypatch.setattr(mod, "ACCOUNTS_DIR", accounts_dir)
-    monkeypatch.setattr(mod, "SETTINGS_FILE", tmp_path / "settings.json")
-    monkeypatch.setattr(mod, "show_banner", lambda *a, **kw: None)
-    monkeypatch.setattr(mod, "load_settings", lambda: {})
+    monkeypatch.setattr(altergo.constants, "MAIN_HOME", main_home)
+    monkeypatch.setattr(altergo.constants, "ACCOUNTS_DIR", accounts_dir)
+    monkeypatch.setattr(altergo.constants, "SETTINGS_FILE", tmp_path / "settings.json")
+    monkeypatch.setattr(altergo.ui, "show_banner", lambda *a, **kw: None)
+    monkeypatch.setattr(altergo.accounts, "load_settings", lambda: {})
     return accounts_dir
 
 
@@ -3283,7 +3218,7 @@ def test_cli_setup_token_no_account_arg_exits_1(monkeypatch, mod, tmp_path, caps
     monkeypatch.setattr(mod.sys, "argv", ["altergo", "--setup-token"])
 
     with pytest.raises(SystemExit) as exc_info:
-        mod.main()
+        altergo.cli.main()
 
     assert exc_info.value.code == 1
     captured = capsys.readouterr()
@@ -3296,7 +3231,7 @@ def test_cli_setup_token_nonexistent_account_exits_1(monkeypatch, mod, tmp_path,
     monkeypatch.setattr(mod.sys, "argv", ["altergo", "--setup-token", "nosuchaccount"])
 
     with pytest.raises(SystemExit) as exc_info:
-        mod.main()
+        altergo.cli.main()
 
     assert exc_info.value.code == 1
     captured = capsys.readouterr()
@@ -3314,10 +3249,10 @@ def test_cli_setup_token_native_calls_run_setup(monkeypatch, mod, tmp_path):
         run_calls.append((account, ah))
         return True
 
-    monkeypatch.setattr(mod, "_run_oauth_token_setup", spy_run_setup)
+    monkeypatch.setattr(altergo.cli, "_run_oauth_token_setup", spy_run_setup)
 
     with pytest.raises(SystemExit) as exc_info:
-        mod.main()
+        altergo.cli.main()
 
     assert exc_info.value.code == 0
     assert run_calls == [("native", None)]
@@ -3336,10 +3271,10 @@ def test_cli_setup_token_existing_account_calls_run_setup(monkeypatch, mod, tmp_
         run_calls.append((account, ah))
         return True
 
-    monkeypatch.setattr(mod, "_run_oauth_token_setup", spy_run_setup)
+    monkeypatch.setattr(altergo.cli, "_run_oauth_token_setup", spy_run_setup)
 
     with pytest.raises(SystemExit) as exc_info:
-        mod.main()
+        altergo.cli.main()
 
     assert exc_info.value.code == 0
     assert len(run_calls) == 1
@@ -3352,10 +3287,10 @@ def test_cli_setup_token_exits_1_when_run_setup_returns_false(monkeypatch, mod, 
     accounts_dir = _setup_main_env(monkeypatch, mod, tmp_path)
     (accounts_dir / "work").mkdir(parents=True)
     monkeypatch.setattr(mod.sys, "argv", ["altergo", "--setup-token", "work"])
-    monkeypatch.setattr(mod, "_run_oauth_token_setup", lambda a, h: False)
+    monkeypatch.setattr(altergo.cli, "_run_oauth_token_setup", lambda a, h: False)
 
     with pytest.raises(SystemExit) as exc_info:
-        mod.main()
+        altergo.cli.main()
 
     assert exc_info.value.code == 1
 
@@ -3377,10 +3312,10 @@ def test_configure_account_claude_keychain_tty_calls_maybe_offer(monkeypatch, mo
         offer_calls.append((account, provider, keychain_mode))
         return False
 
-    monkeypatch.setattr(mod, "_maybe_offer_oauth_token_setup", spy_offer)
+    monkeypatch.setattr(altergo.accounts, "_maybe_offer_oauth_token_setup", spy_offer)
     # configure_account prompts for keychain mode on TTY; answer 'n' → none mode.
     # Use keychain_arg='keychain' to bypass the interactive prompt.
-    mod.configure_account("work", keychain_arg="keychain")
+    altergo.accounts.configure_account("work", keychain_arg="keychain")
 
     assert len(offer_calls) == 1
     account_arg, provider_arg, kc_arg = offer_calls[0]
@@ -3398,7 +3333,7 @@ def test_configure_account_claude_none_mode_offer_does_not_trigger_run_setup(mon
     run_setup_calls = []
     monkeypatch.setattr(mod, "_run_oauth_token_setup", lambda a, h: run_setup_calls.append((a, h)) or True)
 
-    mod.configure_account("work", keychain_arg="none")
+    altergo.accounts.configure_account("work", keychain_arg="none")
 
     assert run_setup_calls == [], (
         "_run_oauth_token_setup must not be called when keychain_mode is 'none'"
@@ -3413,7 +3348,7 @@ def test_configure_account_gemini_provider_offer_does_not_trigger_run_setup(monk
     run_setup_calls = []
     monkeypatch.setattr(mod, "_run_oauth_token_setup", lambda a, h: run_setup_calls.append((a, h)) or True)
 
-    mod.configure_account("work", provider="gemini", keychain_arg="none")
+    altergo.accounts.configure_account("work", provider="gemini", keychain_arg="none")
 
     assert run_setup_calls == [], (
         "_run_oauth_token_setup must not be called for non-claude providers"

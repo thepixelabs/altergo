@@ -28,7 +28,7 @@ classifiers = [
 ]
 
 [project.scripts]
-altergo = "altergo:main"
+altergo = "altergo.cli:main"
 
 [project.urls]
 Homepage = "https://altergo.pixelabs.net"
@@ -39,7 +39,8 @@ Issues = "https://github.com/thepixelabs/altergo/issues"
 
 
 [tool.setuptools]
-py-modules = ["altergo", "altergo_greetings"]
+packages = ["altergo", "altergo.tui"]
+py-modules = ["altergo_greetings"]
 
 [tool.ruff]
 target-version = "py39"
@@ -51,7 +52,7 @@ select = ["E", "F", "W", "I"]
 
 [tool.semantic_release]
 version_toml = ["pyproject.toml:project.version"]
-version_variables = ["altergo.py:__version__"]
+version_variables = ["altergo/_version.py:__version__"]
 branch = "main"
 # Build is handled as a separate step in release.yml after version bumping,
 # so the release job can gate PyPI publish on a confirmed tag.

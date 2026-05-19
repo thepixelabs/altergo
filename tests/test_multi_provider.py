@@ -9,23 +9,23 @@ Covers the behaviors introduced in the multi-provider feature:
   - build_launcher_menu multi-render
 """
 
-import importlib.util
 import json
+import shutil
+import types
 from pathlib import Path
 
 import pytest
 
-ROOT = Path(__file__).parent.parent
-SCRIPT = ROOT / "altergo.py"
+import altergo.accounts
+import altergo.constants
+import altergo.persistence
+import altergo.runner
+import altergo.tui.launcher
 
 
 @pytest.fixture()
 def mod(monkeypatch, tmp_path):
-    """Fresh altergo module with MAIN_HOME + ACCOUNTS_DIR in a temp directory."""
-    spec = importlib.util.spec_from_file_location("altergo_mp", SCRIPT)
-    m = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(m)
-
+    """Fresh altergo package with MAIN_HOME + ACCOUNTS_DIR in a temp directory."""
     main_home = tmp_path / "main"
     accounts_dir = tmp_path / "accounts"
     main_home.mkdir(parents=True)
@@ -34,13 +34,35 @@ def mod(monkeypatch, tmp_path):
     (main_home / ".codex").mkdir()
     (main_home / ".gemini").mkdir()
 
-    monkeypatch.setattr(m, "MAIN_HOME", main_home)
-    monkeypatch.setattr(m, "MAIN_CLAUDE", main_home / ".claude")
-    monkeypatch.setattr(m, "ACCOUNTS_DIR", accounts_dir)
-    monkeypatch.setattr(m, "SETTINGS_FILE", tmp_path / "settings.json")
-    monkeypatch.setattr(m, "STARRED_FILE", tmp_path / "starred.json")
-    monkeypatch.setattr(m, "LAST_SESSION_FILE", tmp_path / "last_session.json")
-    return m
+    monkeypatch.setattr(altergo.constants, "MAIN_HOME", main_home)
+    monkeypatch.setattr(altergo.constants, "MAIN_CLAUDE", main_home / ".claude")
+    monkeypatch.setattr(altergo.constants, "ACCOUNTS_DIR", accounts_dir)
+    monkeypatch.setattr(altergo.constants, "SETTINGS_FILE", tmp_path / "settings.json")
+    monkeypatch.setattr(altergo.constants, "STARRED_FILE", tmp_path / "starred.json")
+    monkeypatch.setattr(altergo.constants, "LAST_SESSION_FILE", tmp_path / "last_session.json")
+
+    # launcher.py binds ACCOUNTS_DIR via from-import at load time, so patch it there too.
+    monkeypatch.setattr(altergo.tui.launcher, "ACCOUNTS_DIR", accounts_dir)
+
+    ns = types.SimpleNamespace(
+        MAIN_HOME=main_home,
+        ACCOUNTS_DIR=accounts_dir,
+        MAIN_CLAUDE=main_home / ".claude",
+        SETTINGS_FILE=tmp_path / "settings.json",
+        STARRED_FILE=tmp_path / "starred.json",
+        LAST_SESSION_FILE=tmp_path / "last_session.json",
+        # Functions from the package
+        load_account_meta=altergo.persistence.load_account_meta,
+        do_add_provider=altergo.accounts.do_add_provider,
+        do_remove_provider=altergo.accounts.do_remove_provider,
+        do_default_provider=altergo.accounts.do_default_provider,
+        do_teardown=altergo.accounts.do_teardown,
+        _apply_provider_setup=altergo.accounts._apply_provider_setup,
+        _account_for_provider=altergo.accounts._account_for_provider,
+        build_launcher_menu=altergo.tui.launcher.build_launcher_menu,
+        shutil=shutil,
+    )
+    return ns
 
 
 def _write_account(mod, name, on_disk):
@@ -299,14 +321,14 @@ def test_launch_rejects_unlisted_provider(mod, monkeypatch, capsys):
         },
     )
     # Keep launch_claude from actually running a subprocess.
-    monkeypatch.setattr(mod, "_find_claude", lambda: "/usr/bin/claude")
-    monkeypatch.setattr(mod, "show_banner", lambda *a, **k: None)
-    monkeypatch.setattr(mod, "maybe_refresh_update_cache", lambda: None)
-    monkeypatch.setattr(mod, "first_launch_notice_if_needed", lambda: None)
-    monkeypatch.setattr(mod, "home_change_notice_if_needed", lambda: None)
-    monkeypatch.setattr(mod, "_build_alt_env", lambda name: {})
+    monkeypatch.setattr(altergo.runner, "_find_claude", lambda: "/usr/bin/claude")
+    monkeypatch.setattr(altergo.runner, "show_banner", lambda *a, **k: None)
+    monkeypatch.setattr(altergo.runner, "maybe_refresh_update_cache", lambda: None)
+    monkeypatch.setattr(altergo.runner, "first_launch_notice_if_needed", lambda: None)
+    monkeypatch.setattr(altergo.runner, "home_change_notice_if_needed", lambda: None)
+    monkeypatch.setattr(altergo.runner, "_build_alt_env", lambda name: {})
     with pytest.raises(SystemExit) as exc_info:
-        mod.launch_claude("work", provider="codex")
+        altergo.runner.launch_claude("work", provider="codex")
     message = str(exc_info.value)
     assert "does not have provider 'codex'" in message
     assert "--add-provider" in message
@@ -352,10 +374,10 @@ def test_launcher_menu_multi_provider_account_appears_twice(mod, monkeypatch):
         },
     )
     # Pretend all provider binaries are on PATH so the launcher decorates chips.
-    monkeypatch.setattr(mod.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(shutil, "which", lambda name: f"/usr/bin/{name}")
     # Avoid the real session scan (spinner + disk walk).
-    monkeypatch.setattr(mod, "_status_wrap", lambda msg, fn: fn())
-    monkeypatch.setattr(mod, "get_sessions", lambda: [])
+    monkeypatch.setattr(altergo.tui.launcher, "_status_wrap", lambda msg, fn: fn())
+    monkeypatch.setattr(altergo.tui.launcher, "get_sessions", lambda: [])
 
     menu = mod.build_launcher_menu()
     pid_to_chips = {row["provider_id"]: [c["name"] for c in row["accounts"]] for row in menu}
@@ -384,7 +406,7 @@ def test_teardown_removes_all_providers_symlinks(mod, monkeypatch):
     assert any((home / ".claude").iterdir())
     assert any((home / ".codex").iterdir())
 
-    monkeypatch.setattr(mod, "show_banner", lambda *a, **k: None)
+    monkeypatch.setattr(altergo.runner, "show_banner", lambda *a, **k: None)
     mod.do_teardown("multi")
     # After teardown, the per-provider symlinks are gone (dot-dirs may still
     # exist as empty dirs).

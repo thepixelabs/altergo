@@ -1,6 +1,5 @@
 """Basic smoke tests — verify the script is importable and version is set."""
 
-import importlib.util
 import io
 import json
 import subprocess
@@ -13,22 +12,13 @@ import pytest
 ROOT = Path(__file__).parent.parent
 SCRIPT = ROOT / "altergo.py"
 
-
-def _load_altergo():
-    spec = importlib.util.spec_from_file_location("altergo", SCRIPT)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
 # Load once at module level so monkeypatching targets the same object.
 import altergo  # noqa: E402  (import after path manipulation is fine here)
 
 
 def test_version_set():
-    mod = _load_altergo()
-    assert mod.__version__, "version must be non-empty"
-    parts = mod.__version__.split(".")
+    assert altergo.__version__, "version must be non-empty"
+    parts = altergo.__version__.split(".")
     assert len(parts) == 3, "version must be semver (x.y.z)"
 
 

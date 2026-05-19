@@ -14,22 +14,14 @@ Verifies:
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import time
 from pathlib import Path
 
 import pytest
 
-ROOT = Path(__file__).parent.parent
-SCRIPT = ROOT / "altergo.py"
-
-
-def _load_altergo():
-    spec = importlib.util.spec_from_file_location("altergo", SCRIPT)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+import altergo.constants
+import altergo.sessions
 
 
 # ---------------------------------------------------------------------------
@@ -185,18 +177,16 @@ def _make_copilot_session(home: Path, session_id: str, cwd: str, topic: str) -> 
 
 def test_get_sessions_all_four_providers(tmp_path, monkeypatch):
     """get_sessions() must return at least one session for each of the four providers."""
-    mod = _load_altergo()
-
     home = tmp_path / "home"
     home.mkdir()
     main_claude = home / ".claude"
 
-    monkeypatch.setattr(mod, "MAIN_HOME", home)
-    monkeypatch.setattr(mod, "MAIN_CLAUDE", main_claude)
+    monkeypatch.setattr(altergo.constants, "MAIN_HOME", home)
+    monkeypatch.setattr(altergo.constants, "MAIN_CLAUDE", main_claude)
     # No accounts dir — _build_provider_map will short-circuit cleanly
-    monkeypatch.setattr(mod, "ACCOUNTS_DIR", home / ".altergo" / "accounts")
+    monkeypatch.setattr(altergo.constants, "ACCOUNTS_DIR", home / ".altergo" / "accounts")
     # Avoid touching real starred file
-    monkeypatch.setattr(mod, "STARRED_FILE", home / ".altergo" / "starred.json")
+    monkeypatch.setattr(altergo.constants, "STARRED_FILE", home / ".altergo" / "starred.json")
 
     _make_claude_session(
         home,
@@ -225,7 +215,7 @@ def test_get_sessions_all_four_providers(tmp_path, monkeypatch):
         topic="Review this pull request",
     )
 
-    sessions = mod.get_sessions()
+    sessions = altergo.sessions.get_sessions()
     providers_found = {s["provider"] for s in sessions}
 
     assert "claude" in providers_found, f"claude missing; providers found: {providers_found}"
@@ -236,16 +226,14 @@ def test_get_sessions_all_four_providers(tmp_path, monkeypatch):
 
 def test_get_sessions_sorted_by_modified_descending(tmp_path, monkeypatch):
     """Results must be sorted newest-first by the modified timestamp."""
-    mod = _load_altergo()
-
     home = tmp_path / "home"
     home.mkdir()
     main_claude = home / ".claude"
 
-    monkeypatch.setattr(mod, "MAIN_HOME", home)
-    monkeypatch.setattr(mod, "MAIN_CLAUDE", main_claude)
-    monkeypatch.setattr(mod, "ACCOUNTS_DIR", home / ".altergo" / "accounts")
-    monkeypatch.setattr(mod, "STARRED_FILE", home / ".altergo" / "starred.json")
+    monkeypatch.setattr(altergo.constants, "MAIN_HOME", home)
+    monkeypatch.setattr(altergo.constants, "MAIN_CLAUDE", main_claude)
+    monkeypatch.setattr(altergo.constants, "ACCOUNTS_DIR", home / ".altergo" / "accounts")
+    monkeypatch.setattr(altergo.constants, "STARRED_FILE", home / ".altergo" / "starred.json")
 
     # Create sessions with distinct mtimes using utime
     claude_file = _make_claude_session(
@@ -270,7 +258,7 @@ def test_get_sessions_sorted_by_modified_descending(tmp_path, monkeypatch):
     os.utime(str(claude_file), (old_ts, old_ts))
     os.utime(str(gemini_file), (new_ts, new_ts))
 
-    sessions = mod.get_sessions()
+    sessions = altergo.sessions.get_sessions()
     modified_times = [s["modified"].timestamp() for s in sessions]
     assert modified_times == sorted(modified_times, reverse=True), (
         "Sessions are not sorted newest-first"
@@ -284,16 +272,14 @@ def test_get_sessions_sorted_by_modified_descending(tmp_path, monkeypatch):
 
 def test_claude_session_fields(tmp_path, monkeypatch):
     """Claude session must have correct id, cwd, topic, and provider."""
-    mod = _load_altergo()
-
     home = tmp_path / "home"
     home.mkdir()
     main_claude = home / ".claude"
 
-    monkeypatch.setattr(mod, "MAIN_HOME", home)
-    monkeypatch.setattr(mod, "MAIN_CLAUDE", main_claude)
-    monkeypatch.setattr(mod, "ACCOUNTS_DIR", home / ".altergo" / "accounts")
-    monkeypatch.setattr(mod, "STARRED_FILE", home / ".altergo" / "starred.json")
+    monkeypatch.setattr(altergo.constants, "MAIN_HOME", home)
+    monkeypatch.setattr(altergo.constants, "MAIN_CLAUDE", main_claude)
+    monkeypatch.setattr(altergo.constants, "ACCOUNTS_DIR", home / ".altergo" / "accounts")
+    monkeypatch.setattr(altergo.constants, "STARRED_FILE", home / ".altergo" / "starred.json")
 
     _make_claude_session(
         home,
@@ -303,7 +289,7 @@ def test_claude_session_fields(tmp_path, monkeypatch):
         topic="Refactor the authentication module",
     )
 
-    sessions = mod.get_sessions()
+    sessions = altergo.sessions.get_sessions()
     claude = next((s for s in sessions if s["provider"] == "claude"), None)
     assert claude is not None
     assert claude["id"] == "aaaaaaaa-1111-1111-1111-111111111111"
@@ -318,15 +304,13 @@ def test_claude_session_fields(tmp_path, monkeypatch):
 
 def test_codex_session_fields(tmp_path, monkeypatch):
     """Codex session must have correct id, cwd, topic, and provider."""
-    mod = _load_altergo()
-
     home = tmp_path / "home"
     home.mkdir()
 
-    monkeypatch.setattr(mod, "MAIN_HOME", home)
-    monkeypatch.setattr(mod, "MAIN_CLAUDE", home / ".claude")
-    monkeypatch.setattr(mod, "ACCOUNTS_DIR", home / ".altergo" / "accounts")
-    monkeypatch.setattr(mod, "STARRED_FILE", home / ".altergo" / "starred.json")
+    monkeypatch.setattr(altergo.constants, "MAIN_HOME", home)
+    monkeypatch.setattr(altergo.constants, "MAIN_CLAUDE", home / ".claude")
+    monkeypatch.setattr(altergo.constants, "ACCOUNTS_DIR", home / ".altergo" / "accounts")
+    monkeypatch.setattr(altergo.constants, "STARRED_FILE", home / ".altergo" / "starred.json")
 
     _make_codex_session(
         home,
@@ -335,7 +319,7 @@ def test_codex_session_fields(tmp_path, monkeypatch):
         topic="Deploy the application",
     )
 
-    sessions = mod.get_sessions()
+    sessions = altergo.sessions.get_sessions()
     codex = next((s for s in sessions if s["provider"] == "codex"), None)
     assert codex is not None
     assert codex["id"] == "bbbbbbbb-2222-2222-2222-222222222222"
@@ -345,15 +329,13 @@ def test_codex_session_fields(tmp_path, monkeypatch):
 
 def test_codex_sentinel_skip(tmp_path, monkeypatch):
     """Codex scanner must skip <permissions ...> sentinel messages for topic."""
-    mod = _load_altergo()
-
     home = tmp_path / "home"
     home.mkdir()
 
-    monkeypatch.setattr(mod, "MAIN_HOME", home)
-    monkeypatch.setattr(mod, "MAIN_CLAUDE", home / ".claude")
-    monkeypatch.setattr(mod, "ACCOUNTS_DIR", home / ".altergo" / "accounts")
-    monkeypatch.setattr(mod, "STARRED_FILE", home / ".altergo" / "starred.json")
+    monkeypatch.setattr(altergo.constants, "MAIN_HOME", home)
+    monkeypatch.setattr(altergo.constants, "MAIN_CLAUDE", home / ".claude")
+    monkeypatch.setattr(altergo.constants, "ACCOUNTS_DIR", home / ".altergo" / "accounts")
+    monkeypatch.setattr(altergo.constants, "STARRED_FILE", home / ".altergo" / "starred.json")
 
     _make_codex_session_with_sentinel(
         home,
@@ -362,7 +344,7 @@ def test_codex_sentinel_skip(tmp_path, monkeypatch):
         real_topic="Fix the memory leak",
     )
 
-    sessions = mod.get_sessions()
+    sessions = altergo.sessions.get_sessions()
     codex = next((s for s in sessions if s["provider"] == "codex"), None)
     assert codex is not None
     assert "Fix the memory leak" in codex["topic"]
@@ -376,15 +358,13 @@ def test_codex_sentinel_skip(tmp_path, monkeypatch):
 
 def test_gemini_session_fields(tmp_path, monkeypatch):
     """Gemini session must have correct id, cwd (from .project_root), topic, and provider."""
-    mod = _load_altergo()
-
     home = tmp_path / "home"
     home.mkdir()
 
-    monkeypatch.setattr(mod, "MAIN_HOME", home)
-    monkeypatch.setattr(mod, "MAIN_CLAUDE", home / ".claude")
-    monkeypatch.setattr(mod, "ACCOUNTS_DIR", home / ".altergo" / "accounts")
-    monkeypatch.setattr(mod, "STARRED_FILE", home / ".altergo" / "starred.json")
+    monkeypatch.setattr(altergo.constants, "MAIN_HOME", home)
+    monkeypatch.setattr(altergo.constants, "MAIN_CLAUDE", home / ".claude")
+    monkeypatch.setattr(altergo.constants, "ACCOUNTS_DIR", home / ".altergo" / "accounts")
+    monkeypatch.setattr(altergo.constants, "STARRED_FILE", home / ".altergo" / "starred.json")
 
     _make_gemini_session(
         home,
@@ -394,7 +374,7 @@ def test_gemini_session_fields(tmp_path, monkeypatch):
         topic="Explain the CI pipeline",
     )
 
-    sessions = mod.get_sessions()
+    sessions = altergo.sessions.get_sessions()
     gemini = next((s for s in sessions if s["provider"] == "gemini"), None)
     assert gemini is not None
     assert gemini["id"] == "cccccccc-4444-4444-4444-444444444444"
@@ -404,15 +384,13 @@ def test_gemini_session_fields(tmp_path, monkeypatch):
 
 def test_gemini_session_no_project_root_falls_back_to_dirname(tmp_path, monkeypatch):
     """Gemini cwd must fall back to the dirname when .project_root is absent."""
-    mod = _load_altergo()
-
     home = tmp_path / "home"
     home.mkdir()
 
-    monkeypatch.setattr(mod, "MAIN_HOME", home)
-    monkeypatch.setattr(mod, "MAIN_CLAUDE", home / ".claude")
-    monkeypatch.setattr(mod, "ACCOUNTS_DIR", home / ".altergo" / "accounts")
-    monkeypatch.setattr(mod, "STARRED_FILE", home / ".altergo" / "starred.json")
+    monkeypatch.setattr(altergo.constants, "MAIN_HOME", home)
+    monkeypatch.setattr(altergo.constants, "MAIN_CLAUDE", home / ".claude")
+    monkeypatch.setattr(altergo.constants, "ACCOUNTS_DIR", home / ".altergo" / "accounts")
+    monkeypatch.setattr(altergo.constants, "STARRED_FILE", home / ".altergo" / "starred.json")
 
     # Create session WITHOUT .project_root
     project_dirname = "noprojectroot"
@@ -424,7 +402,7 @@ def test_gemini_session_no_project_root_falls_back_to_dirname(tmp_path, monkeypa
         "messages": [{"type": "user", "content": "hello there"}],
     }))
 
-    sessions = mod.get_sessions()
+    sessions = altergo.sessions.get_sessions()
     gemini = next((s for s in sessions if s["provider"] == "gemini"), None)
     assert gemini is not None
     # cwd should be the dirname since .project_root absent
@@ -433,15 +411,13 @@ def test_gemini_session_no_project_root_falls_back_to_dirname(tmp_path, monkeypa
 
 def test_gemini_session_string_content(tmp_path, monkeypatch):
     """Gemini topic extraction handles string content (not list-of-dicts)."""
-    mod = _load_altergo()
-
     home = tmp_path / "home"
     home.mkdir()
 
-    monkeypatch.setattr(mod, "MAIN_HOME", home)
-    monkeypatch.setattr(mod, "MAIN_CLAUDE", home / ".claude")
-    monkeypatch.setattr(mod, "ACCOUNTS_DIR", home / ".altergo" / "accounts")
-    monkeypatch.setattr(mod, "STARRED_FILE", home / ".altergo" / "starred.json")
+    monkeypatch.setattr(altergo.constants, "MAIN_HOME", home)
+    monkeypatch.setattr(altergo.constants, "MAIN_CLAUDE", home / ".claude")
+    monkeypatch.setattr(altergo.constants, "ACCOUNTS_DIR", home / ".altergo" / "accounts")
+    monkeypatch.setattr(altergo.constants, "STARRED_FILE", home / ".altergo" / "starred.json")
 
     _make_gemini_session_string_content(
         home,
@@ -451,7 +427,7 @@ def test_gemini_session_string_content(tmp_path, monkeypatch):
         topic="Debug the OOM crash",
     )
 
-    sessions = mod.get_sessions()
+    sessions = altergo.sessions.get_sessions()
     gemini = next((s for s in sessions if s["provider"] == "gemini"), None)
     assert gemini is not None
     assert "OOM" in gemini["topic"]
@@ -464,15 +440,13 @@ def test_gemini_session_string_content(tmp_path, monkeypatch):
 
 def test_copilot_session_fields(tmp_path, monkeypatch):
     """Copilot session must have correct id, cwd, topic, and provider."""
-    mod = _load_altergo()
-
     home = tmp_path / "home"
     home.mkdir()
 
-    monkeypatch.setattr(mod, "MAIN_HOME", home)
-    monkeypatch.setattr(mod, "MAIN_CLAUDE", home / ".claude")
-    monkeypatch.setattr(mod, "ACCOUNTS_DIR", home / ".altergo" / "accounts")
-    monkeypatch.setattr(mod, "STARRED_FILE", home / ".altergo" / "starred.json")
+    monkeypatch.setattr(altergo.constants, "MAIN_HOME", home)
+    monkeypatch.setattr(altergo.constants, "MAIN_CLAUDE", home / ".claude")
+    monkeypatch.setattr(altergo.constants, "ACCOUNTS_DIR", home / ".altergo" / "accounts")
+    monkeypatch.setattr(altergo.constants, "STARRED_FILE", home / ".altergo" / "starred.json")
 
     _make_copilot_session(
         home,
@@ -481,7 +455,7 @@ def test_copilot_session_fields(tmp_path, monkeypatch):
         topic="Review the PR changes",
     )
 
-    sessions = mod.get_sessions()
+    sessions = altergo.sessions.get_sessions()
     copilot = next((s for s in sessions if s["provider"] == "copilot"), None)
     assert copilot is not None
     assert copilot["id"] == "dddddddd-7777-7777-7777-777777777777"
@@ -491,15 +465,13 @@ def test_copilot_session_fields(tmp_path, monkeypatch):
 
 def test_copilot_session_without_workspace_yaml(tmp_path, monkeypatch):
     """Copilot session falls back to events.jsonl when workspace.yaml is absent."""
-    mod = _load_altergo()
-
     home = tmp_path / "home"
     home.mkdir()
 
-    monkeypatch.setattr(mod, "MAIN_HOME", home)
-    monkeypatch.setattr(mod, "MAIN_CLAUDE", home / ".claude")
-    monkeypatch.setattr(mod, "ACCOUNTS_DIR", home / ".altergo" / "accounts")
-    monkeypatch.setattr(mod, "STARRED_FILE", home / ".altergo" / "starred.json")
+    monkeypatch.setattr(altergo.constants, "MAIN_HOME", home)
+    monkeypatch.setattr(altergo.constants, "MAIN_CLAUDE", home / ".claude")
+    monkeypatch.setattr(altergo.constants, "ACCOUNTS_DIR", home / ".altergo" / "accounts")
+    monkeypatch.setattr(altergo.constants, "STARRED_FILE", home / ".altergo" / "starred.json")
 
     session_id = "dddddddd-8888-8888-8888-888888888888"
     session_dir = home / ".copilot" / "session-state" / session_id
@@ -521,7 +493,7 @@ def test_copilot_session_without_workspace_yaml(tmp_path, monkeypatch):
     ]
     events_jsonl.write_text("\n".join(lines) + "\n")
 
-    sessions = mod.get_sessions()
+    sessions = altergo.sessions.get_sessions()
     copilot = next((s for s in sessions if s["provider"] == "copilot"), None)
     assert copilot is not None
     assert copilot["id"] == session_id
@@ -536,21 +508,18 @@ def test_copilot_session_without_workspace_yaml(tmp_path, monkeypatch):
 
 def test_format_project_name_plain_label():
     """A plain project label (no leading dash) is returned as-is."""
-    mod = _load_altergo()
-    assert mod.format_project_name("altergo") == "altergo"
-    assert mod.format_project_name("myproject") == "myproject"
+    assert altergo.sessions.format_project_name("altergo") == "altergo"
+    assert altergo.sessions.format_project_name("myproject") == "myproject"
 
 
 def test_format_project_name_dash_encoded_claude():
     """A Claude dash-encoded path is decoded to its last component."""
-    mod = _load_altergo()
-    assert mod.format_project_name("-Users-netz-Documents-git-altergo") == "altergo"
+    assert altergo.sessions.format_project_name("-Users-netz-Documents-git-altergo") == "altergo"
 
 
 def test_format_project_name_absolute_path():
     """An absolute path stored in project is shortened to its basename."""
-    mod = _load_altergo()
-    assert mod.format_project_name("/Users/test/myproject") == "myproject"
+    assert altergo.sessions.format_project_name("/Users/test/myproject") == "myproject"
 
 
 # ---------------------------------------------------------------------------
@@ -560,8 +529,6 @@ def test_format_project_name_absolute_path():
 
 def test_load_session_preview_claude(tmp_path):
     """Claude preview reads messages from JSONL."""
-    mod = _load_altergo()
-
     session_file = tmp_path / "session.jsonl"
     lines = [
         json.dumps({"cwd": "/Users/test/p"}),
@@ -570,7 +537,7 @@ def test_load_session_preview_claude(tmp_path):
     ]
     session_file.write_text("\n".join(lines) + "\n")
 
-    result = mod.load_session_preview(session_file, provider="claude")
+    result = altergo.sessions.load_session_preview(session_file, provider="claude")
     assert result["error"] is None
     roles = [r for r, _ in result["messages"]]
     assert "user" in roles
@@ -578,8 +545,6 @@ def test_load_session_preview_claude(tmp_path):
 
 def test_load_session_preview_codex(tmp_path):
     """Codex preview reads response_item messages from JSONL."""
-    mod = _load_altergo()
-
     session_file = tmp_path / "rollout.jsonl"
     lines = [
         json.dumps({
@@ -605,15 +570,13 @@ def test_load_session_preview_codex(tmp_path):
     ]
     session_file.write_text("\n".join(lines) + "\n")
 
-    result = mod.load_session_preview(session_file, provider="codex")
+    result = altergo.sessions.load_session_preview(session_file, provider="codex")
     assert result["error"] is None
     assert any(role == "user" and "Docker" in text for role, text in result["messages"])
 
 
 def test_load_session_preview_gemini(tmp_path):
     """Gemini preview reads messages from JSON file."""
-    mod = _load_altergo()
-
     session_file = tmp_path / "session-abc.json"
     data = {
         "sessionId": "gemini-uuid",
@@ -624,7 +587,7 @@ def test_load_session_preview_gemini(tmp_path):
     }
     session_file.write_text(json.dumps(data))
 
-    result = mod.load_session_preview(session_file, provider="gemini")
+    result = altergo.sessions.load_session_preview(session_file, provider="gemini")
     assert result["error"] is None
     assert any(role == "user" and "architecture" in text for role, text in result["messages"])
     assert any(role == "assistant" for role, _ in result["messages"])
@@ -632,8 +595,6 @@ def test_load_session_preview_gemini(tmp_path):
 
 def test_load_session_preview_copilot(tmp_path):
     """Copilot preview reads messages from events.jsonl."""
-    mod = _load_altergo()
-
     session_dir = tmp_path / "copilot-session"
     session_dir.mkdir()
 
@@ -654,17 +615,15 @@ def test_load_session_preview_copilot(tmp_path):
     ]
     events_jsonl.write_text("\n".join(lines) + "\n")
 
-    result = mod.load_session_preview(session_dir, provider="copilot")
+    result = altergo.sessions.load_session_preview(session_dir, provider="copilot")
     assert result["error"] is None
     assert any(role == "user" and "code" in text for role, text in result["messages"])
 
 
 def test_load_session_preview_missing_file(tmp_path):
     """A missing session file returns an error dict without raising."""
-    mod = _load_altergo()
-
     ghost = tmp_path / "nonexistent.jsonl"
-    result = mod.load_session_preview(ghost, provider="claude")
+    result = altergo.sessions.load_session_preview(ghost, provider="claude")
     assert result["error"] is not None
     assert result["messages"] == []
 
@@ -676,8 +635,6 @@ def test_load_session_preview_missing_file(tmp_path):
 
 def test_parse_copilot_workspace_yaml(tmp_path):
     """Parses key:value pairs including quoted values correctly."""
-    mod = _load_altergo()
-
     yaml_file = tmp_path / "workspace.yaml"
     yaml_file.write_text(
         "id: abc-123\n"
@@ -687,7 +644,7 @@ def test_parse_copilot_workspace_yaml(tmp_path):
         "created_at: 2026-04-20T09:00:00Z\n"
     )
 
-    result = mod._parse_copilot_workspace_yaml(yaml_file)
+    result = altergo.sessions._parse_copilot_workspace_yaml(yaml_file)
     assert result["id"] == "abc-123"
     assert result["cwd"] == "/Users/test/project"
     assert result["summary"] == "Fix the login bug"
@@ -696,6 +653,5 @@ def test_parse_copilot_workspace_yaml(tmp_path):
 
 def test_parse_copilot_workspace_yaml_missing(tmp_path):
     """Returns empty dict when file is absent."""
-    mod = _load_altergo()
-    result = mod._parse_copilot_workspace_yaml(tmp_path / "no-such-file.yaml")
+    result = altergo.sessions._parse_copilot_workspace_yaml(tmp_path / "no-such-file.yaml")
     assert result == {}

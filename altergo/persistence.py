@@ -64,7 +64,7 @@ def _coerce_meta_v3(data: dict) -> dict:
     out["providers"] = providers
     out["default_provider"] = default
     kc = data.get("keychain")
-    _LEGACY_KC_VALUES = {"system", "shared", "dedicated", "isolated"}
+    _LEGACY_KC_VALUES = {"system", "shared", "dedicated", "isolated", "private"}
     if kc in _LEGACY_KC_VALUES:
         _acct_hint = data.get("_account_slug", "<account>")
         print(

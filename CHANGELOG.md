@@ -1,6 +1,81 @@
 # CHANGELOG
 
 
+## v1.3.2 (2026-05-19)
+
+### Bug Fixes
+
+- **keychain**: Coerce legacy 'private' mode to 'keychain' with warning
+  ([`459d007`](https://github.com/thepixelabs/altergo/commit/459d0073597551c8160567bf1ec87932daf72a08))
+
+accounts written by v1.0.x-v1.1.x have "keychain": "private" on disk. _coerce_meta_v3 silently
+  passed it through, causing _uses_keychain() to return False and skipping keychain unlock for those
+  accounts. adding 'private' to _LEGACY_KC_VALUES gives it the same coerce-and-warn path as the
+  other legacy aliases.
+
+### Documentation
+
+- Canonicalize keychain naming + restructure landing docs section
+  ([#5](https://github.com/thepixelabs/altergo/pull/5),
+  [`abc0ad8`](https://github.com/thepixelabs/altergo/commit/abc0ad81009da7c663874baeba0ac0a52a59c59d))
+
+* docs: canonicalize keychain naming + restructure landing docs section
+
+Brings docs in line with the v1.2.0 `private` → `keychain` mode rename and rebalances the landing
+  page after recent additions.
+
+Docs sweep (private → keychain): - keychain-isolation.md: full rewrite to canonical
+  `keychain`/`none`, preserving rename history in a single breadcrumb. Adds SSH OAuth bridge
+  coverage in §2 and §5. - migration.md: new v1.2.0 section documenting the private → keychain
+  rename and `--setup-token` SSH bridge. v0.46.0 section keeps its historical accuracy with a
+  forward-pointing note. - faq.md: three `private` references updated to `keychain`.
+
+Landing page (docs/index.html): - Feature tile "Per-account keychain by default": 72-word inline doc
+  shrunk to a one-line summary with a Details link to docs/keychain-isolation.md. The prior copy
+  described the opt-out default that was inverted in v0.45.0. - Commands docs card: replaced the
+  4-quadrant grouped table (~14 rows) with a 6-row cheat sheet covering launch, config, recall,
+  search, portal, and --yolo-resume. Full reference now points to `altergo --help`. - "What gets
+  symlinked" card: added the per-account keychain paths (login.keychain-db,
+  com.apple.security.plist) to the separate-per- account tag list, then trimmed the inline
+  keychain-modes prose + CLI-tool-credentials enumeration that was pushing the card past its weight
+  class. The deep coverage lives in keychain-isolation.md. - Compatibility & Disclaimers card:
+  dropped the "not affiliated with" duplicate sentence (already in the footer), kept the trademark
+  attribution. Returned to normal grid width now that Commands no longer needs a full-width row. -
+  Docs section subtitle: retuned to match the lighter surface area.
+
+* fix(tmux): include project segment in session names to match rover
+
+altergo's _tmux_session_name produced "<account>/<provider>", but rover generates
+  "<project>/<account>/<provider>" when it wraps altergo. Sessions started directly via altergo
+  therefore showed up under a different key than rover-wrapped sessions and couldn't be found in
+  rover's session list.
+
+Align altergo's naming with rover's _derive_session_name byte-for-byte: same _TMUX_UNSAFE_RE regex,
+  same strip("-") and "unknown" fallbacks. Project defaults to cwd basename when not passed
+  explicitly, so the three existing call sites pick it up automatically.
+
+Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
+
+* fix(lint): apply ruff format
+
+* refactor: split altergo.py monolith into altergo/ package
+
+Convert the 8811-line altergo.py into a proper Python package (altergo/__init__.py + submodules).
+  Update pyproject.toml entry point and packaging config. Rewrite all test files to import from the
+  package directly rather than loading the monolith via importlib. Fix three production bugs
+  surfaced by the test migration in keychain.py: cross-account env-var leak in
+  _apply_oauth_token_to_env, trailing-newline corruption in _write_oauth_token_file, and
+  _run_oauth_token_setup replaced with the real claude-subprocess flow.
+
+373 tests passing.
+
+* fix(lint): ruff format altergo.py stub
+
+---------
+
+Co-authored-by: Claude Opus 4.7 <noreply@anthropic.com>
+
+
 ## v1.3.1 (2026-05-15)
 
 ### Bug Fixes

@@ -1,6 +1,26 @@
 # CHANGELOG
 
 
+## v1.3.4 (2026-05-28)
+
+### Bug Fixes
+
+- **landing**: Replace pip install with pipx install everywhere
+  ([`2595a76`](https://github.com/thepixelabs/altergo/commit/2595a769465a3824d0b2822366a271cf5218b7ed))
+
+Hero command, step-by-step install, code block, copy buttons, JS handler, and meta keywords — all
+  now show pipx install altergo.
+
+### Documentation
+
+- Drop pip install entirely, make pipx prominent above the fold
+  ([`1361465`](https://github.com/thepixelabs/altergo/commit/1361465997b09d73bab87179b357f54412d3a739))
+
+Remove all pip install references — modern macOS blocks it by default and it shouldn't be offered as
+  an option. Replace the subtle inline <code> tag with a proper fenced code block directly under the
+  tagline so the install command is the first thing visitors see.
+
+
 ## v1.3.3 (2026-05-28)
 
 ### Bug Fixes

@@ -24,9 +24,11 @@
   <code>altergo personal</code> and you are in. Isolates credentials. Shares everything else.
 </p>
 
-<p align="center">
-  <code>pipx install altergo</code>
-</p>
+---
+
+```bash
+pipx install altergo
+```
 
 > **Active development** — rough edges exist. If something breaks, [open an issue](https://github.com/thepixelabs/altergo/issues).
 
@@ -51,23 +53,13 @@ altergo runs each account in its own isolated HOME, so credentials never mix. Se
 
 ## <img src="docs/icons/install.svg" width="22" align="center"> Install
 
-**pipx** (recommended — works out of the box on macOS and Linux, no venv needed)
-
 ```bash
 pipx install altergo
 ```
 
-Don't have pipx? `brew install pipx && pipx ensurepath` or `pip install --user pipx`.
+Don't have pipx? `brew install pipx && pipx ensurepath` — then re-run the line above.
 
-**pip** (if you manage your own virtualenv)
-
-```bash
-pip install altergo
-```
-
-> Modern macOS and Homebrew-managed Python block global `pip install` by default (PEP 668). Use pipx above, or activate a virtualenv first.
-
-**curl** (drop the script into your PATH directly — note: this skips `altergo_greetings.py`, so a few cosmetic banners will fall back to text-only)
+**curl** (single-file drop-in — skips `altergo_greetings.py`, cosmetic banners fall back to text-only)
 
 ```bash
 curl -fsSL \

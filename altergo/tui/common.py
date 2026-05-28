@@ -162,47 +162,21 @@ def _safe_addch(stdscr, y, x, ch, attr=0):
 
 
 def _draw_animated_nav(stdscr, row, text, max_width, phase, attrs):
-    """Render the footer nav line with a BBS-style shine sweep + twinkling."""
+    """Render the footer nav line."""
     if max_width <= 0:
         return
     width = min(len(text), max_width)
     if width <= 0:
         return
-
-    # Shine sweep position (extends past width to create a pause between sweeps)
-    cycle_len = width + 24
-    shine_pos = phase % cycle_len
-
-    # Locate "pixelabs" substring for brand coloring
     lower = text.lower()
     pix_start = lower.find("pixelabs")
     pix_end = pix_start + len("pixelabs") if pix_start >= 0 else -1
-
     for i in range(width):
         ch = text[i]
-        # 1. Base attribute: brand color for "pixelabs", otherwise normal
         if pix_start <= i < pix_end:
             attr = attrs["brand"]
         else:
             attr = attrs["nav_base"]
-
-        # 2. Shine sweep overlay (wave of bright chars sliding right)
-        dist = i - shine_pos
-        if -1 <= dist <= 1:
-            attr = attrs["shine_peak"]
-        elif -3 <= dist <= 3:
-            attr = attrs["shine_mid"]
-        elif -5 <= dist <= 5:
-            attr = attrs["shine_mid"] | curses.A_DIM
-
-        # 3. Twinkle effect on separator dots (independent per-position phase)
-        if ch == "·":
-            twinkle = (phase * 2 + i * 7) % 48
-            if twinkle < 2:
-                attr = attrs["shine_peak"]
-            elif twinkle < 5:
-                attr = attrs["shine_mid"]
-
         _safe_addch(stdscr, row, i, ch, attr)
 
 

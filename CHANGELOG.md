@@ -635,7 +635,7 @@ Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
 
 Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
 
-- **landing**: Point Stay Connected Rover link to dispatch.pixelabs.net/rover
+- **landing**: Point Stay Connected Rover link to rover.pixelabs.net
   ([#36](https://github.com/thepixelabs/altergo/pull/36),
   [`55ae409`](https://github.com/thepixelabs/altergo/commit/55ae4096a2f0485984ed70d516471545391730da))
 

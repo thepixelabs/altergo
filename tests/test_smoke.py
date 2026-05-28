@@ -281,7 +281,7 @@ def test_mcp_sync_from_main_to_account(fake_home):
 
     # Main home has an MCP server configured
     (main_home / ".claude.json").write_text(json.dumps({
-        "mcpServers": {"dispatch": {"url": "http://localhost:4242"}},
+        "mcpServers": {"test-mcp": {"url": "http://localhost:4242"}},
         "oauthAccount": {"email": "main@example.com"},
     }))
 
@@ -291,7 +291,7 @@ def test_mcp_sync_from_main_to_account(fake_home):
     assert acct_cfg.exists(), "account must have its own .claude.json"
     assert not acct_cfg.is_symlink(), ".claude.json must be a real file, not a symlink"
     data = json.loads(acct_cfg.read_text())
-    assert "dispatch" in data.get("mcpServers", {}), "MCP server must be synced to account"
+    assert "test-mcp" in data.get("mcpServers", {}), "MCP server must be synced to account"
 
 
 def test_mcp_sync_from_account_to_main(fake_home):

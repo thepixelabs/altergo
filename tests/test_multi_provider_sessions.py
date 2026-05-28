@@ -514,7 +514,7 @@ def test_format_project_name_plain_label():
 
 def test_format_project_name_dash_encoded_claude():
     """A Claude dash-encoded path is decoded to its last component."""
-    assert altergo.sessions.format_project_name("-Users-netz-Documents-git-altergo") == "altergo"
+    assert altergo.sessions.format_project_name("-Users-someuser-Documents-git-altergo") == "altergo"
 
 
 def test_format_project_name_absolute_path():

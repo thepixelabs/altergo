@@ -58,16 +58,15 @@ branch = "main"
 # Build is handled as a separate step in release.yml after version bumping,
 # so the release job can gate PyPI publish on a confirmed tag.
 build_command = "pip install build && python -m build"
-# Use the Angular/conventional-commits parser — same convention as dispatch.
+# Use the Angular/conventional-commits parser (feat/fix/perf/refactor/revert).
 commit_parser = "angular"
-# Tag format matches dispatch: v1.2.3
+# Tag format: v1.2.3
 tag_format = "v{version}"
-# Write CHANGELOG.md and commit it alongside the version bump, matching the
-# assets pattern in dispatch's @semantic-release/git plugin.
+# Write CHANGELOG.md and commit it alongside the version bump.
 changelog_file = "CHANGELOG.md"
 
 [tool.semantic_release.commit_parser_options]
-# Release rules mirror dispatch's release.config.cjs:
+# Release rules:
 #   feat       → minor
 #   fix        → patch
 #   perf       → patch
@@ -79,7 +78,7 @@ major_tags = ["landmark"]
 patch_tags = ["fix", "perf", "refactor", "revert"]
 
 [tool.semantic_release.changelog]
-# Changelog sections mirror dispatch's conventionalcommits preset config.
+# Changelog sections:
 # Hidden types still appear in the Git commit but are excluded from the
 # rendered CHANGELOG, keeping it focused on user-visible changes.
 exclude_commit_patterns = [

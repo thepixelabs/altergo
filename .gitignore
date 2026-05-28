@@ -33,5 +33,13 @@ htmlcov/
 .mcp.json
 .tasks/
 
+# Linter/LSP caches
+.ruff_cache/
+.ruby-lsp/
+
+# Internal planning docs
+SPLIT_PLAN.md
+TEST_PLAN.md
+
 # Raw/staging image generations (not published)
 docs/images/gits/

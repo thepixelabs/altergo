@@ -1,6 +1,29 @@
 # CHANGELOG
 
 
+## v1.3.3 (2026-05-28)
+
+### Bug Fixes
+
+- **tui**: Remove BBS shine sweep and twinkle from nav bar
+  ([`7812ca3`](https://github.com/thepixelabs/altergo/commit/7812ca32b1fef97434e95b8045dbab9b082b6d07))
+
+Replaced the animated footer nav renderer with a plain static one. The sweep and twinkle effects
+  were visually inconsistent with the rest of the TUI — nav bar now renders with uniform nav_base
+  color, matching the style of every other screen element.
+
+### Documentation
+
+- Make pipx the recommended install method ([#11](https://github.com/thepixelabs/altergo/pull/11),
+  [`5db5ca8`](https://github.com/thepixelabs/altergo/commit/5db5ca80e7a13db36f950b6ed10d522a4a319fed))
+
+Modern macOS blocks global pip install (PEP 668). Promote pipx to recommended/first in the Install
+  section with a note on getting pipx; demote pip with a callout explaining the restriction. Add a
+  prominent pipx one-liner above the fold and at the bottom of the page.
+
+Co-authored-by: thepixelabs <pixelicous@users.noreply.github.com>
+
+
 ## v1.3.2 (2026-05-19)
 
 ### Bug Fixes
@@ -635,7 +658,7 @@ Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
 
 Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
 
-- **landing**: Point Stay Connected Rover link to rover.pixelabs.net
+- **landing**: Point Stay Connected Rover link to dispatch.pixelabs.net/rover
   ([#36](https://github.com/thepixelabs/altergo/pull/36),
   [`55ae409`](https://github.com/thepixelabs/altergo/commit/55ae4096a2f0485984ed70d516471545391730da))
 

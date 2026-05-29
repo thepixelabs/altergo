@@ -127,6 +127,8 @@ That is the full workflow. The first time you run `altergo personal`, your confi
 | `altergo portal [<account>] [<provider>]` | Force a tmux-backed launch — keeps the session alive over SSH reconnects |
 | `altergo <account> portal` | Same as above, scoped to a named account |
 | `altergo --search <query>` | Full-text search across every session from every account |
+| `altergo --use native` | Use your existing credentials right now — no account setup needed. Good for single-account users |
+| `altergo --use <account>` | Set a named account as the default so bare `altergo` launches it |
 | `altergo --config <account>` | Create or reconfigure a named account, wire symlinks automatically |
 | `altergo --config <account> --keychain keychain\|none` | Set keychain mode: `keychain` (default, per-account keychain) or `none` (flat files only) — macOS only |
 | `altergo --setup-token <account>` | Generate and store an SSH-friendly OAuth token for a Claude Code account (bypasses macOS keychain over SSH) |

@@ -349,42 +349,41 @@ def _first_run_onboarding():
     )
     console.print()
     _no_acct_msg = Text()
-    _no_acct_msg.append("  You don't have any accounts yet. ", style="dim")
-    _no_acct_msg.append("Let's fix that.", style=f"bold {_accent_hex}")
+    _no_acct_msg.append("  No accounts configured yet. Two ways to start:", style="dim")
     console.print(_no_acct_msg)
     console.print()
 
     # ── Config-options hint ───────────────────────────────────────────────────
-    _hint1 = Text()
-    _hint1.append("  run ", style="dim")
-    _hint1.append("altergo --config", style=f"bold {_mid_hex}")
-    _hint1.append(" to configure interactively", style="dim")
-    console.print(_hint1)
+    _hint_native = Text()
+    _hint_native.append("  altergo --use native", style=f"bold {_accent_hex}")
+    _hint_native.append("   launch right now with your existing credentials, no setup", style="dim")
+    console.print(_hint_native)
 
-    _hint2 = Text()
-    _hint2.append("  or ", style="dim")
-    _hint2.append("altergo --config <account>", style=f"bold {_mid_hex}")
-    _hint2.append(" to skip the prompts", style="dim")
-    console.print(_hint2)
+    console.print()
+
+    _hint1 = Text()
+    _hint1.append("  altergo --config", style=f"bold {_mid_hex}")
+    _hint1.append("          set up named accounts to switch between multiple identities", style="dim")
+    console.print(_hint1)
     console.print()
 
     # Name prompt loop
     while True:
         try:
             raw = Prompt.ask(
-                "  Account name (e.g., personal, pro, sideproject) [or press Enter to run --config]",
+                "  Account name to create (or press Enter to exit)",
                 default="",
                 show_default=False,
                 console=console,
             ).strip()
         except KeyboardInterrupt:
             console.print()
-            console.print("  → run: altergo --config <account> when ready")
+            console.print("  → altergo --use native   or   altergo --config <account>")
             sys.exit(0)
 
         if not raw:
             console.print()
-            console.print("  → run: altergo --config")
+            console.print("  → altergo --use native   or   altergo --config <account>")
             sys.exit(0)
 
         # Inline validation — we cannot call validate_account_name() here

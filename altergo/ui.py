@@ -300,7 +300,7 @@ def show_help():
             f"{kw('altergo --config --keychain')} {arg('<m>')}",
             "keychain | none (macOS only)",
         ),
-        ("altergo --use <account>", f"{kw('altergo --use')} {arg('<account>')}", "Set as default account"),
+        ("altergo --use <account>", f"{kw('altergo --use')} {arg('<account|native>')}", "Set default account (use 'native' to launch with real $HOME)"),
         ("altergo --teardown", f"{kw('altergo --teardown')} {arg('[--name <n>]')}", "Remove account + symlinks"),
         ("altergo --settings", kw("altergo --settings"), "Manage shared credentials"),
         (

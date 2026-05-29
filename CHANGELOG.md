@@ -1,6 +1,20 @@
 # CHANGELOG
 
 
+## v1.4.0 (2026-05-29)
+
+### Features
+
+- Surface --use native in first-run onboarding
+  ([`d59841d`](https://github.com/thepixelabs/altergo/commit/d59841defef73993726232977a6fe006d236b1fd))
+
+First-run screen now presents two clear paths side by side: altergo --use native — launch
+  immediately, no setup altergo --config — set up named accounts for multiple identities
+
+--use help entry updated to show 'native' as a valid value with a description. README command table
+  adds --use native and --use <account> as explicit entries above --config.
+
+
 ## v1.3.4 (2026-05-28)
 
 ### Bug Fixes

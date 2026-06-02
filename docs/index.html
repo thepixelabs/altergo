@@ -1657,15 +1657,9 @@
 
     .install-grid {
       display: grid;
-      grid-template-columns: 1fr 1fr 1fr;
-      gap: 20px;
+      grid-template-columns: 1fr;
+      gap: 16px;
       margin-top: 32px;
-    }
-    .install-method-curl {
-      /* no longer full-width; resets to normal card in 3-col grid */
-    }
-    @media (max-width: 900px) {
-      .install-grid { grid-template-columns: 1fr; gap: 16px; }
     }
 
     .install-followup {
@@ -3544,57 +3538,17 @@
           <div class="reveal">
             <span class="section-label" aria-hidden="true">Installation</span>
             <h2 class="section-title" id="install-heading">All of you, ready in seconds.</h2>
-            <p class="section-subtitle">Choose your preferred install method. pip is the recommended path and always up to date.</p>
+            <p class="section-subtitle">One command via pipx &mdash; isolated environment, always up to date.</p>
           </div>
 
           <div class="install-grid">
-            <!-- pip -->
             <div class="install-method reveal reveal-delay-1">
               <div class="install-method-label">
-                pip
-                <span class="badge">Recommended</span>
+                Install
               </div>
               <div class="code-block">
-                <code><span class="comment"># Install from PyPI</span>
-<span class="cmd">pipx install altergo</span></code>
+                <code><span class="cmd">pipx install altergo</span></code>
                 <button class="code-copy-btn" aria-label="Copy pipx install command" data-copy="pipx install altergo">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-                  </svg>
-                </button>
-              </div>
-            </div>
-
-            <!-- pipx -->
-            <div class="install-method reveal reveal-delay-2">
-              <div class="install-method-label">
-                pipx
-              </div>
-              <div class="code-block">
-                <code><span class="comment"># Isolated environment</span>
-<span class="cmd">pipx install altergo</span></code>
-                <button class="code-copy-btn" aria-label="Copy pipx install command" data-copy="pipx install altergo">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-                  </svg>
-                </button>
-              </div>
-            </div>
-
-            <!-- Manual -->
-            <div class="install-method install-method-curl reveal reveal-delay-3">
-              <div class="install-method-label">
-                Manual / curl
-              </div>
-              <div class="code-block">
-                <code><span class="comment"># Core only, no pip required</span>
-<span class="cmd">curl -fsSL \</span>
-<span class="cmd">  https://raw.githubusercontent.com/thepixelabs/altergo/main/altergo.py \</span>
-<span class="cmd">  -o ~/.local/bin/altergo</span>
-<span class="cmd">chmod +x ~/.local/bin/altergo</span></code>
-                <button class="code-copy-btn" aria-label="Copy manual curl install command" data-copy="curl -fsSL \&#10;  https://raw.githubusercontent.com/thepixelabs/altergo/main/altergo.py \&#10;  -o ~/.local/bin/altergo&#10;chmod +x ~/.local/bin/altergo">
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
                     <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
@@ -3605,18 +3559,48 @@
           </div>
 
           <!-- Shared configure + switch block, runs after any install method -->
-          <div class="install-followup reveal reveal-delay-4">
+          <div class="install-followup reveal reveal-delay-3">
             <div class="install-method-label">
               Configure your accounts
             </div>
             <div class="code-block">
               <code><span class="comment"># Name your accounts, run once per login you have</span>
-<span class="cmd">altergo --config work</span>
-<span class="cmd">altergo --config pro</span>
+<span class="cmd">altergo --config hocus</span>
+<span class="cmd">altergo --config pocus</span></code>
+              <button class="code-copy-btn" aria-label="Copy configure commands" data-copy="altergo --config hocus &amp;&amp; altergo --config pocus">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                </svg>
+              </button>
+            </div>
+          </div>
 
-<span class="comment"># Launch by the name you chose</span>
-<span class="cmd">altergo pro</span></code>
-              <button class="code-copy-btn" aria-label="Copy configure and switch commands" data-copy="altergo --config work &amp;&amp; altergo --config pro &amp;&amp; altergo pro">
+          <!-- Day-to-day helpful commands -->
+          <div class="install-followup reveal reveal-delay-4">
+            <div class="install-method-label">
+              Day-to-day
+            </div>
+            <div class="code-block">
+              <code><span class="comment"># Pick a default — bare `altergo` now launches it</span>
+<span class="cmd">altergo --use pocus</span>
+<span class="cmd">altergo</span>
+
+<span class="comment"># Everything below runs against your default account.</span>
+<span class="comment"># Prefix with an account name to override (e.g. `altergo hocus --yolo`).</span>
+
+<span class="comment"># Skip all provider permission prompts</span>
+<span class="cmd">altergo --yolo</span>
+
+<span class="comment"># Skip prompts and resume your last session</span>
+<span class="cmd">altergo --yolo-resume</span>
+
+<span class="comment"># Browse &amp; resume past sessions</span>
+<span class="cmd">altergo --recall</span>
+
+<span class="comment"># Full-text search through conversation history</span>
+<span class="cmd">altergo --search</span></code>
+              <button class="code-copy-btn" aria-label="Copy day-to-day commands" data-copy="altergo --use pocus&#10;altergo --yolo&#10;altergo --yolo-resume&#10;altergo --recall&#10;altergo --search">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                   <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
                   <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>

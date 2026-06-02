@@ -1,8 +1,6 @@
 # Settings
 
-**Applies to:** altergo v0.40.0+
-
-Run `altergo --settings` to open the multi-page settings TUI. All settings are global — they apply to every account.
+Run `altergo --settings` to open the multi-page TUI. All settings are global — they apply to every account.
 
 ---
 
@@ -72,92 +70,64 @@ All package-manager entries ship **off by default** — each account gets a clea
 
 ## Keyboard shortcuts
 
-These shortcuts apply to the `altergo --settings` TUI only. For the `altergo --recall` session picker, see [how-it-works.md — The session picker TUI](how-it-works.md#the-session-picker-tui).
+`altergo --settings` TUI:
 
 | Key | Action |
 |---|---|
-| `j` / `k` / Arrow up/down | Navigate items within the current page |
-| `h` / `l` / Arrow left/right | Switch between pages |
-| `Tab` / `Shift+Tab` | Switch between pages |
-| `Space` | Toggle a setting on or off |
-| `s` | Save all changes and exit |
-| `q` / `Esc` | Cancel — discard all changes and exit |
+| `j` / `k` / Arrow up/down | Navigate within page |
+| `h` / `l` / Arrow left/right / `Tab` | Switch pages |
+| `Space` | Toggle setting |
+| `s` | Save and exit |
+| `q` / `Esc` | Cancel |
 | `PgUp` / `PgDn` | Scroll (Credentials page) |
 
 ---
 
 ## tmux session persistence
 
-**Where it lives:** `altergo --settings` → **Behavior** → **tmux sessions**. See the [README](../README.md#next-steps) for the one-line pitch.
-
-When **tmux sessions** is enabled, every `altergo` invocation wraps the provider session in a dedicated tmux window. This means:
-
-- **SSH disconnects are safe** — the AI session keeps running on the host machine even if your terminal app closes or the connection drops.
-- **Reattach from anywhere** — open a new SSH session, run `tmux ls` to list active sessions, and `tmux attach -t <session-name>` to reconnect.
-- **Session names** follow the pattern `altergo-<account>-<provider>-<id>` (e.g. `altergo-work-claude-a3f9b2`) so they are easy to identify.
-- **Already inside tmux?** altergo detects the `$TMUX` environment variable and skips the wrapper to avoid nesting sessions.
-- **tmux not installed?** altergo falls back to a plain session and prints an install hint (`brew install tmux`).
-
-Quick reference once inside a tmux session:
+`altergo --settings` → **Behavior** → **tmux sessions** wraps every launch in a named tmux window. SSH disconnects don't kill the session; reattach with `tmux attach -t <name>` from any new login. Session names follow `<project>/<account>/<provider>`. altergo detects `$TMUX` and skips wrapping inside an existing session. Without tmux installed, it falls back to a plain launch with an install hint (`brew install tmux`).
 
 | Key | Action |
 |---|---|
-| `Ctrl-b d` | Detach — leave the session running, return to shell |
-| `Ctrl-b [` | Scroll mode — use arrow keys to scroll back |
-| `tmux ls` | List all running sessions (run from any shell) |
-| `tmux attach -t <name>` | Reattach to a session by name |
+| `Ctrl-b d` | Detach (leave running, return to shell) |
+| `tmux ls` | List active sessions |
+| `tmux attach -t <name>` | Reattach |
 
 ---
 
-## The home-change notice (first-run, one-time)
+## First-run home-change notice
 
-**Introduced in v0.31.0.** The first time you launch any account on a given machine, altergo shows a short, full-screen animated notice explaining the HOME-isolation model — that each account runs in its own HOME folder, and that package managers (pip, cargo, gem, yarn, and friends) do not see packages installed in your main account by default.
+The first interactive `altergo` launch on a given machine shows a one-time full-screen notice explaining the HOME-isolation model (each account gets its own HOME; package managers see clean caches by default). Press any key to dismiss. Non-TTY launches skip it.
 
-- **When it fires:** once per machine, on your first interactive `altergo` launch. Non-TTY launches (scripts, CI, `altergo -- <cmd>`) skip the animation entirely.
-- **How to dismiss:** press any key. The notice fades out and altergo continues with its normal banner.
-- **State:** altergo writes a marker flag so the notice is never shown a second time, even if the animation is interrupted with Ctrl-C.
-- **Why you cannot turn it back on:** the notice is a one-time education step, not a recurring toggle. If you want to see it again (for example, on a new machine), the marker lives alongside the settings file under `~/.altergo/` — remove it by hand to re-trigger.
-
-If the notice prompts you to share a package manager across accounts, the shortcut is `altergo --settings` → **Credentials** → **Package Managers**.
+To re-trigger on a new machine, remove the marker file in `~/.altergo/`.
 
 ---
 
-## Keychain mode (macOS, per-account)
+## Keychain mode (macOS)
 
-Keychain mode is a **per-account** setting stored in `account.json`, not in the global `.altergo.json`. It does not appear in the `altergo --settings` TUI.
-
-The default since v0.44.0 is `isolated` — altergo blocks each account from writing to the macOS keychain; providers fall back to flat-file credentials. Opt into `dedicated` for per-account keychain behaviour:
+Per-account, stored in `account.json` (not in the global settings TUI). The default since v1.2.0 is `keychain` — each account gets its own keychain, unlocked silently at launch. Opt out with `none`:
 
 ```bash
-altergo --config <account> --keychain dedicated  # per-account keychain, unlocked at launch
-altergo --config <account> --keychain isolated   # block keychain writes (the default)
+altergo --config <account> --keychain keychain   # per-account keychain (default)
+altergo --config <account> --keychain none       # block keychain writes; flat-file fallback
 ```
 
-Or answer "y" to the keychain mode prompt during interactive `altergo --config <account>`.
-
-See [docs/keychain-isolation.md](keychain-isolation.md) for the full guide.
+Full guide: [keychain-isolation.md](keychain-isolation.md).
 
 ---
 
 ## CLI shortcuts
 
-You do not need to open the settings TUI for every change. These CLI flags modify the same settings file:
-
 ```sh
-# Set theme directly
-altergo --theme sunset
-
-# Cycle themes live in the launcher
-# Press 't' while in the launcher TUI
+altergo --theme sunset    # set theme directly
+# press 't' inside the launcher TUI to cycle themes live
 ```
-
-> **Removed in v0.35.3:** the `altergo --update-check off` / `altergo --update-check on` flags were removed. The update-checker toggle lives in `altergo --settings` → **Behavior** → **Update checker** only.
 
 ---
 
 ## Settings file
 
-All settings are stored in `~/.altergo/.altergo.json`. This file is above the `accounts/` directory and shared across all accounts. It is written atomically (temp file + rename) so it is never in a partial state.
+`~/.altergo/.altergo.json` — global, above `accounts/`, atomic writes.
 
 ```json
 {
@@ -180,8 +150,6 @@ All settings are stored in `~/.altergo/.altergo.json`. This file is above the `a
 }
 ```
 
-Missing keys fall back to their defaults (`tmux_session` defaults to `false`; `random_theme_enabled` defaults to `false`; `random_theme_frequency` defaults to `3`; all other boolean settings default to `true`; theme defaults to `"ocean"`). The `shared` dict only stores entries that differ from catalog defaults — an empty `shared` object means everything is at its default.
+Missing keys fall back to defaults: `tmux_session`/`random_theme_enabled` default to `false`, `random_theme_frequency` defaults to `3`, other booleans default to `true`, theme defaults to `"ocean"`. The `shared` dict only stores entries that differ from catalog defaults.
 
-The `keychain` setting is **not** in this file — it lives in `account.json` per account.
-
-Editing this file by hand is supported. Changes take effect on the next `altergo` invocation.
+Per-account `keychain` mode is in `account.json`, not here. Editing by hand is supported — changes take effect on the next launch.

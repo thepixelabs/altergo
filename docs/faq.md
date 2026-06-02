@@ -8,7 +8,7 @@ If something here doesn't match what you're seeing, please open an issue — sho
 
 ## Most users will never see these messages
 
-The repair messages below only appear for accounts in **`keychain` mode** (the default; was called `private` in v1.0.x–v1.1.x and `dedicated` in v0.44.x). The `none` mode never produces them.
+The repair messages below only appear for accounts in **`keychain` mode** (the default). The `none` mode never produces them.
 
 To check which mode an account uses, look at the `keychain` field in `~/.altergo/accounts/<account>/account.json`. A missing field means `keychain` (the default). A value of `none` (or any legacy alias) means no keychain is in use.
 

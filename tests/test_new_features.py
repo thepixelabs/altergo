@@ -274,6 +274,19 @@ def test_pick_goodbye_returns_tuple_from_bank():
     assert (emoji, text) in g.GOODBYES
 
 
+def test_print_launch_message_survives_broken_greetings_import(monkeypatch):
+    """The goodbye line prints after the session exits — hours after launch.
+    If the stdlib moved underneath the process mid-session (Homebrew Python
+    upgrade), the lazy altergo_greetings import raises; the exit path must
+    swallow it rather than traceback."""
+    monkeypatch.setattr(sys.stderr, "isatty", lambda: True)
+    monkeypatch.setattr(altergo.runner, "_load_bool_setting", lambda key: True)
+    # None in sys.modules makes `import altergo_greetings` raise ImportError,
+    # simulating the vanished-stdlib failure mode.
+    monkeypatch.setitem(sys.modules, "altergo_greetings", None)
+    altergo.runner._print_launch_message()  # must not raise
+
+
 # --- tmux_session setting -------------------------------------------------
 
 

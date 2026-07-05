@@ -653,20 +653,27 @@ def launch_command(account: str = "default", cmd_args=None):
 
 
 def _print_launch_message():
-    """Print a witty handoff line to stderr before handing off to an AI session."""
-    if not sys.stderr.isatty():
-        return
-    if not _load_bool_setting("show_goodbye"):
-        return
-    import altergo_greetings as _greet
+    """Print a witty goodbye line to stderr after an AI session ends."""
+    # This runs when the session exits — potentially hours after launch. The
+    # lazy import below can fail if the interpreter's stdlib was replaced
+    # mid-session (e.g. a Homebrew Python upgrade deleted the versioned
+    # Cellar dir baked into sys.path at startup).
+    try:
+        if not sys.stderr.isatty():
+            return
+        if not _load_bool_setting("show_goodbye"):
+            return
+        import altergo_greetings as _greet
 
-    emoji, msg = _greet.pick_goodbye()
-    grad = THEMES.get(get_current_theme(), THEMES[_DEFAULT_THEME])["banner"]
-    parts = []
-    n = len(msg)
-    for i, ch in enumerate(msg):
-        t = i / max(n - 1, 1)
-        col = _gradient_color(grad, t)
-        parts.append(f"\033[38;2;{int(col[1:3], 16)};{int(col[3:5], 16)};{int(col[5:7], 16)}m{ch}")
-    colored = "".join(parts) + "\033[0m"
-    print(f"\n  {emoji}  {colored}\n", file=sys.stderr)
+        emoji, msg = _greet.pick_goodbye()
+        grad = THEMES.get(get_current_theme(), THEMES[_DEFAULT_THEME])["banner"]
+        parts = []
+        n = len(msg)
+        for i, ch in enumerate(msg):
+            t = i / max(n - 1, 1)
+            col = _gradient_color(grad, t)
+            parts.append(f"\033[38;2;{int(col[1:3], 16)};{int(col[3:5], 16)};{int(col[5:7], 16)}m{ch}")
+        colored = "".join(parts) + "\033[0m"
+        print(f"\n  {emoji}  {colored}\n", file=sys.stderr)
+    except Exception:
+        pass  # never fail the user's exit over a goodbye message

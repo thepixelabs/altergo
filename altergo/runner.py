@@ -285,8 +285,8 @@ def _build_alt_env(account: str = "default") -> dict:
     # in keychain mode AND has an OAuth token bridge in place, claude reads
     # the token from env and never touches the keychain — so reconcile and
     # unlock are both wasted work. Worse, both can trigger
-    # "user interaction is not allowed" errors in non-GUI contexts (rover-
-    # spawned tmux sessions, SSH, headless launches) when the partition
+    # "user interaction is not allowed" errors in non-GUI contexts (detached
+    # tmux sessions, SSH, headless launches) when the partition
     # list isn't pinned (we removed that pin in v1.2.1 to avoid a forced
     # macOS-password prompt during --config).
     meta = load_account_meta(account_home)
@@ -346,11 +346,7 @@ def _sanitize_tmux_segment(raw: str) -> str:
 
 
 def _tmux_session_name(account: str, provider: str, project: str | None = None) -> str:
-    """Return a tmux session name ``<project>/<account>/<provider>``.
-
-    Matches rover's _derive_session_name so sessions started directly via
-    altergo line up with sessions started via rover.
-    """
+    """Return a tmux session name ``<project>/<account>/<provider>``."""
     if project is None:
         project = Path.cwd().name or "project"
     return f"{_sanitize_tmux_segment(project)}/{_sanitize_tmux_segment(account)}/{_sanitize_tmux_segment(provider)}"

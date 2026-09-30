@@ -301,6 +301,7 @@ def _oauth_token_path(account: str, account_home: "Path | None" = None) -> "Path
 def _load_oauth_token(account: str, account_home: "Path | None" = None) -> "str | None":
     candidates = [_oauth_token_path(account, account_home)]
     if account == _const._NATIVE_ACCOUNT:
+        # Legacy path from the retired Rover setup; kept so existing tokens still load.
         candidates.append(_const.MAIN_HOME / ".claude" / "rover-native-token")
     for path in candidates:
         try:

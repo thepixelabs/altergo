@@ -820,6 +820,19 @@
       .hero-content { order: 2; }
     }
 
+    .hero-status {
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      line-height: 1.5;
+      color: var(--text-2, var(--text-3));
+      border: 1px solid currentColor;
+      border-radius: 8px;
+      padding: 10px 14px;
+      margin-bottom: 24px;
+      max-width: 34rem;
+    }
+    .hero-status strong { letter-spacing: 0.1em; text-transform: uppercase; }
+
     .hero-eyebrow {
       display: inline-flex;
       align-items: center;
@@ -3054,6 +3067,7 @@
       <div class="container">
         <div class="hero-inner">
           <div class="hero-content">
+            <p class="hero-status" role="note"><strong>Unmaintained.</strong> Development has stopped. altergo works as-is and stays open source, but new features and issue replies are not expected. Forks welcome.</p>
             <h1 class="hero-h1 reveal reveal-delay-1" id="hero-heading">
               Don't break flow. <span class="text-gradient">Switch accounts.</span>
             </h1>

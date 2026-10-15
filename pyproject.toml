@@ -106,3 +106,8 @@ type = "github"
 
 [tool.semantic_release.remote.token]
 env = "GH_TOKEN"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+]

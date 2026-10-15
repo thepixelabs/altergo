@@ -13,7 +13,7 @@
 <p align="center">
   <a href="https://pypi.org/project/altergo/"><img alt="PyPI version" src="https://img.shields.io/pypi/v/altergo"></a>
   <img alt="Python 3.10+" src="https://img.shields.io/badge/python-3.10+-blue.svg">
-  <a href="LICENSE"><img alt="License: PolyForm Shield 1.0.0" src="https://img.shields.io/badge/license-PolyForm%20Shield%201.0.0-blue.svg"></a>
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
   <a href="https://github.com/thepixelabs/altergo/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/thepixelabs/altergo/actions/workflows/ci.yml/badge.svg"></a>
 </p>
 
@@ -111,7 +111,7 @@ Deep dive: **[docs/architecture.md](docs/architecture.md)**
 
 ## License & contributing
 
-Fair-code under [PolyForm Shield 1.0.0](LICENSE) — personal and internal business use is free; commercial use is fine as long as it doesn't directly compete with altergo. See [CONTRIBUTING.md](CONTRIBUTING.md).
+Released under the [MIT License](LICENSE). See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 

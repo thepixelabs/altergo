@@ -1,7 +1,7 @@
 # Disclaimer
 
-**altergo** is fair-code software released under the [PolyForm Shield 1.0.0 License](./LICENSE).
-This disclaimer supplements (but does not replace) the PolyForm Shield 1.0.0 License terms.
+**altergo** is open-source software released under the [MIT License](./LICENSE).
+This disclaimer supplements (but does not replace) the MIT License terms.
 
 ## No Warranty
 
@@ -76,4 +76,4 @@ with no safety net beyond what you set up yourself.
 
 ---
 
-Copyright (c) 2026 thepixelabs. Released under the PolyForm Shield 1.0.0 License.
+Copyright (c) 2026 thepixelabs. Released under the MIT License.
